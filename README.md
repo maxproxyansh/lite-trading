@@ -41,8 +41,33 @@ Lite is a private, options-only paper-trading terminal built to feel broker-grad
 ## Deployment
 
 - Frontend target: Vercel project slug `lite-options-terminal`
-- Backend target: Render web service slug `lite-options-api`
-- Use `frontend/vercel.json` for SPA rewrites and `render.yaml` for the backend service plus Postgres blueprint.
+- Backend target: Railway service slug `lite-options-api`
+- Railway backend deployment runbook: [docs/railway-deployment.md](/Users/proxy/trading/lite/docs/railway-deployment.md)
+- Vercel SPA rewrites and security headers live in [frontend/vercel.json](/Users/proxy/trading/lite/frontend/vercel.json)
+- Railway backend boot configuration lives in [backend/nixpacks.toml](/Users/proxy/trading/lite/backend/nixpacks.toml)
+
+### Current hosted endpoints
+
+- Frontend: [lite-options-terminal.vercel.app](https://lite-options-terminal.vercel.app)
+- Backend: [lite-options-api-production.up.railway.app](https://lite-options-api-production.up.railway.app)
+
+### Required deploy-time environment
+
+- `APP_ENV=production`
+- `LITE_DATABASE_URL` from Railway PostgreSQL
+- `FRONTEND_ORIGIN=https://lite-options-terminal.vercel.app`
+- `REFRESH_COOKIE_SECURE=true`
+- `REFRESH_COOKIE_SAMESITE=none`
+- `JWT_SECRET`
+- `DHAN_CLIENT_ID`
+- `DHAN_ACCESS_TOKEN`
+- `BOOTSTRAP_ADMIN_PASSWORD`
+- `BOOTSTRAP_AGENT_KEY`
+
+### Important hosted-signal note
+
+- A Railway service cannot read your local `/Users/proxy/trading/auto_trader` directory.
+- For hosted operation, push signals to `POST /api/v1/agent/signals` instead of relying on filesystem polling.
 
 ## Verification
 
