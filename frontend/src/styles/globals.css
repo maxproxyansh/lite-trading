@@ -1,0 +1,74 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg-primary: #0f1115;
+  --color-bg-secondary: #171a20;
+  --color-bg-tertiary: #20242c;
+  --color-bg-sidebar: #0c0e12;
+  --color-bg-header: rgba(15, 17, 21, 0.95);
+  --color-border-primary: #2a2f38;
+  --color-border-secondary: #3a414d;
+  --color-text-primary: #f2f4f8;
+  --color-text-secondary: #a5acb8;
+  --color-text-muted: #6d7683;
+  --color-profit: #22c55e;
+  --color-loss: #ef4444;
+  --color-signal: #ff7a1a;
+  --color-atm: #FF6B35;
+  --color-neutral: #9B9B9B;
+  --color-btn-buy: #16a34a;
+  --color-btn-sell: #dc2626;
+  --color-btn-buy-hover: #15803d;
+}
+
+:root {
+  --candle-bull: #1DB954;
+  --candle-bear: #E84040;
+  --ema-9: rgba(255,255,255,0.7);
+  --ema-21: rgba(100,180,255,0.7);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 13px;
+  background:
+    radial-gradient(circle at top, rgba(255, 122, 26, 0.12), transparent 24%),
+    linear-gradient(180deg, #090b0f 0%, #101319 50%, #090b0f 100%);
+  color: #f2f4f8;
+  -webkit-font-smoothing: antialiased;
+  min-width: 1240px;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #1B1B1B;
+}
+::-webkit-scrollbar-thumb {
+  background: #404040;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* Selection */
+::selection {
+  background: rgba(255,107,53,0.3);
+  color: #fff;
+}
