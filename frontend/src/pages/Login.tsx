@@ -7,23 +7,24 @@ import { useStore } from '../store/useStore'
 export default function Login() {
   const navigate = useNavigate()
   const { addToast } = useStore()
-  const [email, setEmail] = useState('admin@lite.trade')
-  const [password, setPassword] = useState('admin123')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
 
   return (
     <div className="flex h-screen items-center justify-center bg-bg-primary">
-      <div className="w-full max-w-[360px] px-6">
+      <div className="w-full max-w-[420px] rounded border border-border-primary bg-bg-secondary/40 px-10 py-10">
         {/* Logo */}
-        <div className="mb-10 flex items-center justify-center gap-3">
-          <svg viewBox="0 0 24 24" className="h-8 w-8 text-signal">
-            <path fill="currentColor" d="M12 2L4 12l8 10 8-10z"/>
+        <div className="mb-8 flex flex-col items-center gap-4">
+          <svg viewBox="0 0 32 32" className="h-12 w-12 text-signal">
+            <path fill="currentColor" d="M8 16L16 4l8 12H8z" opacity="0.5"/>
+            <path fill="currentColor" d="M8 16l8 12 8-12H8z"/>
           </svg>
-          <span className="text-xl font-semibold tracking-tight text-text-primary">Lite Options</span>
+          <span className="text-lg font-semibold tracking-tight text-text-primary">Login to Lite</span>
         </div>
 
         <form
-          className="space-y-6"
+          className="space-y-5"
           onSubmit={async (e) => {
             e.preventDefault()
             setLoading(true)
@@ -39,37 +40,36 @@ export default function Login() {
           }}
         >
           <div>
-            <label className="mb-1.5 block text-xs text-text-muted">Email</label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              placeholder="Email"
               autoFocus
-              className="w-full border-b-2 border-border-primary bg-transparent py-2 text-sm text-text-primary outline-none transition-colors focus:border-signal"
+              className="w-full rounded border border-border-primary bg-bg-primary px-4 py-3 text-sm text-text-primary outline-none transition-colors placeholder:text-text-muted focus:border-signal"
             />
           </div>
           <div>
-            <label className="mb-1.5 block text-xs text-text-muted">Password</label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full border-b-2 border-border-primary bg-transparent py-2 text-sm text-text-primary outline-none transition-colors focus:border-signal"
+              placeholder="Password"
+              className="w-full rounded border border-border-primary bg-bg-primary px-4 py-3 text-sm text-text-primary outline-none transition-colors placeholder:text-text-muted focus:border-signal"
             />
           </div>
           <button
             type="submit"
             disabled={loading || !email || !password}
-            className="mt-2 w-full rounded bg-signal py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+            className="w-full rounded bg-signal py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
           >
             {loading ? 'Signing in\u2026' : 'Login'}
           </button>
         </form>
 
-        <div className="mt-8 rounded border border-border-secondary bg-bg-secondary/50 px-4 py-3 text-center text-[11px] leading-5 text-text-muted">
-          <span className="text-text-secondary">admin@lite.trade</span> / <span className="text-text-secondary">admin123</span>
-          <br />Paper trading terminal &mdash; not connected to any live broker
-        </div>
+        <p className="mt-6 text-center text-[11px] leading-4 text-text-muted">
+          Paper trading terminal &mdash; not connected to any live broker
+        </p>
       </div>
     </div>
   )

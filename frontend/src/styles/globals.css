@@ -78,3 +78,17 @@ body {
   background: rgba(56, 126, 209, 0.3);
   color: #fff;
 }
+
+/* Ticker bar scroll animation */
+@keyframes ticker-scroll {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.ticker-scroll {
+  animation: ticker-scroll 40s linear infinite;
+}
+
+.ticker-scroll:hover {
+  animation-play-state: paused;
+}

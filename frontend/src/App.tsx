@@ -4,6 +4,7 @@ import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import ErrorBoundary from './components/ErrorBoundary'
 import Header from './components/Header'
 import MarketWatch from './components/MarketWatch'
+import TickerBar from './components/TickerBar'
 import Toast from './components/Toast'
 import {
   fetchAnalytics,
@@ -53,6 +54,7 @@ function ProtectedLayout() {
             </Routes>
           </main>
         </div>
+        <TickerBar />
         <Toast />
       </div>
     </ErrorBoundary>

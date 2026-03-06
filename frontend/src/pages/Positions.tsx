@@ -7,7 +7,9 @@ export default function Positions() {
 
   return (
     <div className="p-5">
-      <h1 className="mb-4 text-base font-medium text-text-primary">Positions</h1>
+      <h1 className="mb-4 text-base font-medium text-text-primary">
+        Positions{positions.length > 0 && <span className="ml-1 text-text-muted">({positions.length})</span>}
+      </h1>
 
       <table className="w-full text-xs">
         <thead className="border-b border-border-primary text-[11px] text-text-muted">

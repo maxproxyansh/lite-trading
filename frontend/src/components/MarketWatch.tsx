@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Search } from 'lucide-react'
 
 import { useStore } from '../store/useStore'
 
 export default function MarketWatch() {
+  const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const { chain, selectedQuote, setSelectedQuote, snapshot } = useStore()
 
@@ -51,10 +53,10 @@ export default function MarketWatch() {
         {quotes.map((quote) => {
           const active = selectedQuote?.symbol === quote.symbol
           return (
-            <button
+            <div
               key={quote.symbol}
               onClick={() => setSelectedQuote(quote)}
-              className={`group flex w-full items-center justify-between border-b border-border-secondary/40 px-3 py-2 text-left transition-colors ${
+              className={`group relative flex w-full cursor-pointer items-center justify-between border-b border-border-secondary/40 px-3 py-2 text-left transition-colors ${
                 active ? 'bg-bg-secondary' : 'hover:bg-bg-secondary/50'
               }`}
             >
@@ -64,13 +66,40 @@ export default function MarketWatch() {
                 </div>
                 <div className="text-[10px] text-text-muted">{quote.expiry}</div>
               </div>
-              <div className="text-right">
-                <div className="text-xs tabular-nums text-text-primary">{quote.ltp.toFixed(2)}</div>
-                <div className="text-[10px] tabular-nums text-text-muted">
-                  {quote.bid?.toFixed(2) ?? '--'} &times; {quote.ask?.toFixed(2) ?? '--'}
+              <div className="flex items-center gap-2">
+                {/* B/S buttons — visible on hover */}
+                <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setSelectedQuote(quote)
+                      navigate('/')
+                    }}
+                    className="flex h-5 w-5 items-center justify-center rounded-sm bg-profit text-[9px] font-bold text-white transition-colors hover:bg-btn-buy-hover"
+                    title="Buy"
+                  >
+                    B
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setSelectedQuote(quote)
+                      navigate('/')
+                    }}
+                    className="flex h-5 w-5 items-center justify-center rounded-sm bg-loss text-[9px] font-bold text-white transition-colors hover:bg-btn-sell-hover"
+                    title="Sell"
+                  >
+                    S
+                  </button>
+                </div>
+                <div className="text-right">
+                  <div className="text-xs tabular-nums text-text-primary">{quote.ltp.toFixed(2)}</div>
+                  <div className="text-[10px] tabular-nums text-text-muted">
+                    {quote.bid?.toFixed(2) ?? '--'} &times; {quote.ask?.toFixed(2) ?? '--'}
+                  </div>
                 </div>
               </div>
-            </button>
+            </div>
           )
         })}
         {quotes.length === 0 && (
