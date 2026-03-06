@@ -13,7 +13,7 @@ from services.audit import log_audit
 
 
 settings = get_settings()
-DEFAULT_AGENT_SCOPES = ["orders:write", "positions:read", "positions:write", "signals:read", "funds:read"]
+DEFAULT_AGENT_SCOPES = ["orders:write", "positions:read", "positions:write", "signals:read", "signals:write", "funds:read"]
 
 
 def ensure_bootstrap_state(db: Session) -> None:

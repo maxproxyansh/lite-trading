@@ -172,21 +172,7 @@ class SignalAdapter:
             if updated and self._broadcast:
                 latest_signal = db.query(Signal).order_by(Signal.generated_at.desc()).first()
                 if latest_signal:
-                    await self._broadcast(
-                        "signal.updated",
-                        {
-                            "id": latest_signal.id,
-                            "direction": latest_signal.direction,
-                            "confidence_label": latest_signal.confidence_label,
-                            "confidence_score": latest_signal.confidence_score,
-                            "trade_text": latest_signal.trade_text,
-                            "strike": latest_signal.strike,
-                            "option_type": latest_signal.option_type,
-                            "expiry": latest_signal.expiry,
-                            "generated_at": latest_signal.generated_at.isoformat(),
-                            "is_actionable": latest_signal.is_actionable,
-                        },
-                    )
+                    await self._broadcast_signal(latest_signal)
         finally:
             db.close()
 
@@ -231,6 +217,36 @@ class SignalAdapter:
         )
         db.commit()
         return True
+
+    async def ingest_payload(self, payload: dict[str, Any]) -> Signal | None:
+        db = SessionLocal()
+        try:
+            updated = self._upsert_signal(db, payload)
+            signal = db.query(Signal).order_by(Signal.generated_at.desc()).first()
+            if updated and signal and self._broadcast:
+                await self._broadcast_signal(signal)
+            return signal
+        finally:
+            db.close()
+
+    async def _broadcast_signal(self, signal: Signal) -> None:
+        if not self._broadcast:
+            return
+        await self._broadcast(
+            "signal.updated",
+            {
+                "id": signal.id,
+                "direction": signal.direction,
+                "confidence_label": signal.confidence_label,
+                "confidence_score": signal.confidence_score,
+                "trade_text": signal.trade_text,
+                "strike": signal.strike,
+                "option_type": signal.option_type,
+                "expiry": signal.expiry,
+                "generated_at": signal.generated_at.isoformat(),
+                "is_actionable": signal.is_actionable,
+            },
+        )
 
 
 signal_adapter = SignalAdapter()

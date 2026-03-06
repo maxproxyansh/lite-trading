@@ -192,6 +192,31 @@ def test_signal_adapter_ingests_latest_json(client: TestClient) -> None:
     assert response.json()["is_actionable"] is True
 
 
+def test_agent_signal_ingest(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/agent/signals",
+        headers={"X-API-Key": "lite-agent-dev-key"},
+        json={
+            "payload": {
+                "timestamp": "2026-03-06T09:25:00+05:30",
+                "direction": "bullish",
+                "confidence": "high",
+                "confidence_score": 84,
+                "trade": "BUY NIFTY 22500 CE",
+                "strike": 22500,
+                "option_type": "CE",
+                "expiry": "2026-03-12",
+                "entry_range": [109, 113],
+                "target": 142,
+                "stop_loss": 97,
+            }
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["option_type"] == "CE"
+    assert response.json()["confidence_score"] == 84
+
+
 def test_websocket_requires_auth_and_streams_events(client: TestClient) -> None:
     with pytest.raises(WebSocketDisconnect) as exc:
         with client.websocket_connect("/api/v1/ws") as websocket:

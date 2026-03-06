@@ -51,7 +51,7 @@ class CreateUserRequest(BaseModel):
 class CreateAgentKeyRequest(BaseModel):
     name: str
     scopes: list[str] = Field(
-        default_factory=lambda: ["orders:write", "positions:read", "positions:write", "signals:read", "funds:read"]
+        default_factory=lambda: ["orders:write", "positions:read", "positions:write", "signals:read", "signals:write", "funds:read"]
     )
 
 
@@ -153,6 +153,10 @@ class SignalResponse(BaseModel):
     generated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class SignalIngestRequest(BaseModel):
+    payload: dict[str, Any]
 
 
 class PortfolioSummary(BaseModel):

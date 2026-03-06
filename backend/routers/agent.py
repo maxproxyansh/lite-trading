@@ -8,7 +8,8 @@ from database import get_db
 from dependencies import require_agent_scope
 from rate_limit import rate_limit
 from models import Signal
-from schemas import FundsResponse, OrderRequest, OrderSummary, SignalResponse
+from schemas import FundsResponse, OrderRequest, OrderSummary, SignalIngestRequest, SignalResponse
+from services.signal_adapter import signal_adapter
 from services.trading_service import close_position, funds_summary, list_positions, place_order
 
 
@@ -35,6 +36,16 @@ def agent_funds(portfolio_id: str, db: Session = Depends(get_db), key=Depends(re
 @router.get("/signals/latest", response_model=SignalResponse | None)
 def agent_latest_signal(db: Session = Depends(get_db), key=Depends(require_agent_scope("signals:read"))):
     signal = db.query(Signal).order_by(Signal.generated_at.desc()).first()
+    return SignalResponse.model_validate(signal) if signal else None
+
+
+@router.post("/signals", response_model=SignalResponse | None)
+async def agent_signal_ingest(
+    payload: SignalIngestRequest,
+    key=Depends(require_agent_scope("signals:write")),
+    _: None = Depends(rate_limit("agent:signals", 120, 60)),
+):
+    signal = await signal_adapter.ingest_payload(payload.payload)
     return SignalResponse.model_validate(signal) if signal else None
 
 
