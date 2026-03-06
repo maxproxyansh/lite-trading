@@ -1,44 +1,137 @@
+import { useEffect, useRef } from 'react'
+import { createChart } from 'lightweight-charts'
+import type { IChartApi, Time } from 'lightweight-charts'
+
 import LoadingState from '../components/LoadingState'
 import { useStore } from '../store/useStore'
+
+function EquityCurve({ points }: { points: Array<{ date: string; value: number }> }) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const chartRef = useRef<IChartApi | null>(null)
+
+  useEffect(() => {
+    if (!containerRef.current || !points.length) return
+
+    const chart = createChart(containerRef.current, {
+      layout: { background: { color: '#1a1a2e' }, textColor: '#5e5e76' },
+      grid: { vertLines: { color: '#2a2a44' }, horzLines: { color: '#2a2a44' } },
+      rightPriceScale: { borderColor: '#333350' },
+      timeScale: { borderColor: '#333350' },
+      width: containerRef.current.clientWidth,
+      height: 220,
+    })
+
+    const series = chart.addAreaSeries({
+      lineColor: '#387ed1',
+      topColor: 'rgba(56, 126, 209, 0.25)',
+      bottomColor: 'rgba(56, 126, 209, 0.02)',
+      lineWidth: 2,
+    })
+
+    series.setData(points.map((p) => ({ time: p.date as Time, value: p.value })))
+    chart.timeScale().fitContent()
+    chartRef.current = chart
+
+    const observer = new ResizeObserver(() => {
+      if (containerRef.current) {
+        chart.applyOptions({ width: containerRef.current.clientWidth })
+      }
+    })
+    observer.observe(containerRef.current)
+
+    return () => {
+      observer.disconnect()
+      chart.remove()
+    }
+  }, [points])
+
+  if (!points.length) {
+    return <div className="flex h-[220px] items-center justify-center text-xs text-text-muted">No equity data yet</div>
+  }
+
+  return <div ref={containerRef} />
+}
+
+function PnlTable({ rows }: { rows: Array<{ date: string; pnl: number }> }) {
+  if (!rows.length) {
+    return <div className="py-8 text-center text-xs text-text-muted">No P&amp;L data yet</div>
+  }
+
+  const maxAbs = Math.max(...rows.map((r) => Math.abs(r.pnl)), 1)
+
+  return (
+    <div className="space-y-1">
+      {rows.map((row) => {
+        const positive = row.pnl >= 0
+        const pct = Math.abs(row.pnl) / maxAbs * 100
+        return (
+          <div key={row.date} className="flex items-center gap-3 text-xs">
+            <span className="w-20 shrink-0 tabular-nums text-text-muted">{row.date}</span>
+            <div className="flex-1">
+              <div
+                className={`h-4 rounded-sm ${positive ? 'bg-profit/30' : 'bg-loss/30'}`}
+                style={{ width: `${Math.max(pct, 2)}%` }}
+              />
+            </div>
+            <span className={`w-20 shrink-0 text-right tabular-nums font-medium ${positive ? 'text-profit' : 'text-loss'}`}>
+              {positive ? '+' : ''}{row.pnl.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+            </span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
 
 export default function Analytics() {
   const { analytics, portfolioLoading } = useStore()
 
-  return (
-    <div className="p-4">
-      <div className="mb-4">
-        <h1 className="text-lg font-semibold text-text-primary">Analytics</h1>
-        <p className="text-sm text-text-muted">Portfolio-level execution and equity diagnostics.</p>
-      </div>
+  const equityCurve: Array<{ date: string; value: number }> = Array.isArray(analytics?.equity_curve)
+    ? (analytics.equity_curve as Array<Record<string, unknown>>).map((p) => ({
+        date: String((p as Record<string, unknown>).date ?? (p as Record<string, unknown>).timestamp ?? ''),
+        value: Number((p as Record<string, unknown>).value ?? (p as Record<string, unknown>).equity ?? 0),
+      }))
+    : []
 
-      <LoadingState loading={portfolioLoading} empty={!analytics} emptyText="No analytics available yet.">
-        <div className="mb-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {[
+  const pnlByDay: Array<{ date: string; pnl: number }> = Array.isArray(analytics?.pnl_by_day)
+    ? (analytics.pnl_by_day as Array<Record<string, unknown>>).map((p) => ({
+        date: String((p as Record<string, unknown>).date ?? ''),
+        pnl: Number((p as Record<string, unknown>).pnl ?? (p as Record<string, unknown>).value ?? 0),
+      }))
+    : []
+
+  return (
+    <div className="p-5">
+      <h1 className="mb-4 text-base font-medium text-text-primary">Analytics</h1>
+
+      <LoadingState loading={portfolioLoading} empty={!analytics} emptyText="No analytics available yet">
+        {/* Stat cards */}
+        <div className="mb-5 grid grid-cols-4 gap-3">
+          {([
             ['Total Orders', analytics?.total_orders ?? 0],
-            ['Filled Orders', analytics?.filled_orders ?? 0],
-            ['Win Rate', `${analytics?.win_rate?.toFixed(2) ?? '0.00'}%`],
-            ['Equity', analytics?.total_equity?.toLocaleString('en-IN', { maximumFractionDigits: 2 }) ?? '--'],
-          ].map(([label, value]) => (
-            <div key={label} className="rounded-2xl border border-border-primary bg-bg-secondary p-4">
-              <div className="text-xs uppercase tracking-[0.16em] text-text-muted">{label}</div>
-              <div className="mt-3 text-2xl font-semibold text-text-primary">{value}</div>
+            ['Filled', analytics?.filled_orders ?? 0],
+            ['Win Rate', `${(analytics?.win_rate ?? 0).toFixed(1)}%`],
+            ['Equity', (analytics?.total_equity ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })],
+          ] as const).map(([label, value]) => (
+            <div key={label} className="rounded bg-bg-secondary p-3">
+              <div className="text-[10px] uppercase tracking-wider text-text-muted">{label}</div>
+              <div className="mt-1.5 text-lg font-medium tabular-nums text-text-primary">{value}</div>
             </div>
           ))}
         </div>
 
+        {/* Charts */}
         <div className="grid gap-4 xl:grid-cols-2">
-          <section className="rounded-2xl border border-border-primary bg-bg-secondary p-4">
-            <div className="mb-3 text-sm font-semibold text-text-primary">Equity Curve</div>
-            <div className="h-48 overflow-auto rounded-xl bg-bg-primary p-3">
-              <pre className="text-[11px] text-text-secondary">{JSON.stringify(analytics?.equity_curve ?? [], null, 2)}</pre>
+          <div className="rounded bg-bg-secondary p-3">
+            <div className="mb-2 text-xs font-medium text-text-secondary">Equity Curve</div>
+            <EquityCurve points={equityCurve} />
+          </div>
+          <div className="rounded bg-bg-secondary p-3">
+            <div className="mb-2 text-xs font-medium text-text-secondary">P&amp;L by Day</div>
+            <div className="max-h-[220px] overflow-auto">
+              <PnlTable rows={pnlByDay} />
             </div>
-          </section>
-          <section className="rounded-2xl border border-border-primary bg-bg-secondary p-4">
-            <div className="mb-3 text-sm font-semibold text-text-primary">P&amp;L by Day</div>
-            <div className="h-48 overflow-auto rounded-xl bg-bg-primary p-3">
-              <pre className="text-[11px] text-text-secondary">{JSON.stringify(analytics?.pnl_by_day ?? [], null, 2)}</pre>
-            </div>
-          </section>
+          </div>
         </div>
       </LoadingState>
     </div>

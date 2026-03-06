@@ -22,77 +22,123 @@ export default function OrderTicket() {
   const canSubmit = selectedQuote && (orderType === 'MARKET' || price)
 
   return (
-    <section className="rounded-2xl border border-border-primary bg-bg-secondary p-4">
-      <div className="mb-3">
-        <div className="text-sm font-semibold text-text-primary">Order Ticket</div>
-        <div className="text-[11px] text-text-muted">Single-leg options with market, limit and stop variants</div>
-      </div>
+    <div className="p-3">
+      <div className="mb-2 text-xs font-medium text-text-secondary">Order Ticket</div>
 
-      <div className="mb-3 rounded-xl bg-bg-primary p-3 text-xs text-text-secondary">
+      {/* Contract */}
+      <div className="mb-3 rounded bg-bg-primary px-3 py-2 text-xs">
         {selectedQuote ? (
           <>
-            <div className="mb-1 font-semibold text-text-primary">{selectedQuote.symbol}</div>
-            <div className="grid grid-cols-3 gap-2">
-              <div>Bid <span className="tabular-nums text-text-primary">{selectedQuote.bid?.toFixed(2) ?? '--'}</span></div>
-              <div>LTP <span className="tabular-nums text-text-primary">{selectedQuote.ltp.toFixed(2)}</span></div>
-              <div>Ask <span className="tabular-nums text-text-primary">{selectedQuote.ask?.toFixed(2) ?? '--'}</span></div>
+            <div className="mb-1 font-medium text-text-primary">{selectedQuote.symbol}</div>
+            <div className="flex gap-4 tabular-nums text-text-muted">
+              <span>B {selectedQuote.bid?.toFixed(2) ?? '--'}</span>
+              <span className="text-text-primary">{selectedQuote.ltp.toFixed(2)}</span>
+              <span>A {selectedQuote.ask?.toFixed(2) ?? '--'}</span>
             </div>
           </>
         ) : (
-          <div>Select a contract from Marketwatch or the option chain.</div>
+          <span className="text-text-muted">Select a contract from the chain</span>
         )}
       </div>
 
-      <div className="mb-3 grid grid-cols-2 gap-2">
-        <button onClick={() => setSide('BUY')} className={`rounded-xl px-3 py-2 text-sm font-semibold ${side === 'BUY' ? 'bg-profit text-white' : 'bg-bg-primary text-text-secondary'}`}>BUY</button>
-        <button onClick={() => setSide('SELL')} className={`rounded-xl px-3 py-2 text-sm font-semibold ${side === 'SELL' ? 'bg-loss text-white' : 'bg-bg-primary text-text-secondary'}`}>SELL</button>
+      {/* Side */}
+      <div className="mb-3 grid grid-cols-2 gap-1">
+        <button
+          onClick={() => setSide('BUY')}
+          className={`rounded py-2 text-xs font-semibold transition-colors ${
+            side === 'BUY' ? 'bg-profit text-white' : 'bg-bg-primary text-text-secondary hover:text-text-primary'
+          }`}
+        >
+          BUY
+        </button>
+        <button
+          onClick={() => setSide('SELL')}
+          className={`rounded py-2 text-xs font-semibold transition-colors ${
+            side === 'SELL' ? 'bg-loss text-white' : 'bg-bg-primary text-text-secondary hover:text-text-primary'
+          }`}
+        >
+          SELL
+        </button>
       </div>
 
+      {/* Type + Product */}
       <div className="mb-3 grid grid-cols-2 gap-2">
-        <label className="text-[11px] text-text-muted">
-          Order Type
-          <select value={orderType} onChange={(event) => setOrderType(event.target.value as typeof orderType)} className="mt-1 w-full rounded-xl border border-border-primary bg-bg-primary px-3 py-2 text-sm text-text-primary outline-none">
-            {ORDER_TYPES.map((item) => <option key={item} value={item}>{item}</option>)}
+        <label className="text-[10px] text-text-muted">
+          Type
+          <select
+            value={orderType}
+            onChange={(e) => setOrderType(e.target.value as typeof orderType)}
+            className="mt-0.5 w-full rounded border border-border-primary bg-bg-primary px-2 py-1.5 text-xs text-text-primary outline-none"
+          >
+            {ORDER_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
         </label>
-        <label className="text-[11px] text-text-muted">
+        <label className="text-[10px] text-text-muted">
           Product
-          <select value={product} onChange={(event) => setProduct(event.target.value as typeof product)} className="mt-1 w-full rounded-xl border border-border-primary bg-bg-primary px-3 py-2 text-sm text-text-primary outline-none">
-            {PRODUCTS.map((item) => <option key={item} value={item}>{item}</option>)}
+          <select
+            value={product}
+            onChange={(e) => setProduct(e.target.value as typeof product)}
+            className="mt-0.5 w-full rounded border border-border-primary bg-bg-primary px-2 py-1.5 text-xs text-text-primary outline-none"
+          >
+            {PRODUCTS.map((p) => <option key={p} value={p}>{p}</option>)}
           </select>
         </label>
       </div>
 
+      {/* Lots + Price + Trigger */}
       <div className="mb-3 grid grid-cols-3 gap-2">
-        <label className="text-[11px] text-text-muted">
+        <label className="text-[10px] text-text-muted">
           Lots
-          <input type="number" min={1} max={200} value={lots} onChange={(event) => setLots(Math.max(1, Number(event.target.value) || 1))} className="mt-1 w-full rounded-xl border border-border-primary bg-bg-primary px-3 py-2 text-sm text-text-primary outline-none" />
+          <input
+            type="number"
+            min={1}
+            max={200}
+            value={lots}
+            onChange={(e) => setLots(Math.max(1, Number(e.target.value) || 1))}
+            className="mt-0.5 w-full rounded border border-border-primary bg-bg-primary px-2 py-1.5 text-xs tabular-nums text-text-primary outline-none"
+          />
         </label>
-        <label className="text-[11px] text-text-muted">
+        <label className="text-[10px] text-text-muted">
           Price
-          <input type="number" step="0.05" value={price} onChange={(event) => setPrice(event.target.value)} placeholder={defaultPrice ? defaultPrice.toFixed(2) : '--'} className="mt-1 w-full rounded-xl border border-border-primary bg-bg-primary px-3 py-2 text-sm text-text-primary outline-none" />
+          <input
+            type="number"
+            step="0.05"
+            value={price}
+            onChange={(e) => setPrice(e.target.value)}
+            placeholder={defaultPrice ? defaultPrice.toFixed(2) : '--'}
+            className="mt-0.5 w-full rounded border border-border-primary bg-bg-primary px-2 py-1.5 text-xs tabular-nums text-text-primary outline-none placeholder:text-text-muted"
+          />
         </label>
-        <label className="text-[11px] text-text-muted">
+        <label className="text-[10px] text-text-muted">
           Trigger
-          <input type="number" step="0.05" value={triggerPrice} onChange={(event) => setTriggerPrice(event.target.value)} placeholder="Optional" className="mt-1 w-full rounded-xl border border-border-primary bg-bg-primary px-3 py-2 text-sm text-text-primary outline-none" />
+          <input
+            type="number"
+            step="0.05"
+            value={triggerPrice}
+            onChange={(e) => setTriggerPrice(e.target.value)}
+            placeholder="--"
+            className="mt-0.5 w-full rounded border border-border-primary bg-bg-primary px-2 py-1.5 text-xs tabular-nums text-text-primary outline-none placeholder:text-text-muted"
+          />
         </label>
       </div>
 
-      <div className="mb-4 rounded-xl border border-border-primary bg-bg-primary p-3 text-xs text-text-secondary">
-        <div className="mb-1 flex justify-between">
+      {/* Summary */}
+      <div className="mb-3 space-y-1 border-t border-border-secondary pt-2 text-[11px] text-text-muted">
+        <div className="flex justify-between">
           <span>Portfolio</span>
-          <span className="font-medium text-text-primary uppercase">{selectedPortfolioId}</span>
-        </div>
-        <div className="mb-1 flex justify-between">
-          <span>Signal attached</span>
-          <span className="font-medium text-text-primary">{latestSignal?.id ? 'Yes' : 'No'}</span>
+          <span className="font-medium text-text-primary">{selectedPortfolioId}</span>
         </div>
         <div className="flex justify-between">
-          <span>Est. notional</span>
+          <span>Signal</span>
+          <span className="text-text-primary">{latestSignal?.id ? 'Attached' : 'None'}</span>
+        </div>
+        <div className="flex justify-between">
+          <span>Est. value</span>
           <span className="tabular-nums text-text-primary">{estimatedValue.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
         </div>
       </div>
 
+      {/* Submit */}
       <button
         disabled={!canSubmit || loading || !selectedQuote}
         onClick={async () => {
@@ -115,7 +161,7 @@ export default function OrderTicket() {
               signal_id: latestSignal?.id ?? null,
               idempotency_key: crypto.randomUUID(),
             })
-            addToast('success', `Order ${order.status}: ${order.side} ${order.symbol} x ${order.quantity}`)
+            addToast('success', `${order.status}: ${order.side} ${order.symbol} x ${order.quantity}`)
             setPrice('')
             setTriggerPrice('')
           } catch (error) {
@@ -124,12 +170,12 @@ export default function OrderTicket() {
             setLoading(false)
           }
         }}
-        className={`w-full rounded-xl px-4 py-3 text-sm font-semibold text-white transition ${
-          side === 'BUY' ? 'bg-profit hover:opacity-90' : 'bg-loss hover:opacity-90'
-        } disabled:cursor-not-allowed disabled:opacity-40`}
+        className={`w-full rounded py-2.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-30 ${
+          side === 'BUY' ? 'bg-profit' : 'bg-loss'
+        }`}
       >
-        {loading ? 'Submitting…' : `${side} ${selectedQuote?.option_type ?? 'Option'}`}
+        {loading ? 'Submitting\u2026' : `${side} ${selectedQuote?.option_type ?? 'Option'}`}
       </button>
-    </section>
+    </div>
   )
 }

@@ -3,7 +3,7 @@ import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 
 import ErrorBoundary from './components/ErrorBoundary'
 import Header from './components/Header'
-import Sidebar from './components/Sidebar'
+import MarketWatch from './components/MarketWatch'
 import Toast from './components/Toast'
 import {
   fetchAnalytics,
@@ -35,26 +35,28 @@ function ProtectedLayout() {
     return <Navigate to="/login" replace />
   }
 
-      return (
-      <ErrorBoundary>
-        <div className="min-h-screen bg-bg-primary text-text-primary">
-          <Sidebar />
-          <Header />
-      <main className="min-h-screen pl-14 pt-14">
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/positions" element={<Positions />} />
-          <Route path="/orders" element={<Orders />} />
-          <Route path="/history" element={<History />} />
-          <Route path="/funds" element={<Funds />} />
-          <Route path="/analytics" element={<Analytics />} />
-          <Route path="/settings" element={<Settings />} />
-        </Routes>
+  return (
+    <ErrorBoundary>
+      <div className="flex h-screen flex-col bg-bg-primary text-text-primary">
+        <Header />
+        <div className="flex flex-1 overflow-hidden">
+          <MarketWatch />
+          <main className="flex-1 overflow-auto">
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/positions" element={<Positions />} />
+              <Route path="/orders" element={<Orders />} />
+              <Route path="/history" element={<History />} />
+              <Route path="/funds" element={<Funds />} />
+              <Route path="/analytics" element={<Analytics />} />
+              <Route path="/settings" element={<Settings />} />
+            </Routes>
           </main>
-          <Toast />
         </div>
-      </ErrorBoundary>
-      )
+        <Toast />
+      </div>
+    </ErrorBoundary>
+  )
 }
 
 export default function App() {

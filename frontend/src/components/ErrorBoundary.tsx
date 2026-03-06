@@ -23,8 +23,8 @@ export default class ErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="m-4 rounded-2xl border border-loss/30 bg-loss/10 px-4 py-3 text-sm text-loss">
-          The terminal hit an unexpected UI error. Refresh the page and sign in again.
+        <div className="m-4 rounded border border-loss/30 bg-loss/10 px-4 py-3 text-xs text-loss">
+          Something went wrong. Please refresh the page.
         </div>
       )
     }

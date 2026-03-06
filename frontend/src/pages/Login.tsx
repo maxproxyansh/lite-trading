@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { ShieldCheck } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 import { login } from '../lib/api'
@@ -13,30 +12,24 @@ export default function Login() {
   const [loading, setLoading] = useState(false)
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(255,107,53,0.18),_transparent_28%),linear-gradient(180deg,_#0b0d11,_#15171b_48%,_#0b0d11)] px-4">
-      <div className="w-full max-w-md rounded-3xl border border-border-primary bg-[#111317]/95 p-8 shadow-2xl backdrop-blur">
-        <div className="mb-6 flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-signal text-white">
-            <ShieldCheck size={18} />
-          </div>
-          <div>
-            <div className="text-lg font-semibold text-text-primary">Lite Options Terminal</div>
-            <div className="text-sm text-text-muted">Private options practice desk</div>
-          </div>
-        </div>
-
-        <div className="mb-5 rounded-2xl border border-border-primary bg-bg-primary p-3 text-xs leading-5 text-text-secondary">
-          Broker-style UI, funds, margin, agent API keys and real-time market plumbing. Public signup is disabled.
+    <div className="flex h-screen items-center justify-center bg-bg-primary">
+      <div className="w-full max-w-[360px] px-6">
+        {/* Logo */}
+        <div className="mb-10 flex items-center justify-center gap-3">
+          <svg viewBox="0 0 24 24" className="h-8 w-8 text-signal">
+            <path fill="currentColor" d="M12 2L4 12l8 10 8-10z"/>
+          </svg>
+          <span className="text-xl font-semibold tracking-tight text-text-primary">Lite Options</span>
         </div>
 
         <form
-          className="space-y-4"
-          onSubmit={async (event) => {
-            event.preventDefault()
+          className="space-y-6"
+          onSubmit={async (e) => {
+            e.preventDefault()
             setLoading(true)
             try {
               await login(email, password)
-              addToast('success', 'Signed in successfully')
+              addToast('success', 'Signed in')
               navigate('/')
             } catch (error) {
               addToast('error', error instanceof Error ? error.message : 'Login failed')
@@ -45,18 +38,37 @@ export default function Login() {
             }
           }}
         >
-          <label className="block text-sm text-text-secondary">
-            Email
-            <input value={email} onChange={(event) => setEmail(event.target.value)} className="mt-1 w-full rounded-2xl border border-border-primary bg-bg-primary px-4 py-3 text-text-primary outline-none" />
-          </label>
-          <label className="block text-sm text-text-secondary">
-            Password
-            <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} className="mt-1 w-full rounded-2xl border border-border-primary bg-bg-primary px-4 py-3 text-text-primary outline-none" />
-          </label>
-          <button disabled={loading} className="w-full rounded-2xl bg-signal px-4 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50">
-            {loading ? 'Signing in…' : 'Enter Terminal'}
+          <div>
+            <label className="mb-1.5 block text-xs text-text-muted">Email</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              autoFocus
+              className="w-full border-b-2 border-border-primary bg-transparent py-2 text-sm text-text-primary outline-none transition-colors focus:border-signal"
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs text-text-muted">Password</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full border-b-2 border-border-primary bg-transparent py-2 text-sm text-text-primary outline-none transition-colors focus:border-signal"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={loading || !email || !password}
+            className="mt-2 w-full rounded bg-signal py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+          >
+            {loading ? 'Signing in\u2026' : 'Login'}
           </button>
         </form>
+
+        <p className="mt-8 text-center text-[11px] leading-4 text-text-muted">
+          Paper trading terminal &mdash; not connected to any live broker
+        </p>
       </div>
     </div>
   )

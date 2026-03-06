@@ -9,10 +9,14 @@ type Props = {
 
 export default function LoadingState({ loading, empty, emptyText, children }: Props) {
   if (loading) {
-    return <div className="px-4 py-12 text-center text-text-muted">Loading…</div>
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="h-5 w-5 rounded-full border-2 border-signal border-t-transparent animate-spin" />
+      </div>
+    )
   }
   if (empty) {
-    return <div className="px-4 py-12 text-center text-text-muted">{emptyText}</div>
+    return <div className="py-12 text-center text-xs text-text-muted">{emptyText}</div>
   }
   return <>{children}</>
 }

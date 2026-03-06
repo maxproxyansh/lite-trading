@@ -16,19 +16,19 @@ export default function NiftyChart() {
   useEffect(() => {
     if (!containerRef.current) return
     const chart = createChart(containerRef.current, {
-      layout: { background: { color: '#161616' }, textColor: '#8F98A3' },
-      grid: { vertLines: { color: '#262626' }, horzLines: { color: '#262626' } },
+      layout: { background: { color: '#1a1a2e' }, textColor: '#5e5e76' },
+      grid: { vertLines: { color: '#2a2a44' }, horzLines: { color: '#2a2a44' } },
       crosshair: { mode: 0 },
-      rightPriceScale: { borderColor: '#2E2E2E' },
-      timeScale: { borderColor: '#2E2E2E', timeVisible: true, secondsVisible: false },
+      rightPriceScale: { borderColor: '#333350' },
+      timeScale: { borderColor: '#333350', timeVisible: true, secondsVisible: false },
     })
     const series = chart.addCandlestickSeries({
-      upColor: '#16a34a',
-      downColor: '#dc2626',
-      borderUpColor: '#16a34a',
-      borderDownColor: '#dc2626',
-      wickUpColor: '#16a34a',
-      wickDownColor: '#dc2626',
+      upColor: '#4caf50',
+      downColor: '#e25c4f',
+      borderUpColor: '#4caf50',
+      borderDownColor: '#e25c4f',
+      wickUpColor: '#4caf50',
+      wickDownColor: '#e25c4f',
     })
     chartRef.current = chart
     seriesRef.current = series
@@ -68,36 +68,38 @@ export default function NiftyChart() {
   }, [timeframe])
 
   return (
-    <section className="relative flex h-full flex-col rounded-2xl border border-border-primary bg-bg-secondary">
-      <div className="flex items-center gap-2 border-b border-border-primary px-4 py-3">
-        <div>
-          <div className="text-sm font-semibold text-text-primary">NIFTY 50</div>
-          <div className="text-[11px] text-text-muted">Intraday and daily candles via Dhan</div>
-        </div>
-        <div className="ml-auto flex items-center gap-1 rounded-xl bg-bg-primary p-1">
-          {TIMEFRAMES.map((item) => (
+    <div className="relative flex h-full flex-col bg-bg-primary">
+      {/* Timeframe bar */}
+      <div className="flex items-center gap-1 border-b border-border-secondary px-3 py-1.5">
+        <span className="mr-2 text-xs font-medium text-text-primary">NIFTY 50</span>
+        <div className="flex items-center gap-0.5 rounded bg-bg-secondary p-0.5">
+          {TIMEFRAMES.map((tf) => (
             <button
-              key={item}
+              key={tf}
               onClick={() => {
                 setLoading(true)
-                setTimeframe(item)
+                setTimeframe(tf)
               }}
-              className={`rounded-lg px-3 py-1.5 text-[11px] font-medium ${
-                timeframe === item ? 'bg-signal text-white' : 'text-text-muted hover:text-text-primary'
+              className={`rounded px-2 py-1 text-[11px] font-medium transition-colors ${
+                timeframe === tf
+                  ? 'bg-signal text-white'
+                  : 'text-text-muted hover:text-text-primary'
               }`}
             >
-              {item}
+              {tf}
             </button>
           ))}
         </div>
       </div>
+
+      {/* Chart */}
       <div ref={containerRef} className="relative flex-1">
         {loading && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-bg-secondary/70">
-            <div className="h-8 w-8 rounded-full border-2 border-signal border-t-transparent animate-spin" />
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-bg-primary/80">
+            <div className="h-6 w-6 rounded-full border-2 border-signal border-t-transparent animate-spin" />
           </div>
         )}
       </div>
-    </section>
+    </div>
   )
 }
