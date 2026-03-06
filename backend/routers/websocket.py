@@ -34,10 +34,11 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         token = websocket.query_params.get("token")
         api_key = websocket.query_params.get("api_key")
+        cookie_token = websocket.cookies.get(settings.access_cookie_name)
         authorized = False
-        if token:
+        if token or cookie_token:
             try:
-                payload = decode_access_token(token)
+                payload = decode_access_token(token or cookie_token or "")
                 user = db.query(User).filter(User.id == payload.get("sub"), User.is_active.is_(True)).first()
                 authorized = user is not None
             except Exception:  # noqa: BLE001
@@ -59,7 +60,9 @@ async def websocket_endpoint(websocket: WebSocket):
     connected_clients.add(websocket)
     try:
         while True:
-            await websocket.receive_text()
+            message = await websocket.receive_text()
+            if message == "ping":
+                await websocket.send_text("pong")
     except WebSocketDisconnect:
         connected_clients.discard(websocket)
     finally:

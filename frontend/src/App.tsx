@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 
+import ErrorBoundary from './components/ErrorBoundary'
 import Header from './components/Header'
 import Sidebar from './components/Sidebar'
 import Toast from './components/Toast'
@@ -34,10 +35,11 @@ function ProtectedLayout() {
     return <Navigate to="/login" replace />
   }
 
-  return (
-    <div className="min-h-screen bg-bg-primary text-text-primary">
-      <Sidebar />
-      <Header />
+      return (
+      <ErrorBoundary>
+        <div className="min-h-screen bg-bg-primary text-text-primary">
+          <Sidebar />
+          <Header />
       <main className="min-h-screen pl-14 pt-14">
         <Routes>
           <Route path="/" element={<Dashboard />} />
@@ -48,10 +50,11 @@ function ProtectedLayout() {
           <Route path="/analytics" element={<Analytics />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>
-      </main>
-      <Toast />
-    </div>
-  )
+          </main>
+          <Toast />
+        </div>
+      </ErrorBoundary>
+      )
 }
 
 export default function App() {
@@ -71,6 +74,10 @@ export default function App() {
     setFunds,
     setAnalytics,
     setLatestSignal,
+    setSharedLoading,
+    setPortfolioLoading,
+    setChainLoading,
+    addToast,
   } = useStore()
 
   useEffect(() => {
@@ -106,15 +113,26 @@ export default function App() {
     if (!user) return
     let active = true
     async function loadShared() {
-      const [portfolios, snapshot, signal] = await Promise.all([
-        fetchPortfolios(),
-        fetchSnapshot(),
-        fetchLatestSignal(),
-      ])
-      if (!active) return
-      setPortfolios(portfolios)
-      setSnapshot(snapshot)
-      setLatestSignal(signal)
+      setSharedLoading(true)
+      try {
+        const [portfolios, snapshot, signal] = await Promise.all([
+          fetchPortfolios(),
+          fetchSnapshot(),
+          fetchLatestSignal(),
+        ])
+        if (!active) return
+        setPortfolios(portfolios)
+        setSnapshot(snapshot)
+        setLatestSignal(signal)
+      } catch (error) {
+        if (active) {
+          addToast('error', error instanceof Error ? error.message : 'Failed to load market state')
+        }
+      } finally {
+        if (active) {
+          setSharedLoading(false)
+        }
+      }
     }
     void loadShared()
     const interval = window.setInterval(loadShared, 30000)
@@ -122,23 +140,34 @@ export default function App() {
       active = false
       window.clearInterval(interval)
     }
-  }, [user, setLatestSignal, setPortfolios, setSnapshot])
+  }, [addToast, setLatestSignal, setPortfolios, setSharedLoading, setSnapshot, user])
 
   useEffect(() => {
     if (!user) return
     let active = true
     async function loadPortfolioViews() {
-      const [orders, positions, funds, analytics] = await Promise.all([
-        fetchOrders(selectedPortfolioId),
-        fetchPositions(selectedPortfolioId),
-        fetchFunds(selectedPortfolioId),
-        fetchAnalytics(selectedPortfolioId),
-      ])
-      if (!active) return
-      setOrders(orders)
-      setPositions(positions)
-      setFunds(funds)
-      setAnalytics(analytics)
+      setPortfolioLoading(true)
+      try {
+        const [orders, positions, funds, analytics] = await Promise.all([
+          fetchOrders(selectedPortfolioId),
+          fetchPositions(selectedPortfolioId),
+          fetchFunds(selectedPortfolioId),
+          fetchAnalytics(selectedPortfolioId),
+        ])
+        if (!active) return
+        setOrders(orders)
+        setPositions(positions)
+        setFunds(funds)
+        setAnalytics(analytics)
+      } catch (error) {
+        if (active) {
+          addToast('error', error instanceof Error ? error.message : 'Failed to load portfolio views')
+        }
+      } finally {
+        if (active) {
+          setPortfolioLoading(false)
+        }
+      }
     }
     void loadPortfolioViews()
     const interval = window.setInterval(loadPortfolioViews, 10000)
@@ -146,15 +175,26 @@ export default function App() {
       active = false
       window.clearInterval(interval)
     }
-  }, [user, selectedPortfolioId, setAnalytics, setFunds, setOrders, setPositions])
+  }, [addToast, selectedPortfolioId, setAnalytics, setFunds, setOrders, setPortfolioLoading, setPositions, user])
 
   useEffect(() => {
     if (!user) return
     let active = true
     async function loadChain() {
-      const chain = await fetchOptionChain(selectedExpiry ?? undefined)
-      if (!active) return
-      setChain(chain)
+      setChainLoading(true)
+      try {
+        const chain = await fetchOptionChain(selectedExpiry ?? undefined)
+        if (!active) return
+        setChain(chain)
+      } catch (error) {
+        if (active) {
+          addToast('error', error instanceof Error ? error.message : 'Failed to load option chain')
+        }
+      } finally {
+        if (active) {
+          setChainLoading(false)
+        }
+      }
     }
     void loadChain()
     const interval = window.setInterval(loadChain, 12000)
@@ -162,7 +202,7 @@ export default function App() {
       active = false
       window.clearInterval(interval)
     }
-  }, [user, selectedExpiry, setChain])
+  }, [addToast, selectedExpiry, setChain, setChainLoading, user])
 
   return (
     <Routes>

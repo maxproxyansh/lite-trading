@@ -16,7 +16,7 @@ export default function Settings() {
         <div className="mb-2 text-sm font-semibold text-text-primary">Environment</div>
         <div className="space-y-2 text-sm text-text-secondary">
           <div>Operator role: <span className="text-text-primary">{user?.role ?? '--'}</span></div>
-          <div>Signal source: <span className="text-text-primary">/Users/proxy/trading/auto_trader</span></div>
+          <div>Signal source: <span className="text-text-primary">Configured via server environment</span></div>
           <div>Preferred frontend slug: <span className="text-text-primary">lite-options-terminal</span></div>
           <div>Preferred backend slug: <span className="text-text-primary">lite-options-api</span></div>
         </div>

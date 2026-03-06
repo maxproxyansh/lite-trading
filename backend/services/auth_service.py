@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from config import get_settings
 from models import AgentApiKey, Portfolio, RefreshToken, User
 from schemas import CreateAgentKeyRequest, CreateUserRequest, UserSummary
-from security import hash_password, hash_secret, key_prefix, make_access_token, make_agent_secret, make_refresh_token, verify_password
+from security import hash_password, hash_secret, key_prefix, make_access_token, make_agent_secret, make_csrf_token, make_refresh_token, verify_password
 from services.audit import log_audit
 
 
@@ -80,9 +80,10 @@ def authenticate_user(db: Session, email: str, password: str) -> User:
     return user
 
 
-def issue_tokens(db: Session, user: User) -> tuple[str, int, str]:
+def issue_tokens(db: Session, user: User) -> tuple[str, int, str, str]:
     access_token, expires_in = make_access_token(user.id, user.role)
     refresh_secret, refresh_expires = make_refresh_token()
+    csrf_token = make_csrf_token()
     db.add(
         RefreshToken(
             user_id=user.id,
@@ -91,10 +92,10 @@ def issue_tokens(db: Session, user: User) -> tuple[str, int, str]:
         )
     )
     db.commit()
-    return access_token, expires_in, refresh_secret
+    return access_token, expires_in, refresh_secret, csrf_token
 
 
-def rotate_refresh_token(db: Session, raw_token: str) -> tuple[User, str, int, str]:
+def rotate_refresh_token(db: Session, raw_token: str) -> tuple[User, str, int, str, str]:
     token_hash = hash_secret(raw_token)
     token = db.query(RefreshToken).filter(RefreshToken.token_hash == token_hash).first()
     now = datetime.now(timezone.utc)
@@ -108,6 +109,7 @@ def rotate_refresh_token(db: Session, raw_token: str) -> tuple[User, str, int, s
     token.revoked_at = now
     access_token, expires_in = make_access_token(user.id, user.role)
     next_secret, next_expires = make_refresh_token()
+    csrf_token = make_csrf_token()
     db.add(
         RefreshToken(
             user_id=user.id,
@@ -116,7 +118,7 @@ def rotate_refresh_token(db: Session, raw_token: str) -> tuple[User, str, int, s
         )
     )
     db.commit()
-    return user, access_token, expires_in, next_secret
+    return user, access_token, expires_in, next_secret, csrf_token
 
 
 def revoke_refresh_token(db: Session, raw_token: str | None) -> None:

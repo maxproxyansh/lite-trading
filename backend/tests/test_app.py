@@ -24,6 +24,8 @@ os.environ["LITE_DATABASE_URL"] = f"sqlite:///{TEST_ROOT / 'lite-test.db'}"
 os.environ["SIGNAL_ROOT"] = str(SIGNAL_ROOT)
 os.environ["DHAN_CLIENT_ID"] = ""
 os.environ["DHAN_ACCESS_TOKEN"] = ""
+os.environ["BOOTSTRAP_ADMIN_PASSWORD"] = "lite-admin-123"
+os.environ["BOOTSTRAP_AGENT_KEY"] = "lite-agent-dev-key"
 
 from database import Base, SessionLocal, engine  # noqa: E402
 from main import app  # noqa: E402

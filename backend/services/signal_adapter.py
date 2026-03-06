@@ -80,12 +80,14 @@ def normalize_signal_payload(data: dict[str, Any]) -> dict[str, Any]:
 
     target_valid = bool(target_price and entry_high and target_price > entry_high)
     stop_valid = bool(stop_loss and entry_low and 0 < stop_loss < entry_low)
+    has_risk_levels = target_price is not None or stop_loss is not None
     actionable = bool(
         trade_text
         and option_type in {"CE", "PE"}
         and strike
         and data.get("expiry")
         and score >= settings.signal_min_confidence
+        and (not has_risk_levels or (target_valid and stop_valid))
     )
 
     timestamp = data.get("timestamp") or data.get("generated_at")

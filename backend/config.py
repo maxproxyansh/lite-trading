@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from secrets import token_urlsafe
 from typing import Literal
 
 from dotenv import load_dotenv
@@ -20,16 +21,19 @@ class Settings(BaseSettings):
     app_env: Literal["development", "staging", "production"] = "development"
     api_prefix: str = "/api/v1"
     frontend_origin: str = "http://localhost:5173"
-    frontend_origin_regex: str | None = r"^https://lite-options-terminal(?:-[a-z0-9-]+)?\.vercel\.app$"
+    frontend_origin_regex: str | None = None
     database_url: str = Field(default=f"sqlite:///{ROOT_DIR / 'data' / 'lite.db'}", alias="LITE_DATABASE_URL")
-    jwt_secret: str = "lite-dev-secret"
+    jwt_secret: str = Field(default_factory=lambda: token_urlsafe(48))
     jwt_algorithm: str = "HS256"
     access_token_minutes: int = 15
     refresh_token_days: int = 30
+    access_cookie_name: str = "lite_access"
     refresh_cookie_name: str = "lite_refresh"
+    csrf_cookie_name: str = "lite_csrf"
+    csrf_header_name: str = "X-CSRF-Token"
     refresh_cookie_secure: bool = False
     refresh_cookie_samesite: Literal["lax", "strict", "none"] = "lax"
-    signal_root: str = "/Users/proxy/trading/auto_trader"
+    signal_root: str = str(ROOT_DIR / "signals")
     auto_execute_signals: bool = False
     signal_min_confidence: float = 60.0
     market_poll_seconds: int = 5
@@ -38,8 +42,8 @@ class Settings(BaseSettings):
     dhan_client_id: str | None = Field(default=None, alias="DHAN_CLIENT_ID")
     dhan_access_token: str | None = Field(default=None, alias="DHAN_ACCESS_TOKEN")
     bootstrap_admin_email: str = "admin@lite.trade"
-    bootstrap_admin_password: str = "lite-admin-123"
-    bootstrap_agent_key: str = "lite-agent-dev-key"
+    bootstrap_admin_password: str = Field(default_factory=lambda: token_urlsafe(18))
+    bootstrap_agent_key: str = Field(default_factory=lambda: f"lite_{token_urlsafe(24)}")
     bootstrap_agent_name: str = "default-agent"
     default_frontend_slug: str = "lite-options-terminal"
     default_backend_slug: str = "lite-options-api"

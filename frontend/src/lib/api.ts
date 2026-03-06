@@ -22,6 +22,18 @@ export type AgentKeyResponse = components['schemas']['AgentKeyResponse']
 export type CreateUserPayload = components['schemas']['CreateUserRequest']
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
+const REQUEST_TIMEOUT_MS = 15000
+
+export class ApiError extends Error {
+  status: number
+  kind: 'network' | 'auth' | 'server'
+
+  constructor(message: string, status: number, kind: ApiError['kind']) {
+    super(message)
+    this.status = status
+    this.kind = kind
+  }
+}
 
 function getAccessToken() {
   return useStore.getState().accessToken
@@ -31,21 +43,45 @@ function setSession(token: string | null, user: UserSummary | null) {
   useStore.getState().setSession(token, user)
 }
 
+function readCookie(name: string) {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const match = document.cookie.match(new RegExp(`(?:^|; )${escaped}=([^;]*)`))
+  return match ? decodeURIComponent(match[1]) : null
+}
+
 async function rawFetch<T>(path: string, init: RequestInit = {}, retry = true): Promise<T> {
   const headers = new Headers(init.headers)
   const token = getAccessToken()
   if (token) {
     headers.set('Authorization', `Bearer ${token}`)
   }
+  const csrfToken = readCookie('lite_csrf')
+  if (csrfToken && !headers.has('X-CSRF-Token') && (init.method ?? 'GET').toUpperCase() !== 'GET') {
+    headers.set('X-CSRF-Token', csrfToken)
+  }
   if (!(init.body instanceof FormData) && !headers.has('Content-Type') && init.body) {
     headers.set('Content-Type', 'application/json')
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...init,
-    headers,
-    credentials: 'include',
-  })
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  let response: Response
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      ...init,
+      headers,
+      credentials: 'include',
+      signal: controller.signal,
+    })
+  } catch (error) {
+    window.clearTimeout(timer)
+    throw new ApiError(
+      error instanceof DOMException && error.name === 'AbortError' ? 'Request timed out' : 'Network error',
+      0,
+      'network',
+    )
+  }
+  window.clearTimeout(timer)
 
   if (response.status === 401 && retry && !path.includes('/auth/')) {
     const refreshed = await refreshSession()
@@ -56,7 +92,11 @@ async function rawFetch<T>(path: string, init: RequestInit = {}, retry = true): 
 
   if (!response.ok) {
     const errorText = await response.text()
-    throw new Error(errorText || response.statusText)
+    throw new ApiError(
+      errorText || response.statusText,
+      response.status,
+      response.status === 401 ? 'auth' : response.status >= 500 ? 'server' : 'network',
+    )
   }
 
   if (response.status === 204) {

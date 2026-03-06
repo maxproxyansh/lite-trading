@@ -1,7 +1,8 @@
+import LoadingState from '../components/LoadingState'
 import { useStore } from '../store/useStore'
 
 export default function Orders() {
-  const { orders } = useStore()
+  const { orders, portfolioLoading } = useStore()
 
   return (
     <div className="p-4">
@@ -24,19 +25,27 @@ export default function Orders() {
             </tr>
           </thead>
           <tbody>
-            {orders.length === 0 ? (
-              <tr><td className="px-4 py-12 text-center text-text-muted" colSpan={7}>No orders yet.</td></tr>
-            ) : orders.map((order) => (
-              <tr key={order.id} className="border-t border-border-primary/50">
-                <td className="px-4 py-3 text-text-secondary">{new Date(order.requested_at).toLocaleString('en-IN')}</td>
-                <td className="px-4 py-3 text-text-primary">{order.symbol}</td>
-                <td className={`px-4 py-3 font-medium ${order.side === 'BUY' ? 'text-profit' : 'text-loss'}`}>{order.side}</td>
-                <td className="px-4 py-3 text-text-primary">{order.order_type}</td>
-                <td className="px-4 py-3 text-right tabular-nums text-text-primary">{order.quantity}</td>
-                <td className="px-4 py-3 text-right tabular-nums text-text-primary">{(order.average_price ?? order.price ?? 0).toFixed(2)}</td>
-                <td className="px-4 py-3 text-right text-text-primary">{order.status}</td>
-              </tr>
-            ))}
+            <tr>
+              <td colSpan={7} className="p-0">
+                <LoadingState loading={portfolioLoading} empty={orders.length === 0} emptyText="No orders yet.">
+                  <table className="w-full text-sm">
+                    <tbody>
+                      {orders.map((order) => (
+                        <tr key={order.id} className="border-t border-border-primary/50">
+                          <td className="px-4 py-3 text-text-secondary">{new Date(order.requested_at).toLocaleString('en-IN')}</td>
+                          <td className="px-4 py-3 text-text-primary">{order.symbol}</td>
+                          <td className={`px-4 py-3 font-medium ${order.side === 'BUY' ? 'text-profit' : 'text-loss'}`}>{order.side}</td>
+                          <td className="px-4 py-3 text-text-primary">{order.order_type}</td>
+                          <td className="px-4 py-3 text-right tabular-nums text-text-primary">{order.quantity}</td>
+                          <td className="px-4 py-3 text-right tabular-nums text-text-primary">{(order.average_price ?? order.price ?? 0).toFixed(2)}</td>
+                          <td className="px-4 py-3 text-right text-text-primary">{order.status}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </LoadingState>
+              </td>
+            </tr>
           </tbody>
         </table>
       </div>

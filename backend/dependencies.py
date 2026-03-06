@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Callable
 
-from fastapi import Cookie, Depends, Header, HTTPException, status
+from fastapi import Cookie, Depends, Header, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from config import get_settings
@@ -16,12 +16,26 @@ settings = get_settings()
 
 
 def get_current_user(
+    request: Request,
     authorization: str | None = Header(default=None),
+    access_cookie: str | None = Cookie(default=None, alias=settings.access_cookie_name),
+    csrf_cookie: str | None = Cookie(default=None, alias=settings.csrf_cookie_name),
+    csrf_header: str | None = Header(default=None, alias=settings.csrf_header_name),
     db: Session = Depends(get_db),
 ) -> User:
-    if not authorization or not authorization.lower().startswith("bearer "):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
-    token = authorization.split(" ", 1)[1].strip()
+    using_cookie_auth = False
+    if authorization and authorization.lower().startswith("bearer "):
+        token = authorization.split(" ", 1)[1].strip()
+    elif access_cookie:
+        token = access_cookie
+        using_cookie_auth = True
+    else:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing access token")
+
+    if using_cookie_auth and request.method.upper() not in {"GET", "HEAD", "OPTIONS"}:
+        if not csrf_cookie or not csrf_header or csrf_cookie != csrf_header:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="CSRF validation failed")
+
     try:
         payload = decode_access_token(token)
     except Exception as exc:  # noqa: BLE001

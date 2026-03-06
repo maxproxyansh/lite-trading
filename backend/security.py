@@ -10,7 +10,7 @@ from passlib.context import CryptContext
 from config import get_settings
 
 
-pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
+pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 settings = get_settings()
 
 
@@ -45,6 +45,10 @@ def make_refresh_token() -> tuple[str, datetime]:
     raw = secrets.token_urlsafe(48)
     expires = utcnow() + timedelta(days=settings.refresh_token_days)
     return raw, expires
+
+
+def make_csrf_token() -> str:
+    return secrets.token_urlsafe(32)
 
 
 def make_agent_secret() -> str:

@@ -737,7 +737,7 @@ Messages sent from server:
 
 ## 7. Data Models & Database Schema
 
-Using SQLAlchemy with SQLite. DB file: `/Users/proxy/trading/niftydesk/data/niftydesk.db`
+Using SQLAlchemy with SQLite. DB file: `/Users/proxy/trading/lite/data/lite.db`
 
 ### accounts table
 ```sql
@@ -909,9 +909,9 @@ Tasks:
 - [ ] Implement `GET /api/signals/latest`
 - [ ] Implement `GET /api/signals` list endpoint
 - [ ] Add signal ingestion: either file-watch on signal engine output or signal engine calls `POST /api/signals`
-- [ ] Modify signal engine (`/Users/proxy/trading/nifty_signals/main.py`):
-  - Add `niftydesk_client.py` module
-  - After signal generated, if `NIFTYDESK_AUTO_TRADE=true` and `confidence >= NIFTYDESK_MIN_CONFIDENCE`, call `POST /api/trade` with `account_id=agent`
+- [ ] Modify signal engine (`/Users/proxy/trading/auto_trader/main.py`):
+  - Add `lite_client.py` module
+  - After signal generated, if `LITE_AUTO_TRADE=true` and `confidence >= LITE_MIN_CONFIDENCE`, call `POST /api/trade` with `account_id=agent`
 - [ ] Show latest signal in TradePanel signal box (polling or WS push)
 - [ ] Show "Agent" account in UI header with live balance
 
@@ -937,25 +937,25 @@ Deliverable: Complete, polished, production-ready Lite
 
 ## 9. Environment Variables
 
-Backend `.env` (at `/Users/proxy/trading/niftydesk/backend/.env`):
+Backend `.env` (at `/Users/proxy/trading/lite/backend/.env`):
 ```bash
 # Dhan API (already configured for signal engine)
 DHAN_CLIENT_ID=your_client_id
 DHAN_ACCESS_TOKEN=your_access_token
 
 # Lite
-NIFTYDESK_AGENT_KEY=niftydesk-agent-secret-2026   # API key for agent access
-NIFTYDESK_DB_PATH=/Users/proxy/trading/niftydesk/data/niftydesk.db
-NIFTYDESK_HOST=0.0.0.0
-NIFTYDESK_PORT=8000
+LITE_AGENT_KEY=lite-agent-secret-2026   # API key for agent access
+LITE_DB_PATH=/Users/proxy/trading/lite/data/lite.db
+LITE_HOST=0.0.0.0
+LITE_PORT=8000
 ```
 
-Signal Engine additions (to `/Users/proxy/trading/nifty_signals/.env`):
+Signal Engine additions (to `/Users/proxy/trading/auto_trader/.env`):
 ```bash
-NIFTYDESK_URL=http://localhost:8000
-NIFTYDESK_API_KEY=niftydesk-agent-secret-2026
-NIFTYDESK_AUTO_TRADE=true
-NIFTYDESK_MIN_CONFIDENCE=60
+LITE_URL=http://localhost:8000
+LITE_API_KEY=lite-agent-secret-2026
+LITE_AUTO_TRADE=true
+LITE_MIN_CONFIDENCE=60
 ```
 
 ---
@@ -963,11 +963,11 @@ NIFTYDESK_MIN_CONFIDENCE=60
 ## 10. Directory Structure
 
 ```
-/Users/proxy/trading/niftydesk/
+/Users/proxy/trading/lite/
 ├── PLAN.md                         # This document
 ├── README.md                       # Setup + run instructions
 ├── data/
-│   └── niftydesk.db               # SQLite database (auto-created)
+│   └── lite.db                    # SQLite database (auto-created)
 │
 ├── backend/
 │   ├── .env
@@ -1069,7 +1069,7 @@ NIFTYDESK_MIN_CONFIDENCE=60
 
 ## Implementation Notes for Codex
 
-1. **Start with Phase 1** (static UI). Run `npm create vite@latest frontend -- --template react-ts` in the niftydesk directory.
+1. **Start with Phase 1** (static UI). Run `npm create vite@latest frontend -- --template react-ts` in the lite directory.
 
 2. **Dhan credentials** are already configured in `/Users/proxy/trading/nifty_signals/.env`. Copy them to backend `.env`.
 

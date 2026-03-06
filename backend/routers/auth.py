@@ -27,6 +27,28 @@ def _set_refresh_cookie(response: Response, refresh_token: str) -> None:
     )
 
 
+def _set_access_cookie(response: Response, access_token: str, expires_in: int) -> None:
+    response.set_cookie(
+        key=settings.access_cookie_name,
+        value=access_token,
+        httponly=True,
+        secure=settings.refresh_cookie_secure,
+        samesite=settings.refresh_cookie_samesite,
+        max_age=expires_in,
+    )
+
+
+def _set_csrf_cookie(response: Response, csrf_token: str, expires_in: int) -> None:
+    response.set_cookie(
+        key=settings.csrf_cookie_name,
+        value=csrf_token,
+        httponly=False,
+        secure=settings.refresh_cookie_secure,
+        samesite=settings.refresh_cookie_samesite,
+        max_age=expires_in,
+    )
+
+
 @router.post("/login", response_model=TokenEnvelope)
 def login(
     payload: LoginRequest,
@@ -35,8 +57,10 @@ def login(
     _: None = Depends(rate_limit("auth:login", 10, 60)),
 ):
     user = authenticate_user(db, payload.email, payload.password)
-    access_token, expires_in, refresh_token = issue_tokens(db, user)
+    access_token, expires_in, refresh_token, csrf_token = issue_tokens(db, user)
+    _set_access_cookie(response, access_token, expires_in)
     _set_refresh_cookie(response, refresh_token)
+    _set_csrf_cookie(response, csrf_token, expires_in)
     return TokenEnvelope(access_token=access_token, expires_in=expires_in, user=UserSummary.model_validate(user))
 
 
@@ -47,8 +71,10 @@ def refresh(
     db: Session = Depends(get_db),
     _: None = Depends(rate_limit("auth:refresh", 30, 60)),
 ):
-    user, access_token, expires_in, next_refresh = rotate_refresh_token(db, refresh_token)
+    user, access_token, expires_in, next_refresh, csrf_token = rotate_refresh_token(db, refresh_token)
+    _set_access_cookie(response, access_token, expires_in)
     _set_refresh_cookie(response, next_refresh)
+    _set_csrf_cookie(response, csrf_token, expires_in)
     return TokenEnvelope(access_token=access_token, expires_in=expires_in, user=UserSummary.model_validate(user))
 
 
@@ -60,7 +86,9 @@ def logout(
     _: None = Depends(rate_limit("auth:logout", 30, 60)),
 ):
     revoke_refresh_token(db, refresh_token)
+    response.delete_cookie(settings.access_cookie_name)
     response.delete_cookie(settings.refresh_cookie_name)
+    response.delete_cookie(settings.csrf_cookie_name)
     return {"success": True}
 
 

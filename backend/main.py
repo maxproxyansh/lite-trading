@@ -4,8 +4,9 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 
 from config import get_settings
 from database import SessionLocal, init_db
@@ -59,8 +60,18 @@ app.add_middleware(
     allow_origin_regex=settings.frontend_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["Authorization", "Content-Type", settings.csrf_header_name, "X-API-Key"],
 )
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response: Response = await call_next(request)
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    return response
 
 for router in (auth, admin, market, portfolios, orders, positions, funds, analytics, signals, agent, websocket):
     app.include_router(router)

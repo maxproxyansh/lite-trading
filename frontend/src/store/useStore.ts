@@ -24,6 +24,9 @@ interface Toast {
 interface AppState {
   accessToken: string | null
   user: UserSummary | null
+  sharedLoading: boolean
+  portfolioLoading: boolean
+  chainLoading: boolean
   wsStatus: 'connected' | 'connecting' | 'disconnected'
   snapshot: MarketSnapshot | null
   chain: OptionChainResponse | null
@@ -38,6 +41,9 @@ interface AppState {
   latestSignal: SignalResponse | null
   toasts: Toast[]
   setSession: (token: string | null, user: UserSummary | null) => void
+  setSharedLoading: (loading: boolean) => void
+  setPortfolioLoading: (loading: boolean) => void
+  setChainLoading: (loading: boolean) => void
   setWsStatus: (status: AppState['wsStatus']) => void
   setSnapshot: (snapshot: MarketSnapshot | null) => void
   setChain: (chain: OptionChainResponse | null) => void
@@ -56,21 +62,12 @@ interface AppState {
   removeToast: (id: string) => void
 }
 
-const ACCESS_TOKEN_KEY = 'lite-access-token'
-const USER_KEY = 'lite-user'
-
-function readStoredUser(): UserSummary | null {
-  try {
-    const raw = localStorage.getItem(USER_KEY)
-    return raw ? JSON.parse(raw) as UserSummary : null
-  } catch {
-    return null
-  }
-}
-
 export const useStore = create<AppState>((set) => ({
-  accessToken: localStorage.getItem(ACCESS_TOKEN_KEY),
-  user: readStoredUser(),
+  accessToken: null,
+  user: null,
+  sharedLoading: false,
+  portfolioLoading: false,
+  chainLoading: false,
   wsStatus: 'disconnected',
   snapshot: null,
   chain: null,
@@ -84,19 +81,10 @@ export const useStore = create<AppState>((set) => ({
   analytics: null,
   latestSignal: null,
   toasts: [],
-  setSession: (token, user) => {
-    if (token) {
-      localStorage.setItem(ACCESS_TOKEN_KEY, token)
-    } else {
-      localStorage.removeItem(ACCESS_TOKEN_KEY)
-    }
-    if (user) {
-      localStorage.setItem(USER_KEY, JSON.stringify(user))
-    } else {
-      localStorage.removeItem(USER_KEY)
-    }
-    set({ accessToken: token, user })
-  },
+  setSession: (token, user) => set({ accessToken: token, user }),
+  setSharedLoading: (sharedLoading) => set({ sharedLoading }),
+  setPortfolioLoading: (portfolioLoading) => set({ portfolioLoading }),
+  setChainLoading: (chainLoading) => set({ chainLoading }),
   setWsStatus: (wsStatus) => set({ wsStatus }),
   setSnapshot: (snapshot) => set((state) => ({
     snapshot,
