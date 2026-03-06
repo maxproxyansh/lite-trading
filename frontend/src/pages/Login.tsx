@@ -7,8 +7,8 @@ import { useStore } from '../store/useStore'
 export default function Login() {
   const navigate = useNavigate()
   const { addToast } = useStore()
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  const [email, setEmail] = useState('admin@lite.trade')
+  const [password, setPassword] = useState('admin123')
   const [loading, setLoading] = useState(false)
 
   return (
@@ -66,9 +66,10 @@ export default function Login() {
           </button>
         </form>
 
-        <p className="mt-8 text-center text-[11px] leading-4 text-text-muted">
-          Paper trading terminal &mdash; not connected to any live broker
-        </p>
+        <div className="mt-8 rounded border border-border-secondary bg-bg-secondary/50 px-4 py-3 text-center text-[11px] leading-5 text-text-muted">
+          <span className="text-text-secondary">admin@lite.trade</span> / <span className="text-text-secondary">admin123</span>
+          <br />Paper trading terminal &mdash; not connected to any live broker
+        </div>
       </div>
     </div>
   )

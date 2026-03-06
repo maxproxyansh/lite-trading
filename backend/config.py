@@ -42,11 +42,11 @@ class Settings(BaseSettings):
     dhan_client_id: str | None = Field(default=None, alias="DHAN_CLIENT_ID")
     dhan_access_token: str | None = Field(default=None, alias="DHAN_ACCESS_TOKEN")
     bootstrap_admin_email: str = "admin@lite.trade"
-    bootstrap_admin_password: str = Field(default_factory=lambda: token_urlsafe(18))
-    bootstrap_agent_key: str = Field(default_factory=lambda: f"lite_{token_urlsafe(24)}")
+    bootstrap_admin_password: str = "admin123"
+    bootstrap_agent_key: str = "lite_agent_default_key"
     bootstrap_agent_name: str = "default-agent"
-    default_frontend_slug: str = "lite-options-terminal"
-    default_backend_slug: str = "lite-options-api"
+    default_frontend_slug: str = "litetrade"
+    default_backend_slug: str = "litetrade-api"
 
     @property
     def signal_root_path(self) -> Path:
