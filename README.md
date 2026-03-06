@@ -48,14 +48,16 @@ Lite is a private, options-only paper-trading terminal built to feel broker-grad
 
 ### Current hosted endpoints
 
-- Frontend: [lite-options-terminal.vercel.app](https://lite-options-terminal.vercel.app)
+- Frontend: [litetrade.vercel.app](https://litetrade.vercel.app)
+- Frontend fallback: [lite-options-terminal.vercel.app](https://lite-options-terminal.vercel.app)
 - Backend: [lite-options-api-production.up.railway.app](https://lite-options-api-production.up.railway.app)
 
 ### Required deploy-time environment
 
 - `APP_ENV=production`
 - `LITE_DATABASE_URL` from Railway PostgreSQL
-- `FRONTEND_ORIGIN=https://lite-options-terminal.vercel.app`
+- `FRONTEND_ORIGIN=https://litetrade.vercel.app`
+- `FRONTEND_ORIGIN_REGEX=^https://(litetrade|lite-options-terminal)(-[a-z0-9-]+)?\.vercel\.app$`
 - `REFRESH_COOKIE_SECURE=true`
 - `REFRESH_COOKIE_SAMESITE=none`
 - `JWT_SECRET`

@@ -8,7 +8,9 @@ This document is the deployment runbook for the Lite backend on Railway.
 - Railway web service: `lite-options-api`
 - Railway Postgres: managed PostgreSQL inside the same project
 - Public backend URL: `https://lite-options-api-production.up.railway.app`
-- Public frontend URL: `https://lite-options-terminal.vercel.app`
+- Public frontend URLs:
+  - `https://litetrade.vercel.app`
+  - `https://lite-options-terminal.vercel.app`
 
 ## Backend source layout
 
@@ -32,20 +34,28 @@ If you prefer a CLI workflow, install Railway CLI:
 npm install -g @railway/cli
 ```
 
-Then authenticate:
+For interactive auth:
 
 ```bash
 railway login
+```
+
+For non-interactive auth on this machine, Railway CLI expects `RAILWAY_API_TOKEN`, not `RAILWAY_TOKEN`.
+
+```bash
+export RAILWAY_API_TOKEN="<railway account token>"
+railway whoami
 ```
 
 Useful commands:
 
 ```bash
 railway whoami
-railway link
+railway project link
 railway status
-railway variables
+railway variable list
 railway up
+railway redeploy
 ```
 
 ## Required environment variables
@@ -55,9 +65,10 @@ Set these on the Railway backend service:
 - `APP_ENV=production`
 - `LITE_DATABASE_URL`
   Use the Railway Postgres connection string.
-- `FRONTEND_ORIGIN=https://lite-options-terminal.vercel.app`
+- `FRONTEND_ORIGIN=https://litetrade.vercel.app`
 - `FRONTEND_ORIGIN_REGEX`
-  Optional. Keep unset unless you explicitly need preview-domain regex support.
+  Set this if you want both production and preview Vercel domains to work:
+  `^https://(litetrade|lite-options-terminal)(-[a-z0-9-]+)?\.vercel\.app$`
 - `REFRESH_COOKIE_SECURE=true`
 - `REFRESH_COOKIE_SAMESITE=none`
 - `JWT_SECRET`
@@ -95,10 +106,14 @@ Then redeploy the frontend.
 
 ### CLI path
 
-After `railway login` and `railway link`:
+After `railway login` or exporting `RAILWAY_API_TOKEN`:
 
 ```bash
 cd backend
+railway project link \
+  -p fed5f197-2182-44f5-b742-335c243e15ee \
+  -e d09e621f-fb95-4096-8468-b9fa15a195bb \
+  -s 5689451f-4d26-40a3-9a05-5e23db670113
 railway up
 ```
 
@@ -106,6 +121,17 @@ Or, if the service is already linked and you only changed environment values:
 
 ```bash
 railway redeploy
+```
+
+To update CORS from the CLI:
+
+```bash
+railway variable set \
+  FRONTEND_ORIGIN=https://litetrade.vercel.app \
+  FRONTEND_ORIGIN_REGEX='^https://(litetrade|lite-options-terminal)(-[a-z0-9-]+)?\.vercel\.app$' \
+  --service 5689451f-4d26-40a3-9a05-5e23db670113 \
+  --environment d09e621f-fb95-4096-8468-b9fa15a195bb
+railway redeploy -s 5689451f-4d26-40a3-9a05-5e23db670113 -y
 ```
 
 ### What to verify after deploy
