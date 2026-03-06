@@ -24,6 +24,30 @@ This document is the deployment runbook for the Lite backend on Railway.
 4. Set the backend root directory to `backend`.
 5. Ensure Railway uses the Nixpacks config from [backend/nixpacks.toml](/Users/proxy/trading/lite/backend/nixpacks.toml).
 
+## Railway CLI
+
+If you prefer a CLI workflow, install Railway CLI:
+
+```bash
+npm install -g @railway/cli
+```
+
+Then authenticate:
+
+```bash
+railway login
+```
+
+Useful commands:
+
+```bash
+railway whoami
+railway link
+railway status
+railway variables
+railway up
+```
+
 ## Required environment variables
 
 Set these on the Railway backend service:
@@ -68,6 +92,21 @@ Then redeploy the frontend.
 2. In Railway, open the `lite-options-api` service.
 3. Trigger a deploy for the target commit.
 4. Wait for deployment status `SUCCESS`.
+
+### CLI path
+
+After `railway login` and `railway link`:
+
+```bash
+cd backend
+railway up
+```
+
+Or, if the service is already linked and you only changed environment values:
+
+```bash
+railway redeploy
+```
 
 ### What to verify after deploy
 
