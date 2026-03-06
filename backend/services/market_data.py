@@ -270,10 +270,32 @@ class MarketDataService:
         }
 
     def _map_option_quote(self, payload: dict[str, Any], expiry: str, strike: int, option_type: str) -> dict[str, Any]:
-        best_bid = payload.get("best_bid_price") or payload.get("bid") or payload.get("bestBidPrice")
-        best_ask = payload.get("best_ask_price") or payload.get("ask") or payload.get("bestAskPrice")
-        bid_qty = payload.get("best_bid_qty") or payload.get("bestBidQty")
-        ask_qty = payload.get("best_ask_qty") or payload.get("bestAskQty")
+        best_bid = (
+            payload.get("best_bid_price")
+            or payload.get("top_bid_price")
+            or payload.get("bid")
+            or payload.get("bestBidPrice")
+            or payload.get("topBidPrice")
+        )
+        best_ask = (
+            payload.get("best_ask_price")
+            or payload.get("top_ask_price")
+            or payload.get("ask")
+            or payload.get("bestAskPrice")
+            or payload.get("topAskPrice")
+        )
+        bid_qty = (
+            payload.get("best_bid_qty")
+            or payload.get("top_bid_quantity")
+            or payload.get("bestBidQty")
+            or payload.get("topBidQuantity")
+        )
+        ask_qty = (
+            payload.get("best_ask_qty")
+            or payload.get("top_ask_quantity")
+            or payload.get("bestAskQty")
+            or payload.get("topAskQuantity")
+        )
         greeks = payload.get("greeks", {}) or {}
         symbol = self.resolve_symbol(expiry=expiry, strike=strike, option_type=option_type)
         return {

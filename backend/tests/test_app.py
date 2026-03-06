@@ -230,3 +230,26 @@ def test_websocket_requires_auth_and_streams_events(client: TestClient) -> None:
         message = websocket.receive_json()
         assert message["type"] == "market.snapshot"
         assert message["payload"]["spot"] == 22510
+
+
+def test_maps_top_of_book_fields_from_dhan_payload() -> None:
+    quote = market_data_service._map_option_quote(
+        {
+            "security_id": 12345,
+            "last_price": 112.5,
+            "top_bid_price": 112.2,
+            "top_ask_price": 112.8,
+            "top_bid_quantity": 500,
+            "top_ask_quantity": 450,
+            "oi": 100000,
+            "volume": 25000,
+        },
+        "2026-03-12",
+        22500,
+        "CE",
+    )
+
+    assert quote["bid"] == 112.2
+    assert quote["ask"] == 112.8
+    assert quote["bid_qty"] == 500
+    assert quote["ask_qty"] == 450
