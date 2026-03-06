@@ -40,6 +40,9 @@ def ensure_bootstrap_state(db: Session) -> None:
             is_active=True,
         )
         db.add(admin)
+    elif not verify_password(settings.bootstrap_admin_password, admin.password_hash):
+        admin.password_hash = hash_password(settings.bootstrap_admin_password)
+        admin.is_active = True
 
     for portfolio_id, name in (("manual", "Manual Trader"), ("agent", "Agent Trader")):
         if not db.query(Portfolio).filter(Portfolio.id == portfolio_id).first():
