@@ -8,8 +8,8 @@ import { useStore } from '../store/useStore'
 export default function Login() {
   const navigate = useNavigate()
   const { addToast } = useStore()
-  const [email, setEmail] = useState('admin@lite.trade')
-  const [password, setPassword] = useState('lite-admin-123')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
 
   return (
