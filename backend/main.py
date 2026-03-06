@@ -38,6 +38,7 @@ async def lifespan(app: FastAPI):
     db = SessionLocal()
     try:
         ensure_bootstrap_state(db)
+        logger.info("Bootstrap admin: %s", settings.bootstrap_admin_email)
     finally:
         db.close()
 
@@ -80,3 +81,8 @@ for router in (auth, admin, market, portfolios, orders, positions, funds, analyt
 @app.get("/", response_model=HealthResponse)
 def root():
     return HealthResponse(status="ok", app=settings.app_name, environment=settings.app_env)
+
+
+@app.get("/version")
+def version():
+    return {"version": "2.1.0", "cors_regex": settings.frontend_origin_regex, "origin": settings.frontend_origin}

@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     app_env: Literal["development", "staging", "production"] = "development"
     api_prefix: str = "/api/v1"
     frontend_origin: str = "http://localhost:5173"
-    frontend_origin_regex: str | None = None
+    frontend_origin_regex: str | None = r"^https://(litetrade|lite-options-terminal)(-[a-z0-9-]+)?\.vercel\.app$"
     database_url: str = Field(default=f"sqlite:///{ROOT_DIR / 'data' / 'lite.db'}", alias="LITE_DATABASE_URL")
     jwt_secret: str = Field(default_factory=lambda: token_urlsafe(48))
     jwt_algorithm: str = "HS256"
