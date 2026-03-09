@@ -63,13 +63,13 @@ export default function OptionsChain() {
         <table className="w-full table-fixed text-[12px] tabular-nums">
           <thead className="sticky top-0 z-10 bg-bg-secondary text-[11px] text-text-muted">
             <tr>
-              <th className="w-[15%] px-2 py-1 text-right">OI(L)</th>
-              <th className="w-[12%] px-2 py-1 text-right">IV%</th>
-              <th className="w-[12%] px-2 py-1 text-right">LTP</th>
-              <th className="w-[14%] px-1 py-1 text-center text-text-muted">Strike</th>
-              <th className="w-[12%] px-2 py-1 text-left">LTP</th>
-              <th className="w-[12%] px-2 py-1 text-left">IV%</th>
-              <th className="w-[15%] px-2 py-1 text-left">OI(L)</th>
+              <th className="w-[15%] px-2 py-[3px] text-right text-[11px] text-text-muted uppercase tracking-wide font-normal">OI(L)</th>
+              <th className="w-[12%] px-2 py-[3px] text-right text-[11px] text-text-muted uppercase tracking-wide font-normal">IV%</th>
+              <th className="w-[12%] px-2 py-[3px] text-right text-[11px] text-text-muted uppercase tracking-wide font-normal">LTP</th>
+              <th className="w-[14%] px-1 py-[3px] text-center text-[11px] text-text-muted uppercase tracking-wide font-normal">Strike</th>
+              <th className="w-[12%] px-2 py-[3px] text-left text-[11px] text-text-muted uppercase tracking-wide font-normal">LTP</th>
+              <th className="w-[12%] px-2 py-[3px] text-left text-[11px] text-text-muted uppercase tracking-wide font-normal">IV%</th>
+              <th className="w-[15%] px-2 py-[3px] text-left text-[11px] text-text-muted uppercase tracking-wide font-normal">OI(L)</th>
             </tr>
           </thead>
           <tbody>
@@ -84,10 +84,10 @@ export default function OptionsChain() {
               return (
                 <tr
                   key={row.strike}
-                  className={`border-t border-border-secondary/40 ${row.is_atm ? 'bg-[rgba(229,83,75,0.08)]' : ''}`}
+                  className={`border-t border-border-secondary/40 h-[28px] ${row.is_atm ? 'bg-[rgba(229,83,75,0.08)]' : ''}`}
                 >
                   {/* CE OI */}
-                  <td className="px-2 py-0.5 text-right tabular-nums">
+                  <td className="px-2 py-[2px] text-right tabular-nums">
                     <div className="relative overflow-hidden">
                       <div
                         className="absolute inset-y-0 right-0 bg-profit/25"
@@ -97,12 +97,12 @@ export default function OptionsChain() {
                     </div>
                   </td>
                   {/* CE IV */}
-                  <td className="px-2 py-0.5 text-right tabular-nums text-text-muted">
+                  <td className="px-2 py-[2px] text-right tabular-nums text-text-muted">
                     {row.call.iv?.toFixed(1) ?? '--'}
                   </td>
                   {/* CE LTP */}
                   <td
-                    className={`cursor-pointer px-2 py-0.5 text-right tabular-nums font-medium text-profit ${
+                    className={`cursor-pointer px-2 py-[2px] text-right tabular-nums font-medium text-[#4bae4f] ${
                       activeCall ? 'bg-profit/15' : 'hover:bg-profit/6'
                     }`}
                     onClick={() => setSelectedQuote(row.call)}
@@ -111,7 +111,7 @@ export default function OptionsChain() {
                   </td>
 
                   {/* Strike */}
-                  <td className="px-2 py-0.5 text-center">
+                  <td className="px-2 py-[2px] text-center">
                     <span className={`font-medium ${row.is_atm ? 'text-[#e5534b]' : 'text-text-primary'}`}>
                       {row.strike}
                     </span>
@@ -119,7 +119,7 @@ export default function OptionsChain() {
 
                   {/* PE LTP */}
                   <td
-                    className={`cursor-pointer px-2 py-0.5 text-left tabular-nums font-medium text-loss ${
+                    className={`cursor-pointer px-2 py-[2px] text-left tabular-nums font-medium text-[#d43725] ${
                       activePut ? 'bg-loss/15' : 'hover:bg-loss/6'
                     }`}
                     onClick={() => setSelectedQuote(row.put)}
@@ -127,11 +127,11 @@ export default function OptionsChain() {
                     {row.put.ltp.toFixed(2)}
                   </td>
                   {/* PE IV */}
-                  <td className="px-2 py-0.5 text-left tabular-nums text-text-muted">
+                  <td className="px-2 py-[2px] text-left tabular-nums text-text-muted">
                     {row.put.iv?.toFixed(1) ?? '--'}
                   </td>
                   {/* PE OI */}
-                  <td className="px-2 py-0.5 text-left tabular-nums">
+                  <td className="px-2 py-[2px] text-left tabular-nums">
                     <div className="relative overflow-hidden">
                       <div
                         className="absolute inset-y-0 left-0 bg-loss/25"

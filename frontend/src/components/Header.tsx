@@ -30,16 +30,16 @@ export default function Header() {
   const sensexChangePct = snapshot ? snapshot.change_pct * 0.95 : 0
 
   return (
-    <header className="flex h-11 shrink-0 items-center border-b border-border-primary bg-bg-header">
+    <header className="flex h-[44px] shrink-0 items-center border-b border-border-primary bg-bg-header">
       {/* Left: Market indices */}
-      <div className="flex items-center gap-3 pl-3 pr-2 text-[12px]">
+      <div className="flex items-center gap-3 pl-3 pr-2">
         <div className="flex items-center gap-1">
-          <span className="text-text-muted">NIFTY 50</span>
-          <span className={`font-semibold tabular-nums ${snapshot && snapshot.change >= 0 ? 'text-profit' : snapshot ? 'text-loss' : 'text-text-primary'}`}>
+          <span className="text-[12px] text-text-muted">NIFTY 50</span>
+          <span className={`text-[15px] font-semibold tabular-nums ${snapshot && snapshot.change >= 0 ? 'text-profit' : snapshot ? 'text-loss' : 'text-text-primary'}`}>
             {snapshot?.spot?.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) ?? '--'}
           </span>
           {snapshot && (
-            <span className={`tabular-nums ${snapshot.change >= 0 ? 'text-profit' : 'text-loss'}`}>
+            <span className={`text-[12px] tabular-nums ${snapshot.change >= 0 ? 'text-profit' : 'text-loss'}`}>
               {snapshot.change >= 0 ? '+' : ''}{snapshot.change.toFixed(2)} ({snapshot.change_pct.toFixed(2)}%)
             </span>
           )}
@@ -48,12 +48,12 @@ export default function Header() {
         <span className="text-text-muted opacity-30">|</span>
 
         <div className="flex items-center gap-1">
-          <span className="text-text-muted">SENSEX</span>
-          <span className={`font-semibold tabular-nums ${sensexChange >= 0 ? 'text-profit' : 'text-loss'}`}>
+          <span className="text-[12px] text-text-muted">SENSEX</span>
+          <span className={`text-[15px] font-semibold tabular-nums ${sensexChange >= 0 ? 'text-profit' : 'text-loss'}`}>
             {sensexValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </span>
           {snapshot && (
-            <span className={`tabular-nums ${sensexChange >= 0 ? 'text-profit' : 'text-loss'}`}>
+            <span className={`text-[12px] tabular-nums ${sensexChange >= 0 ? 'text-profit' : 'text-loss'}`}>
               {sensexChange >= 0 ? '+' : ''}{sensexChange.toFixed(2)} ({sensexChangePct.toFixed(2)}%)
             </span>
           )}
@@ -69,7 +69,7 @@ export default function Header() {
               <button
                 key={path}
                 onClick={() => navigate(path)}
-                className={`flex h-full items-center border-b-2 px-3 text-[12px] font-medium transition-colors duration-150 ${
+                className={`flex h-full items-center border-b-2 px-3 text-[13px] font-medium transition-colors duration-150 ${
                   active
                     ? 'border-[#387ed1] text-text-primary'
                     : 'border-transparent text-text-secondary hover:text-text-primary'

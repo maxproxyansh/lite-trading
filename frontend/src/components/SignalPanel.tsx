@@ -101,7 +101,7 @@ export default function SignalPanel() {
             )
             if (quote) setSelectedQuote(quote)
           }}
-          className="flex-1 rounded-sm bg-signal px-2 py-1.5 text-[11px] font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-30"
+          className="flex-1 h-[36px] rounded-[4px] bg-signal px-2 text-[11px] font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-30"
         >
           Load Into Ticket
         </button>
