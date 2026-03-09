@@ -3,7 +3,7 @@ import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 
 import ErrorBoundary from './components/ErrorBoundary'
 import Header from './components/Header'
-import MarketWatch from './components/MarketWatch'
+import Sidebar from './components/Sidebar'
 import TickerBar from './components/TickerBar'
 import Toast from './components/Toast'
 import {
@@ -41,8 +41,8 @@ function ProtectedLayout() {
       <div className="flex h-screen flex-col bg-bg-primary text-text-primary">
         <Header />
         <div className="flex flex-1 overflow-hidden">
-          <MarketWatch />
-          <main className="flex-1 overflow-auto">
+          <Sidebar />
+          <main className="ml-10 flex-1 overflow-auto">
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/positions" element={<Positions />} />

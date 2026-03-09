@@ -47,7 +47,7 @@ export default function Dashboard() {
     <div className="flex h-full">
       {/* Center: Chart + Options Chain */}
       <div className="flex flex-1 flex-col overflow-hidden">
-        <div className="h-[280px] shrink-0 border-b border-border-primary">
+        <div className="h-[42%] shrink-0 border-b border-border-primary">
           <NiftyChart />
         </div>
         <div className="flex-1 overflow-auto">

@@ -13,10 +13,10 @@ function EquityCurve({ points }: { points: Array<{ date: string; value: number }
     if (!containerRef.current || !points.length) return
 
     const chart = createChart(containerRef.current, {
-      layout: { background: { color: '#1a1a2e' }, textColor: '#5e5e76' },
-      grid: { vertLines: { color: '#2a2a44' }, horzLines: { color: '#2a2a44' } },
-      rightPriceScale: { borderColor: '#333350' },
-      timeScale: { borderColor: '#333350' },
+      layout: { background: { color: '#1a1a1a' }, textColor: '#666666' },
+      grid: { vertLines: { color: '#2e2e2e' }, horzLines: { color: '#2e2e2e' } },
+      rightPriceScale: { borderColor: '#363636' },
+      timeScale: { borderColor: '#363636' },
       width: containerRef.current.clientWidth,
       height: 220,
     })
@@ -87,16 +87,19 @@ export default function Analytics() {
   const { analytics, portfolioLoading } = useStore()
 
   const equityCurve: Array<{ date: string; value: number }> = Array.isArray(analytics?.equity_curve)
-    ? (analytics.equity_curve as Array<Record<string, unknown>>).map((p) => ({
-        date: String((p as Record<string, unknown>).date ?? (p as Record<string, unknown>).timestamp ?? ''),
-        value: Number((p as Record<string, unknown>).value ?? (p as Record<string, unknown>).equity ?? 0),
-      }))
+    ? analytics.equity_curve
+        .map((p) => ({
+          date: String(p.label ?? '').slice(0, 10),
+          value: Number(p.value ?? 0),
+        }))
+        .filter((p) => /^\d{4}-\d{2}-\d{2}$/.test(p.date))
+        .filter((p, i, arr) => i === 0 || p.date !== arr[i - 1].date)
     : []
 
   const pnlByDay: Array<{ date: string; pnl: number }> = Array.isArray(analytics?.pnl_by_day)
-    ? (analytics.pnl_by_day as Array<Record<string, unknown>>).map((p) => ({
-        date: String((p as Record<string, unknown>).date ?? ''),
-        pnl: Number((p as Record<string, unknown>).pnl ?? (p as Record<string, unknown>).value ?? 0),
+    ? analytics.pnl_by_day.map((p) => ({
+        date: String(p.label ?? '').slice(0, 10),
+        pnl: Number(p.value ?? 0),
       }))
     : []
 

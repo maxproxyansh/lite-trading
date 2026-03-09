@@ -13,18 +13,18 @@ export default function Login() {
 
   return (
     <div className="flex h-screen items-center justify-center bg-bg-primary">
-      <div className="w-full max-w-[420px] rounded border border-border-primary bg-bg-secondary/40 px-10 py-10">
-        {/* Logo */}
-        <div className="mb-8 flex flex-col items-center gap-4">
-          <svg viewBox="0 0 32 32" className="h-12 w-12 text-signal">
-            <path fill="currentColor" d="M8 16L16 4l8 12H8z" opacity="0.5"/>
-            <path fill="currentColor" d="M8 16l8 12 8-12H8z"/>
+      <div className="w-full max-w-[360px] rounded-sm border border-border-primary bg-bg-secondary px-10 py-10">
+        {/* Diamond Logo */}
+        <div className="mb-8 flex flex-col items-center gap-3">
+          <svg viewBox="0 0 24 28" className="h-10 w-8" style={{ color: '#e74c3c' }}>
+            <path fill="currentColor" d="M12 0L0 12l12 6 12-6L12 0z" opacity="0.85" />
+            <path fill="currentColor" d="M12 18L0 12l12 10 12-10-12 6z" />
           </svg>
-          <span className="text-lg font-semibold tracking-tight text-text-primary">Login to Lite</span>
+          <h1 className="text-lg font-semibold tracking-tight text-text-primary">Login to Lite</h1>
         </div>
 
         <form
-          className="space-y-5"
+          className="space-y-4"
           onSubmit={async (e) => {
             e.preventDefault()
             setLoading(true)
@@ -39,29 +39,25 @@ export default function Login() {
             }
           }}
         >
-          <div>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="Email"
-              autoFocus
-              className="w-full rounded border border-border-primary bg-bg-primary px-4 py-3 text-sm text-text-primary outline-none transition-colors placeholder:text-text-muted focus:border-signal"
-            />
-          </div>
-          <div>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Password"
-              className="w-full rounded border border-border-primary bg-bg-primary px-4 py-3 text-sm text-text-primary outline-none transition-colors placeholder:text-text-muted focus:border-signal"
-            />
-          </div>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Email"
+            autoFocus
+            className="w-full rounded-sm border border-border-primary bg-bg-primary px-3 py-2.5 text-sm text-text-primary outline-none transition-colors placeholder:text-text-muted focus:border-signal"
+          />
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Password"
+            className="w-full rounded-sm border border-border-primary bg-bg-primary px-3 py-2.5 text-sm text-text-primary outline-none transition-colors placeholder:text-text-muted focus:border-signal"
+          />
           <button
             type="submit"
             disabled={loading || !email || !password}
-            className="w-full rounded bg-signal py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+            className="w-full rounded-sm bg-signal py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
           >
             {loading ? 'Signing in\u2026' : 'Login'}
           </button>

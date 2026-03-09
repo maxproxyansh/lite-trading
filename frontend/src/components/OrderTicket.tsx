@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { submitOrder } from '../lib/api'
 import { useStore } from '../store/useStore'
@@ -8,7 +8,7 @@ const PRODUCTS = ['NRML', 'MIS'] as const
 
 export default function OrderTicket() {
   const { selectedQuote, selectedPortfolioId, latestSignal, addToast } = useStore()
-  const [side, setSide] = useState<'BUY' | 'SELL'>('BUY')
+  const [optionType, setOptionType] = useState<'CE' | 'PE'>('CE')
   const [orderType, setOrderType] = useState<(typeof ORDER_TYPES)[number]>('MARKET')
   const [product, setProduct] = useState<(typeof PRODUCTS)[number]>('NRML')
   const [lots, setLots] = useState(1)
@@ -16,17 +16,24 @@ export default function OrderTicket() {
   const [triggerPrice, setTriggerPrice] = useState('')
   const [loading, setLoading] = useState(false)
 
-  const defaultPrice = selectedQuote ? (side === 'BUY' ? selectedQuote.ask ?? selectedQuote.ltp : selectedQuote.bid ?? selectedQuote.ltp) : 0
+  // Auto-detect CE/PE from selected quote
+  useEffect(() => {
+    if (selectedQuote?.option_type) {
+      setOptionType(selectedQuote.option_type as 'CE' | 'PE')
+    }
+  }, [selectedQuote])
+
+  const defaultPrice = selectedQuote ? (selectedQuote.ask ?? selectedQuote.ltp) : 0
   const estimatedValue = (price ? Number(price) : defaultPrice) * lots * 25
 
   const canSubmit = selectedQuote && (orderType === 'MARKET' || price)
 
   return (
-    <div className="p-3">
-      <div className="mb-2 text-xs font-medium text-text-secondary">Order Ticket</div>
+    <div className="p-2">
+      <div className="mb-2 text-[10px] text-text-muted uppercase">Order Ticket</div>
 
       {/* Contract */}
-      <div className="mb-3 rounded bg-bg-primary px-3 py-2 text-xs">
+      <div className="mb-2 rounded-sm bg-bg-primary px-2 py-1.5 text-[12px]">
         {selectedQuote ? (
           <>
             <div className="mb-1 font-medium text-text-primary">{selectedQuote.symbol}</div>
@@ -41,44 +48,44 @@ export default function OrderTicket() {
         )}
       </div>
 
-      {/* Side */}
-      <div className="mb-3 grid grid-cols-2 gap-1">
+      {/* CE / PE toggle */}
+      <div className="mb-2 grid grid-cols-2 gap-1">
         <button
-          onClick={() => setSide('BUY')}
-          className={`rounded py-2 text-xs font-semibold transition-colors ${
-            side === 'BUY' ? 'bg-profit text-white' : 'bg-bg-primary text-text-secondary hover:text-text-primary'
+          onClick={() => setOptionType('CE')}
+          className={`rounded-sm py-1.5 text-[12px] font-semibold transition-colors ${
+            optionType === 'CE' ? 'bg-profit text-white' : 'bg-bg-tertiary text-text-muted hover:text-text-primary'
           }`}
         >
-          BUY
+          CE
         </button>
         <button
-          onClick={() => setSide('SELL')}
-          className={`rounded py-2 text-xs font-semibold transition-colors ${
-            side === 'SELL' ? 'bg-loss text-white' : 'bg-bg-primary text-text-secondary hover:text-text-primary'
+          onClick={() => setOptionType('PE')}
+          className={`rounded-sm py-1.5 text-[12px] font-semibold transition-colors ${
+            optionType === 'PE' ? 'bg-loss text-white' : 'bg-bg-tertiary text-text-muted hover:text-text-primary'
           }`}
         >
-          SELL
+          PE
         </button>
       </div>
 
       {/* Type + Product */}
-      <div className="mb-3 grid grid-cols-2 gap-2">
-        <label className="text-[10px] text-text-muted">
+      <div className="mb-2 grid grid-cols-2 gap-2">
+        <label className="text-[10px] text-text-muted uppercase">
           Type
           <select
             value={orderType}
             onChange={(e) => setOrderType(e.target.value as typeof orderType)}
-            className="mt-0.5 w-full rounded border border-border-primary bg-bg-primary px-2 py-1.5 text-xs text-text-primary outline-none"
+            className="mt-0.5 w-full rounded-sm border border-border-primary bg-bg-primary px-2 py-1.5 text-[12px] text-text-primary outline-none"
           >
             {ORDER_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
         </label>
-        <label className="text-[10px] text-text-muted">
+        <label className="text-[10px] text-text-muted uppercase">
           Product
           <select
             value={product}
             onChange={(e) => setProduct(e.target.value as typeof product)}
-            className="mt-0.5 w-full rounded border border-border-primary bg-bg-primary px-2 py-1.5 text-xs text-text-primary outline-none"
+            className="mt-0.5 w-full rounded-sm border border-border-primary bg-bg-primary px-2 py-1.5 text-[12px] text-text-primary outline-none"
           >
             {PRODUCTS.map((p) => <option key={p} value={p}>{p}</option>)}
           </select>
@@ -86,8 +93,8 @@ export default function OrderTicket() {
       </div>
 
       {/* Lots + Price + Trigger */}
-      <div className="mb-3 grid grid-cols-3 gap-2">
-        <label className="text-[10px] text-text-muted">
+      <div className="mb-2 grid grid-cols-3 gap-2">
+        <label className="text-[10px] text-text-muted uppercase">
           Lots
           <input
             type="number"
@@ -95,10 +102,10 @@ export default function OrderTicket() {
             max={200}
             value={lots}
             onChange={(e) => setLots(Math.max(1, Number(e.target.value) || 1))}
-            className="mt-0.5 w-full rounded border border-border-primary bg-bg-primary px-2 py-1.5 text-xs tabular-nums text-text-primary outline-none"
+            className="mt-0.5 w-full rounded-sm border border-border-primary bg-bg-primary px-2 py-1.5 text-[12px] tabular-nums text-text-primary outline-none"
           />
         </label>
-        <label className="text-[10px] text-text-muted">
+        <label className="text-[10px] text-text-muted uppercase">
           Price
           <input
             type="number"
@@ -106,10 +113,10 @@ export default function OrderTicket() {
             value={price}
             onChange={(e) => setPrice(e.target.value)}
             placeholder={defaultPrice ? defaultPrice.toFixed(2) : '--'}
-            className="mt-0.5 w-full rounded border border-border-primary bg-bg-primary px-2 py-1.5 text-xs tabular-nums text-text-primary outline-none placeholder:text-text-muted"
+            className="mt-0.5 w-full rounded-sm border border-border-primary bg-bg-primary px-2 py-1.5 text-[12px] tabular-nums text-text-primary outline-none placeholder:text-text-muted"
           />
         </label>
-        <label className="text-[10px] text-text-muted">
+        <label className="text-[10px] text-text-muted uppercase">
           Trigger
           <input
             type="number"
@@ -117,13 +124,13 @@ export default function OrderTicket() {
             value={triggerPrice}
             onChange={(e) => setTriggerPrice(e.target.value)}
             placeholder="--"
-            className="mt-0.5 w-full rounded border border-border-primary bg-bg-primary px-2 py-1.5 text-xs tabular-nums text-text-primary outline-none placeholder:text-text-muted"
+            className="mt-0.5 w-full rounded-sm border border-border-primary bg-bg-primary px-2 py-1.5 text-[12px] tabular-nums text-text-primary outline-none placeholder:text-text-muted"
           />
         </label>
       </div>
 
       {/* Summary */}
-      <div className="mb-3 space-y-1 border-t border-border-secondary pt-2 text-[11px] text-text-muted">
+      <div className="mb-2 space-y-1 border-t border-border-secondary pt-2 text-[11px] text-text-muted">
         <div className="flex justify-between">
           <span>Portfolio</span>
           <span className="font-medium text-text-primary">{selectedPortfolioId}</span>
@@ -150,8 +157,8 @@ export default function OrderTicket() {
               symbol: selectedQuote.symbol,
               expiry: selectedQuote.expiry,
               strike: selectedQuote.strike,
-              option_type: selectedQuote.option_type,
-              side,
+              option_type: optionType,
+              side: 'BUY',
               order_type: orderType,
               product,
               validity: 'DAY',
@@ -161,7 +168,7 @@ export default function OrderTicket() {
               signal_id: latestSignal?.id ?? null,
               idempotency_key: crypto.randomUUID(),
             })
-            addToast('success', `${order.status}: ${order.side} ${order.symbol} x ${order.quantity}`)
+            addToast('success', `${order.status}: BUY ${order.symbol} x ${order.quantity}`)
             setPrice('')
             setTriggerPrice('')
           } catch (error) {
@@ -170,11 +177,11 @@ export default function OrderTicket() {
             setLoading(false)
           }
         }}
-        className={`w-full rounded py-2.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-30 ${
-          side === 'BUY' ? 'bg-profit' : 'bg-loss'
+        className={`w-full rounded-sm py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-30 ${
+          optionType === 'CE' ? 'bg-profit' : 'bg-loss'
         }`}
       >
-        {loading ? 'Submitting\u2026' : `${side} ${selectedQuote?.option_type ?? 'Option'}`}
+        {loading ? 'Submitting…' : `BUY ${optionType}`}
       </button>
     </div>
   )
