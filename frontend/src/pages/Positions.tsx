@@ -1,8 +1,11 @@
 import { closePosition } from '../lib/api'
 import { useStore } from '../store/useStore'
+import { SkeletonTable } from '../components/Skeleton'
 
 export default function Positions() {
   const { positions, portfolioLoading, addToast } = useStore()
+
+  if (portfolioLoading) return <SkeletonTable rows={8} cols={7} />
 
   return (
     <div>
@@ -12,27 +15,34 @@ export default function Positions() {
         </h1>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-xs">
-          <thead className="border-b border-border-primary text-[11px] text-text-muted">
-            <tr>
-              <th className="px-3 py-[3px] text-left font-normal">Symbol</th>
-              <th className="px-3 py-[3px] text-right font-normal">Net Qty</th>
-              <th className="px-3 py-[3px] text-right font-normal">Avg</th>
-              <th className="px-3 py-[3px] text-right font-normal">LTP</th>
-              <th className="px-3 py-[3px] text-right font-normal">Unrealised</th>
-              <th className="px-3 py-[3px] text-right font-normal">Margin</th>
-              <th className="px-3 py-[3px] text-right font-normal"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {portfolioLoading ? (
-              <tr><td colSpan={7} className="py-12 text-center"><div className="flex items-center justify-center"><div className="h-5 w-5 rounded-full border-2 border-signal border-t-transparent animate-spin" /></div></td></tr>
-            ) : positions.length === 0 ? (
-              <tr><td colSpan={7} className="py-12 text-center text-xs text-text-muted">No open positions</td></tr>
-            ) : (
-              positions.map((pos) => (
-                <tr key={pos.id} className="border-b border-border-secondary/40 hover:bg-bg-secondary/30">
+      {positions.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 text-text-muted">
+          <svg width="48" height="48" viewBox="0 0 48 48" fill="none" className="mb-4 opacity-30">
+            <rect x="8" y="8" width="32" height="32" rx="1" stroke="currentColor" strokeWidth="1.5" />
+            <line x1="16" y1="18" x2="32" y2="18" stroke="currentColor" strokeWidth="1.5" />
+            <line x1="16" y1="24" x2="28" y2="24" stroke="currentColor" strokeWidth="1.5" />
+            <line x1="16" y1="30" x2="24" y2="30" stroke="currentColor" strokeWidth="1.5" />
+          </svg>
+          <p className="text-sm">No open positions</p>
+          <p className="text-xs mt-1">Your active positions will appear here</p>
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead className="border-b border-border-primary">
+              <tr>
+                <th className="px-3 py-[3px] text-left font-normal text-xs text-text-muted uppercase tracking-wider">Symbol</th>
+                <th className="px-3 py-[3px] text-right font-normal text-xs text-text-muted uppercase tracking-wider w-20">Net Qty</th>
+                <th className="px-3 py-[3px] text-right font-normal text-xs text-text-muted uppercase tracking-wider">Avg</th>
+                <th className="px-3 py-[3px] text-right font-normal text-xs text-text-muted uppercase tracking-wider">LTP</th>
+                <th className="px-3 py-[3px] text-right font-normal text-xs text-text-muted uppercase tracking-wider">Unrealised</th>
+                <th className="px-3 py-[3px] text-right font-normal text-xs text-text-muted uppercase tracking-wider">Margin</th>
+                <th className="px-3 py-[3px] text-right font-normal text-xs text-text-muted uppercase tracking-wider w-16"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {positions.map((pos) => (
+                <tr key={pos.id} className="border-b border-border-secondary/40 hover:bg-bg-hover transition-colors">
                   <td className="px-3 py-1.5 text-text-primary">{pos.symbol}</td>
                   <td className="px-3 py-1.5 text-right tabular-nums text-text-primary">{pos.net_quantity}</td>
                   <td className="px-3 py-1.5 text-right tabular-nums text-text-primary">{pos.average_open_price.toFixed(2)}</td>
@@ -57,11 +67,11 @@ export default function Positions() {
                     </button>
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }
