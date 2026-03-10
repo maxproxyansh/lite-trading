@@ -41,10 +41,12 @@ export default function OptionsChain() {
       <div className="flex items-center justify-between px-3 py-2 border-b border-border-primary">
         <h3 className="text-sm font-medium text-text-primary">Options Chain</h3>
         <div className="flex items-center gap-3">
-          <div className="text-right text-xs">
-            <span className="text-text-muted">Spot </span>
-            <span className="tabular-nums font-medium text-text-primary">{snapshot.spot.toFixed(2)}</span>
-          </div>
+          {snapshot.spot > 0 && (
+            <div className="text-right text-xs">
+              <span className="text-text-muted">Spot </span>
+              <span className="tabular-nums font-medium text-text-primary">{snapshot.spot.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+            </div>
+          )}
           <select
             value={selectedExpiry ?? chain.snapshot.active_expiry ?? ''}
             onChange={(e) => setSelectedExpiry(e.target.value)}
