@@ -13,11 +13,11 @@ export default function Logo({ size = 24, className = '' }: LogoProps) {
       className={className}
       aria-label="Lite"
     >
-      {/* Kite shape pointing right */}
-      <path d="M8 32L28 12L56 32L28 52Z" fill="#a3e635" />
-      <path d="M28 12L56 32L28 52" fill="#8bc926" />
-      <line x1="8" y1="32" x2="56" y2="32" stroke="#1a1a1a" strokeWidth="1.5" />
-      <line x1="28" y1="12" x2="28" y2="52" stroke="#1a1a1a" strokeWidth="1.5" />
+      {/* Right-pointing chevron/arrow — reversed Kite logo */}
+      {/* Top half — lighter green */}
+      <polygon points="6,16 28,16 52,32 28,32 6,32" fill="#a3e635" />
+      {/* Bottom half — darker green */}
+      <polygon points="6,32 28,32 52,32 28,48 6,48" fill="#7cad2a" />
     </svg>
   )
 }
