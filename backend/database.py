@@ -37,3 +37,17 @@ def init_db() -> None:
     import models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    _run_migrations(engine)
+
+
+def _run_migrations(eng) -> None:
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(eng)
+    if "portfolios" not in inspector.get_table_names():
+        return
+    columns = [c["name"] for c in inspector.get_columns("portfolios")]
+    if "user_id" not in columns:
+        with eng.begin() as conn:
+            conn.execute(text("ALTER TABLE portfolios ADD COLUMN user_id VARCHAR(64) REFERENCES users(id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_portfolios_user_id ON portfolios (user_id)"))
