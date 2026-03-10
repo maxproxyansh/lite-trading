@@ -29,22 +29,27 @@ def analytics_summary(db: Session, portfolio_id: str) -> AnalyticsResponse:
     losses = 0
     pnl_by_day: dict[str, Decimal] = defaultdict(lambda: Decimal("0.00"))
     equity_curve: list[AnalyticsPoint] = []
-    running = _money(portfolio.starting_cash)
-    open_lots: dict[str, list[tuple[str, int, Decimal]]] = defaultdict(list)
+    running_cash = _money(portfolio.starting_cash)
+    open_lots: dict[str, list[dict[str, Decimal | int | str]]] = defaultdict(list)
     for fill in fills:
         fill_price = _money(fill.price)
         fill_charges = _money(fill.charges)
         signed_cash = (fill_price * fill.quantity) if fill.side == "SELL" else -(fill_price * fill.quantity)
-        running = running + signed_cash - fill_charges
+        running_cash = running_cash + signed_cash - fill_charges
         day_label = fill.executed_at.date().isoformat()
         remaining = fill.quantity
         bucket = open_lots[fill.symbol]
+        charge_per_unit = (fill_charges / Decimal(fill.quantity)) if fill.quantity else Decimal("0.00")
         if fill.side == "BUY":
-            while remaining > 0 and bucket and bucket[0][0] == "SELL":
-                open_side, open_qty, open_price = bucket[0]
+            while remaining > 0 and bucket and bucket[0]["side"] == "SELL":
+                open_lot = bucket[0]
+                open_qty = int(open_lot["qty"])
                 close_qty = min(open_qty, remaining)
-                pnl = (open_price - fill_price) * close_qty
-                pnl_by_day[day_label] += pnl - fill_charges
+                open_price = open_lot["price"]
+                entry_charge = open_lot["charge_per_unit"] * Decimal(close_qty)
+                exit_charge = charge_per_unit * Decimal(close_qty)
+                pnl = (open_price - fill_price) * Decimal(close_qty) - entry_charge - exit_charge
+                pnl_by_day[day_label] += pnl
                 if pnl > 0:
                     wins += 1
                 elif pnl < 0:
@@ -54,15 +59,19 @@ def analytics_summary(db: Session, portfolio_id: str) -> AnalyticsResponse:
                 if open_qty == 0:
                     bucket.pop(0)
                 else:
-                    bucket[0] = (open_side, open_qty, open_price)
+                    open_lot["qty"] = open_qty
             if remaining > 0:
-                bucket.append(("BUY", remaining, fill_price))
+                bucket.append({"side": "BUY", "qty": remaining, "price": fill_price, "charge_per_unit": charge_per_unit})
         else:
-            while remaining > 0 and bucket and bucket[0][0] == "BUY":
-                open_side, open_qty, open_price = bucket[0]
+            while remaining > 0 and bucket and bucket[0]["side"] == "BUY":
+                open_lot = bucket[0]
+                open_qty = int(open_lot["qty"])
                 close_qty = min(open_qty, remaining)
-                pnl = (fill_price - open_price) * close_qty
-                pnl_by_day[day_label] += pnl - fill_charges
+                open_price = open_lot["price"]
+                entry_charge = open_lot["charge_per_unit"] * Decimal(close_qty)
+                exit_charge = charge_per_unit * Decimal(close_qty)
+                pnl = (fill_price - open_price) * Decimal(close_qty) - entry_charge - exit_charge
+                pnl_by_day[day_label] += pnl
                 if pnl > 0:
                     wins += 1
                 elif pnl < 0:
@@ -72,17 +81,16 @@ def analytics_summary(db: Session, portfolio_id: str) -> AnalyticsResponse:
                 if open_qty == 0:
                     bucket.pop(0)
                 else:
-                    bucket[0] = (open_side, open_qty, open_price)
+                    open_lot["qty"] = open_qty
             if remaining > 0:
-                bucket.append(("SELL", remaining, fill_price))
-        equity_curve.append(AnalyticsPoint(label=fill.executed_at.isoformat(), value=float(running)))
+                bucket.append({"side": "SELL", "qty": remaining, "price": fill_price, "charge_per_unit": charge_per_unit})
+        equity_curve.append(AnalyticsPoint(label=fill.executed_at.isoformat(), value=float(running_cash)))
 
     current_unrealized = Decimal("0.00")
     for position in positions:
         _refresh_position_mark(position)
         current_unrealized += _money(_position_unrealized(position))
-    if equity_curve:
-        equity_curve.append(AnalyticsPoint(label=date.today().isoformat(), value=float(_money(funds.total_equity))))
+    equity_curve.append(AnalyticsPoint(label=date.today().isoformat(), value=float(_money(funds.total_equity))))
 
     pnl_by_day[date.today().isoformat()] += current_unrealized
     total_closed = wins + losses

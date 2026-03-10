@@ -56,13 +56,24 @@ class CreateUserRequest(BaseModel):
 
 class CreateAgentKeyRequest(BaseModel):
     name: str
+    portfolio_id: str
     scopes: list[str] = Field(
-        default_factory=lambda: ["orders:write", "positions:read", "positions:write", "signals:read", "signals:write", "funds:read"]
+        default_factory=lambda: [
+            "orders:read",
+            "orders:write",
+            "positions:read",
+            "positions:write",
+            "signals:read",
+            "signals:write",
+            "funds:read",
+        ]
     )
 
 
 class AgentKeyResponse(BaseModel):
     id: str
+    user_id: str
+    portfolio_id: str
     name: str
     key_prefix: str
     scopes: list[str]
@@ -167,6 +178,7 @@ class SignalIngestRequest(BaseModel):
 
 class PortfolioSummary(BaseModel):
     id: str
+    kind: Literal["manual", "agent"]
     name: str
     description: str | None = None
     starting_cash: float

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+import re
 from collections.abc import Awaitable, Callable
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
@@ -180,7 +181,19 @@ class MarketDataService:
             result = self._client().expiry_list(under_security_id=13, under_exchange_segment="IDX_I")
             payload = result.get("data", {}) if isinstance(result, dict) else {}
             raw = payload.get("data", []) if isinstance(payload, dict) else []
-            return [str(item) for item in raw if item]
+            expiries: list[str] = []
+            for item in raw:
+                candidate = None
+                if isinstance(item, dict):
+                    for key in ("expiry", "expiry_date", "expiryDate"):
+                        if item.get(key):
+                            candidate = str(item[key])
+                            break
+                elif item:
+                    candidate = str(item)
+                if candidate and re.fullmatch(r"\d{4}-\d{2}-\d{2}", candidate):
+                    expiries.append(candidate)
+            return expiries
         except Exception:  # noqa: BLE001
             return []
 
@@ -356,7 +369,7 @@ class MarketDataService:
             )
             payload = result.get("data", {}) if isinstance(result, dict) else {}
             candles = self._map_candles(payload)
-            return {"timeframe": timeframe, "candles": candles[-90:], "source": "dhan", "degraded": False}
+            return {"timeframe": timeframe, "candles": candles[-90:], "source": "dhan", "degraded": not candles}
 
         interval_map = {"1m": 1, "5m": 5, "15m": 15, "1h": 60}
         interval = interval_map.get(timeframe, 15)
@@ -370,7 +383,7 @@ class MarketDataService:
         )
         payload = result.get("data", {}) if isinstance(result, dict) else {}
         candles = self._map_candles(payload)
-        return {"timeframe": timeframe, "candles": candles[-390:], "source": "dhan", "degraded": False}
+        return {"timeframe": timeframe, "candles": candles[-390:], "source": "dhan", "degraded": not candles}
 
     def _map_candles(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
         timestamps = payload.get("timestamp") or payload.get("start_Time") or payload.get("start_time") or []

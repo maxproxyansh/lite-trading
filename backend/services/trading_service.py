@@ -575,6 +575,7 @@ def portfolio_summary(db: Session, portfolio: Portfolio) -> dict[str, Any]:
     funds = funds_summary(db, portfolio.id)
     return {
         "id": portfolio.id,
+        "kind": portfolio.kind,
         "name": portfolio.name,
         "description": portfolio.description,
         "starting_cash": portfolio.starting_cash,

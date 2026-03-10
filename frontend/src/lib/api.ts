@@ -203,10 +203,10 @@ export async function closePosition(positionId: string) {
   })
 }
 
-export async function createAgentKey(name: string, scopes: string[]) {
+export async function createAgentKey(name: string, portfolioId: string, scopes: string[]) {
   return rawFetch<AgentKeyResponse>(
-    '/api/v1/admin/api-keys',
-    { method: 'POST', body: JSON.stringify({ name, scopes }) },
+    '/api/v1/auth/api-keys',
+    { method: 'POST', body: JSON.stringify({ name, portfolio_id: portfolioId, scopes }) },
   )
 }
 

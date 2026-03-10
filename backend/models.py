@@ -45,6 +45,8 @@ class AgentApiKey(Base, BaseModelMixin):
     __tablename__ = "agent_api_keys"
 
     name = Column(String(255), nullable=False)
+    user_id = Column(String(64), ForeignKey("users.id"), nullable=True, index=True)
+    portfolio_id = Column(String(64), ForeignKey("portfolios.id"), nullable=True, index=True)
     key_prefix = Column(String(24), nullable=False, unique=True)
     key_hash = Column(String(255), nullable=False, unique=True)
     scopes = Column(JSON, nullable=False, default=list)
@@ -57,6 +59,7 @@ class Portfolio(Base):
 
     id = Column(String(64), primary_key=True)
     user_id = Column(String(64), ForeignKey("users.id"), nullable=True, index=True)
+    kind = Column(String(16), nullable=False, default="manual")
     name = Column(String(255), nullable=False)
     description = Column(Text)
     starting_cash = Column(Float, nullable=False, default=500000.0)
@@ -95,7 +98,7 @@ class Order(Base, BaseModelMixin):
     message = Column(Text)
     signal_id = Column(String(64), ForeignKey("signals.id"))
     source = Column(String(24), nullable=False, default="human")
-    idempotency_key = Column(String(128), index=True)
+    idempotency_key = Column(String(128), nullable=True, unique=True, index=True)
     requested_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
     filled_at = Column(DateTime(timezone=True))
 

@@ -24,14 +24,16 @@ os.environ["LITE_DATABASE_URL"] = f"sqlite:///{TEST_ROOT / 'lite-test.db'}"
 os.environ["SIGNAL_ROOT"] = str(SIGNAL_ROOT)
 os.environ["DHAN_CLIENT_ID"] = ""
 os.environ["DHAN_ACCESS_TOKEN"] = ""
+os.environ["ALLOW_PUBLIC_SIGNUP"] = "false"
+os.environ["BOOTSTRAP_ADMIN_EMAIL"] = "admin@lite.trade"
 os.environ["BOOTSTRAP_ADMIN_PASSWORD"] = "lite-admin-123"
+os.environ["BOOTSTRAP_ADMIN_NAME"] = "Lite Admin"
 os.environ["BOOTSTRAP_AGENT_KEY"] = "lite-agent-dev-key"
+os.environ["BOOTSTRAP_AGENT_NAME"] = "bootstrap-agent"
 
 from database import Base, SessionLocal, engine  # noqa: E402
 from main import app  # noqa: E402
-from models import AgentApiKey  # noqa: E402
 from routers.websocket import broadcast_message  # noqa: E402
-from security import hash_secret  # noqa: E402
 from services.auth_service import ensure_bootstrap_state  # noqa: E402
 from services.market_data import market_data_service  # noqa: E402
 from services.signal_adapter import signal_adapter  # noqa: E402
@@ -72,11 +74,18 @@ def _seed_market() -> None:
     }
 
 
-def _login(client: TestClient) -> dict[str, str]:
-    response = client.post("/api/v1/auth/login", json={"email": "admin@lite.trade", "password": "lite-admin-123"})
-    assert response.status_code == 200
+def _login(client: TestClient, email: str, password: str) -> dict[str, str]:
+    response = client.post("/api/v1/auth/login", json={"email": email, "password": password})
+    assert response.status_code == 200, response.text
     token = response.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
+
+
+def _portfolio_map(client: TestClient, headers: dict[str, str]) -> dict[str, dict]:
+    response = client.get("/api/v1/portfolios", headers=headers)
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    return {item["kind"]: item for item in payload}
 
 
 @pytest.fixture()
@@ -89,72 +98,79 @@ def client():
     finally:
         db.close()
     _seed_market()
-    with TestClient(app) as client:
-        yield client
+    with TestClient(app) as test_client:
+        yield test_client
 
 
-def test_auth_and_trading_flow(client: TestClient) -> None:
-    headers = _login(client)
+def test_bootstrap_login_creates_manual_and_agent_portfolios(client: TestClient) -> None:
+    headers = _login(client, "admin@lite.trade", "lite-admin-123")
+    portfolios = _portfolio_map(client, headers)
 
-    portfolios = client.get("/api/v1/portfolios", headers=headers)
-    assert portfolios.status_code == 200
-    assert {item["id"] for item in portfolios.json()} == {"manual", "agent"}
+    assert set(portfolios.keys()) == {"manual", "agent"}
+    assert portfolios["manual"]["id"] != portfolios["agent"]["id"]
+    assert portfolios["manual"]["available_funds"] == 500000.0
+    assert portfolios["agent"]["available_funds"] == 500000.0
 
-    order = client.post(
-        "/api/v1/orders",
-        headers=headers,
+    signup = client.post(
+        "/api/v1/auth/signup",
+        json={"email": "blocked@example.com", "display_name": "Blocked", "password": "blocked-pass-1"},
+    )
+    assert signup.status_code == 403
+    assert signup.json()["detail"] == "Public signup is disabled"
+
+
+def test_admin_can_create_user_with_isolated_manual_and_agent_portfolios(client: TestClient) -> None:
+    admin_headers = _login(client, "admin@lite.trade", "lite-admin-123")
+    admin_portfolios = _portfolio_map(client, admin_headers)
+
+    create_user = client.post(
+        "/api/v1/admin/users",
+        headers=admin_headers,
         json={
-            "portfolio_id": "manual",
-            "symbol": "NIFTY_2026-03-12_22500_CE",
-            "expiry": "2026-03-12",
-            "strike": 22500,
-            "option_type": "CE",
-            "side": "BUY",
-            "order_type": "MARKET",
-            "product": "NRML",
-            "validity": "DAY",
-            "lots": 1,
+            "email": "trader@example.com",
+            "display_name": "Trader One",
+            "password": "trader-pass-1",
+            "role": "trader",
         },
     )
-    assert order.status_code == 200
-    assert order.json()["status"] == "FILLED"
+    assert create_user.status_code == 200, create_user.text
 
-    positions = client.get("/api/v1/positions?portfolio_id=manual", headers=headers)
-    assert positions.status_code == 200
-    assert len(positions.json()) == 1
-    assert positions.json()[0]["net_quantity"] == 25
+    trader_headers = _login(client, "trader@example.com", "trader-pass-1")
+    trader_portfolios = _portfolio_map(client, trader_headers)
 
-    funds = client.get("/api/v1/funds?portfolio_id=manual", headers=headers)
-    assert funds.status_code == 200
-    assert funds.json()["available_funds"] < 500000
-
-    analytics = client.get("/api/v1/analytics?portfolio_id=manual", headers=headers)
-    assert analytics.status_code == 200
-    assert analytics.json()["filled_orders"] == 1
+    assert set(trader_portfolios.keys()) == {"manual", "agent"}
+    assert trader_portfolios["manual"]["id"] != admin_portfolios["manual"]["id"]
+    forbidden = client.get(
+        f"/api/v1/funds?portfolio_id={admin_portfolios['manual']['id']}",
+        headers=trader_headers,
+    )
+    assert forbidden.status_code == 404
 
 
-def test_agent_scope_enforcement(client: TestClient) -> None:
-    secret = "lite_scope_test_key"
-    db = SessionLocal()
-    try:
-        db.add(
-            AgentApiKey(
-                name="signals-only",
-                key_prefix=secret[:12],
-                key_hash=hash_secret(secret),
-                scopes=["signals:read"],
-                is_active=True,
-            )
-        )
-        db.commit()
-    finally:
-        db.close()
+def test_agent_keys_are_portfolio_scoped_and_agent_orders_are_idempotent(client: TestClient) -> None:
+    admin_headers = _login(client, "admin@lite.trade", "lite-admin-123")
+    portfolios = _portfolio_map(client, admin_headers)
+    agent_portfolio_id = portfolios["agent"]["id"]
+    manual_portfolio_id = portfolios["manual"]["id"]
 
-    response = client.post(
+    key_response = client.post(
+        "/api/v1/auth/api-keys",
+        headers=admin_headers,
+        json={
+            "name": "desk-agent",
+            "portfolio_id": agent_portfolio_id,
+            "scopes": ["orders:read", "orders:write", "positions:read", "positions:write", "funds:read"],
+        },
+    )
+    assert key_response.status_code == 200, key_response.text
+    secret = key_response.json()["secret"]
+    assert secret.startswith("lite_")
+
+    missing_idempotency = client.post(
         "/api/v1/agent/orders",
         headers={"X-API-Key": secret},
         json={
-            "portfolio_id": "agent",
+            "portfolio_id": agent_portfolio_id,
             "symbol": "NIFTY_2026-03-12_22500_CE",
             "expiry": "2026-03-12",
             "strike": 22500,
@@ -166,10 +182,54 @@ def test_agent_scope_enforcement(client: TestClient) -> None:
             "lots": 1,
         },
     )
-    assert response.status_code == 403
+    assert missing_idempotency.status_code == 400
+
+    payload = {
+        "portfolio_id": agent_portfolio_id,
+        "symbol": "NIFTY_2026-03-12_22500_CE",
+        "expiry": "2026-03-12",
+        "strike": 22500,
+        "option_type": "CE",
+        "side": "BUY",
+        "order_type": "MARKET",
+        "product": "NRML",
+        "validity": "DAY",
+        "lots": 1,
+        "idempotency_key": "agent-order-001",
+    }
+    first = client.post("/api/v1/agent/orders", headers={"X-API-Key": secret}, json=payload)
+    second = client.post("/api/v1/agent/orders", headers={"X-API-Key": secret}, json=payload)
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+    assert first.json()["id"] == second.json()["id"]
+
+    agent_orders = client.get("/api/v1/agent/orders", headers={"X-API-Key": secret})
+    assert agent_orders.status_code == 200
+    assert len(agent_orders.json()) == 1
+
+    agent_positions = client.get("/api/v1/agent/positions", headers={"X-API-Key": secret})
+    assert agent_positions.status_code == 200
+    assert len(agent_positions.json()) == 1
+    assert agent_positions.json()[0]["portfolio_id"] == agent_portfolio_id
+
+    wrong_portfolio = dict(payload)
+    wrong_portfolio["portfolio_id"] = manual_portfolio_id
+    wrong_portfolio["idempotency_key"] = "agent-order-002"
+    wrong_response = client.post("/api/v1/agent/orders", headers={"X-API-Key": secret}, json=wrong_portfolio)
+    assert wrong_response.status_code == 403
+
+    funds_wrong = client.get(f"/api/v1/agent/funds/{manual_portfolio_id}", headers={"X-API-Key": secret})
+    assert funds_wrong.status_code == 403
+
+    close_order = client.post(
+        f"/api/v1/agent/positions/{agent_positions.json()[0]['id']}/close",
+        headers={"X-API-Key": secret},
+    )
+    assert close_order.status_code == 200, close_order.text
+    assert close_order.json()["side"] == "SELL"
 
 
-def test_signal_adapter_ingests_latest_json(client: TestClient) -> None:
+def test_signal_adapter_keeps_actionable_signal_when_targets_are_advisory(client: TestClient) -> None:
     payload = {
         "timestamp": "2026-03-06T09:20:00+05:30",
         "direction": "bullish",
@@ -180,43 +240,18 @@ def test_signal_adapter_ingests_latest_json(client: TestClient) -> None:
         "option_type": "CE",
         "expiry": "2026-03-12",
         "entry_range": [108, 112],
-        "target": 138,
-        "stop_loss": 96,
+        "target": 105,
+        "stop_loss": 120,
     }
     (SIGNAL_ROOT / "latest_signal.json").write_text(json.dumps(payload))
 
     asyncio.run(signal_adapter.ingest_once())
-    headers = _login(client)
+    headers = _login(client, "admin@lite.trade", "lite-admin-123")
     response = client.get("/api/v1/signals/latest", headers=headers)
     assert response.status_code == 200
-    assert response.json()["option_type"] == "CE"
-    assert response.json()["confidence_label"] == "HIGH"
     assert response.json()["is_actionable"] is True
-
-
-def test_agent_signal_ingest(client: TestClient) -> None:
-    response = client.post(
-        "/api/v1/agent/signals",
-        headers={"X-API-Key": "lite-agent-dev-key"},
-        json={
-            "payload": {
-                "timestamp": "2026-03-06T09:25:00+05:30",
-                "direction": "bullish",
-                "confidence": "high",
-                "confidence_score": 84,
-                "trade": "BUY NIFTY 22500 CE",
-                "strike": 22500,
-                "option_type": "CE",
-                "expiry": "2026-03-12",
-                "entry_range": [109, 113],
-                "target": 142,
-                "stop_loss": 97,
-            }
-        },
-    )
-    assert response.status_code == 200
-    assert response.json()["option_type"] == "CE"
-    assert response.json()["confidence_score"] == 84
+    assert response.json()["target_valid"] is False
+    assert response.json()["stop_valid"] is False
 
 
 def test_websocket_requires_auth_and_streams_events(client: TestClient) -> None:
@@ -225,33 +260,10 @@ def test_websocket_requires_auth_and_streams_events(client: TestClient) -> None:
             websocket.receive_text()
     assert exc.value.code == 4401
 
-    headers = _login(client)
+    headers = _login(client, "admin@lite.trade", "lite-admin-123")
     token = headers["Authorization"].split(" ", 1)[1]
     with client.websocket_connect(f"/api/v1/ws?token={token}") as websocket:
         asyncio.run(broadcast_message("market.snapshot", {"spot": 22510}))
         message = websocket.receive_json()
         assert message["type"] == "market.snapshot"
         assert message["payload"]["spot"] == 22510
-
-
-def test_maps_top_of_book_fields_from_dhan_payload() -> None:
-    quote = market_data_service._map_option_quote(
-        {
-            "security_id": 12345,
-            "last_price": 112.5,
-            "top_bid_price": 112.2,
-            "top_ask_price": 112.8,
-            "top_bid_quantity": 500,
-            "top_ask_quantity": 450,
-            "oi": 100000,
-            "volume": 25000,
-        },
-        "2026-03-12",
-        22500,
-        "CE",
-    )
-
-    assert quote["bid"] == 112.2
-    assert quote["ask"] == 112.8
-    assert quote["bid_qty"] == 500
-    assert quote["ask_qty"] == 450

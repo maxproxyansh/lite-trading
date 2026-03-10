@@ -94,6 +94,8 @@ def get_agent_key(
     ).first()
     if not key:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")
+    if not key.user_id or not key.portfolio_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Legacy API key is no longer valid")
     key.last_used_at = datetime.now(timezone.utc)
     db.commit()
     return key

@@ -24,10 +24,21 @@ Lite is a private, options-only paper-trading terminal built to feel broker-grad
    npm run dev
    ```
 
-4. Default bootstrap login:
+4. Provision the first operator account:
 
-   - Email: `admin@lite.trade`
-   - Password: `lite-admin-123`
+   Set these in `backend/.env` before starting the backend:
+
+   - `BOOTSTRAP_ADMIN_EMAIL`
+   - `BOOTSTRAP_ADMIN_PASSWORD`
+   - `BOOTSTRAP_ADMIN_NAME`
+   - `BOOTSTRAP_AGENT_KEY`
+
+   The backend will create the admin user plus two owned portfolios:
+
+   - `manual`
+   - `agent`
+
+5. Sign in with the bootstrap admin credentials you configured.
 
 ## Key endpoints
 
@@ -63,8 +74,20 @@ Lite is a private, options-only paper-trading terminal built to feel broker-grad
 - `JWT_SECRET`
 - `DHAN_CLIENT_ID`
 - `DHAN_ACCESS_TOKEN`
+- `ALLOW_PUBLIC_SIGNUP=false`
+- `BOOTSTRAP_ADMIN_EMAIL`
 - `BOOTSTRAP_ADMIN_PASSWORD`
+- `BOOTSTRAP_ADMIN_NAME`
 - `BOOTSTRAP_AGENT_KEY`
+- `BOOTSTRAP_AGENT_NAME`
+
+### Security posture
+
+- Public self-signup is disabled by default.
+- Each user is isolated to their own `manual` and `agent` portfolios.
+- Agent API keys are scoped to a single owned portfolio and cannot trade across users.
+- Agent write operations require `idempotency_key`.
+- Auth cookies are `httpOnly`; state-changing cookie-auth requests require CSRF.
 
 ### Important hosted-signal note
 
@@ -77,3 +100,7 @@ Lite is a private, options-only paper-trading terminal built to feel broker-grad
 - Backend import check: `python3 -m compileall backend`
 - Frontend lint: `cd frontend && npm run lint`
 - Frontend build: `cd frontend && npm run build`
+
+## Review notes
+
+- Detailed hardening notes live in [docs/hardening-review.md](/Users/proxy/trading/lite/docs/hardening-review.md)

@@ -6,11 +6,12 @@ from datetime import datetime, timedelta, timezone
 
 import jwt
 from passlib.context import CryptContext
+from passlib.exc import UnknownHashError
 
 from config import get_settings
 
 
-pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
+pwd_context = CryptContext(schemes=["argon2", "pbkdf2_sha256"], deprecated="auto")
 settings = get_settings()
 
 
@@ -23,7 +24,17 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    return pwd_context.verify(password, password_hash)
+    try:
+        return pwd_context.verify(password, password_hash)
+    except (UnknownHashError, ValueError, TypeError):
+        return False
+
+
+def password_needs_rehash(password_hash: str) -> bool:
+    try:
+        return pwd_context.needs_update(password_hash)
+    except (UnknownHashError, ValueError, TypeError):
+        return True
 
 
 def hash_secret(secret: str) -> str:

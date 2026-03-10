@@ -71,14 +71,17 @@ Set these on the Railway backend service:
   `^https://(litetrade|lite-options-terminal)(-[a-z0-9-]+)?\.vercel\.app$`
 - `REFRESH_COOKIE_SECURE=true`
 - `REFRESH_COOKIE_SAMESITE=none`
+- `ALLOW_PUBLIC_SIGNUP=false`
 - `JWT_SECRET`
   Use a long random secret.
 - `DHAN_CLIENT_ID`
 - `DHAN_ACCESS_TOKEN`
 - `BOOTSTRAP_ADMIN_EMAIL`
-  Optional. Defaults to `admin@lite.trade`.
+  Required for a private deployment unless you intentionally enable public signup.
 - `BOOTSTRAP_ADMIN_PASSWORD`
   Set this explicitly in production.
+- `BOOTSTRAP_ADMIN_NAME`
+  Recommended.
 - `BOOTSTRAP_AGENT_KEY`
   Set this explicitly in production.
 - `BOOTSTRAP_AGENT_NAME`
@@ -103,6 +106,7 @@ Then redeploy the frontend.
 2. In Railway, open the `lite-options-api` service.
 3. Trigger a deploy for the target commit.
 4. Wait for deployment status `SUCCESS`.
+5. Verify the bootstrap admin can sign in and generate a portfolio-scoped agent key.
 
 ### CLI path
 
@@ -154,7 +158,8 @@ Then verify:
 2. `GET /api/v1/market/snapshot` returns a non-error response.
 3. `GET /api/v1/market/chain` returns rows when Dhan credentials are valid.
 4. `POST /api/v1/agent/signals` works with the configured agent key.
-5. WebSocket connection to `/api/v1/ws` succeeds for an authenticated session.
+5. Portfolio-scoped agent key can place an order only on its bound `agent` portfolio.
+6. WebSocket connection to `/api/v1/ws` succeeds for an authenticated session.
 
 ## Dhan credential rotation
 
