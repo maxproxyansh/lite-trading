@@ -41,8 +41,10 @@ def init_db() -> None:
 
 
 def _run_migrations(eng) -> None:
+    import logging
     from sqlalchemy import inspect, text
 
+    logger = logging.getLogger("lite.migrations")
     inspector = inspect(eng)
     if "portfolios" not in inspector.get_table_names():
         return
@@ -51,3 +53,19 @@ def _run_migrations(eng) -> None:
         with eng.begin() as conn:
             conn.execute(text("ALTER TABLE portfolios ADD COLUMN user_id VARCHAR(64) REFERENCES users(id)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_portfolios_user_id ON portfolios (user_id)"))
+            logger.info("Migration: added user_id column to portfolios")
+
+    # One-time cleanup: delete bootstrap admin and orphaned data
+    with eng.begin() as conn:
+        row = conn.execute(text("SELECT id FROM users WHERE email = :email"), {"email": "admin@lite.trade"}).fetchone()
+        if row:
+            admin_id = row[0]
+            # Delete orphaned data tied to portfolios with no owner
+            for tbl in ("fills", "orders", "positions", "daily_stats"):
+                conn.execute(text(f"DELETE FROM {tbl} WHERE portfolio_id IN (SELECT id FROM portfolios WHERE user_id IS NULL)"))
+            conn.execute(text("DELETE FROM portfolios WHERE user_id IS NULL"))
+            conn.execute(text("DELETE FROM refresh_tokens WHERE user_id = :uid"), {"uid": admin_id})
+            conn.execute(text("DELETE FROM audit_logs WHERE actor_id = :uid"), {"uid": admin_id})
+            conn.execute(text("DELETE FROM users WHERE id = :uid"), {"uid": admin_id})
+            conn.execute(text("DELETE FROM agent_api_keys WHERE name = :name"), {"name": "default-agent"})
+            logger.info("Migration: removed bootstrap admin user and orphaned data")

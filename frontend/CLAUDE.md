@@ -29,7 +29,7 @@ playwright screenshot --wait-for-timeout 3000 --viewport-size=1440,900 "https://
 ## URLs
 - Frontend: https://litetrade.vercel.app
 - Backend: https://lite-options-api-production.up.railway.app
-- Login: admin@lite.trade / admin123
+- Auth: public signup/login (no hardcoded credentials)
 
 ## Design Spec
 See `.claude/overnight-tasks.md` for the complete Zerodha Kite design specification.
