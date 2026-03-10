@@ -88,6 +88,8 @@ Lite is a private, options-only paper-trading terminal built to feel broker-grad
 - Agent API keys are scoped to a single owned portfolio and cannot trade across users.
 - Agent write operations require `idempotency_key`.
 - Auth cookies are `httpOnly`; state-changing cookie-auth requests require CSRF.
+- WebSocket auth uses the session cookie for humans or `Authorization` / `X-API-Key` headers for non-browser clients. URL query secrets are intentionally rejected.
+- Open-order processing uses Postgres row locks with `SKIP LOCKED` semantics so multiple replicas do not fill the same pending order twice.
 
 ### Important hosted-signal note
 

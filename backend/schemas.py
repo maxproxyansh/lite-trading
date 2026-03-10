@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, model_validator
 
 
 Role = Literal["admin", "trader", "viewer"]
@@ -205,6 +205,22 @@ class OrderRequest(BaseModel):
     trigger_price: float | None = None
     signal_id: str | None = None
     idempotency_key: str | None = None
+
+    @model_validator(mode="after")
+    def validate_order_prices(self):
+        if self.order_type in {"LIMIT", "SL"}:
+            if self.price is None or self.price <= 0:
+                raise ValueError("price is required for LIMIT and SL orders")
+        elif self.price is not None and self.price <= 0:
+            raise ValueError("price must be positive when provided")
+
+        if self.order_type in {"SL", "SL-M"}:
+            if self.trigger_price is None or self.trigger_price <= 0:
+                raise ValueError("trigger_price is required for SL and SL-M orders")
+        elif self.trigger_price is not None and self.trigger_price <= 0:
+            raise ValueError("trigger_price must be positive when provided")
+
+        return self
 
 
 class OrderSummary(BaseModel):

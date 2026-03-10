@@ -5,11 +5,12 @@ import { useStore } from '../store/useStore'
 
 const ORDER_TYPES = ['MARKET', 'LIMIT', 'SL', 'SL-M'] as const
 const PRODUCTS = ['NRML', 'MIS'] as const
+const ORDER_SIDES = ['BUY', 'SELL'] as const
 const NIFTY_LOT_SIZE = 65
 
 export default function OrderTicket() {
   const { selectedQuote, selectedPortfolioId, latestSignal, addToast } = useStore()
-  const [optionType, setOptionType] = useState<'CE' | 'PE'>('CE')
+  const [side, setSide] = useState<(typeof ORDER_SIDES)[number]>('BUY')
   const [orderType, setOrderType] = useState<(typeof ORDER_TYPES)[number]>('MARKET')
   const [product, setProduct] = useState<(typeof PRODUCTS)[number]>('NRML')
   const [lots, setLots] = useState(1)
@@ -17,17 +18,29 @@ export default function OrderTicket() {
   const [triggerPrice, setTriggerPrice] = useState('')
   const [loading, setLoading] = useState(false)
 
-  // Auto-detect CE/PE from selected quote
   useEffect(() => {
-    if (selectedQuote?.option_type) {
-      setOptionType(selectedQuote.option_type as 'CE' | 'PE')
+    if (!selectedQuote) {
+      setPrice('')
+      setTriggerPrice('')
     }
   }, [selectedQuote])
 
-  const defaultPrice = selectedQuote ? (selectedQuote.ask ?? selectedQuote.ltp) : 0
+  const optionType = selectedQuote?.option_type ?? '--'
+  const defaultPrice = selectedQuote
+    ? side === 'BUY'
+      ? (selectedQuote.ask ?? selectedQuote.ltp)
+      : (selectedQuote.bid ?? selectedQuote.ltp)
+    : 0
   const estimatedValue = (price ? Number(price) : defaultPrice) * lots * NIFTY_LOT_SIZE
 
-  const canSubmit = selectedQuote && (orderType === 'MARKET' || price)
+  const requiresPrice = orderType === 'LIMIT' || orderType === 'SL'
+  const requiresTrigger = orderType === 'SL' || orderType === 'SL-M'
+  const canSubmit = Boolean(
+    selectedQuote
+    && selectedPortfolioId
+    && (!requiresPrice || price)
+    && (!requiresTrigger || triggerPrice),
+  )
 
   return (
     <div className="border-b border-border-primary p-2">
@@ -49,21 +62,28 @@ export default function OrderTicket() {
         )}
       </div>
 
-      {/* CE / PE compact pill toggle */}
+      {/* Side + contract type */}
       <div className="mb-2">
-        <div className="inline-flex rounded-sm border border-border-primary overflow-hidden">
-          <button
-            onClick={() => setOptionType('CE')}
-            className={`px-4 py-1.5 text-xs font-medium transition-colors ${
-              optionType === 'CE' ? 'bg-profit text-white' : 'bg-bg-primary text-text-muted hover:text-text-secondary'
-            }`}
-          >CE</button>
-          <button
-            onClick={() => setOptionType('PE')}
-            className={`px-4 py-1.5 text-xs font-medium transition-colors ${
-              optionType === 'PE' ? 'bg-loss text-white' : 'bg-bg-primary text-text-muted hover:text-text-secondary'
-            }`}
-          >PE</button>
+        <div className="mb-1 text-[10px] text-text-muted uppercase">Side</div>
+        <div className="inline-flex overflow-hidden rounded-sm border border-border-primary">
+          {ORDER_SIDES.map((orderSide) => (
+            <button
+              key={orderSide}
+              onClick={() => setSide(orderSide)}
+              className={`px-4 py-1.5 text-xs font-medium transition-colors ${
+                side === orderSide
+                  ? orderSide === 'BUY'
+                    ? 'bg-profit text-white'
+                    : 'bg-loss text-white'
+                  : 'bg-bg-primary text-text-muted hover:text-text-secondary'
+              }`}
+            >
+              {orderSide}
+            </button>
+          ))}
+        </div>
+        <div className="mt-2 text-[11px] text-text-muted">
+          Contract type: <span className="text-text-primary">{optionType}</span>
         </div>
       </div>
 
@@ -148,8 +168,8 @@ export default function OrderTicket() {
               symbol: selectedQuote.symbol,
               expiry: selectedQuote.expiry,
               strike: selectedQuote.strike,
-              option_type: optionType,
-              side: 'BUY',
+              option_type: selectedQuote.option_type,
+              side,
               order_type: orderType,
               product,
               validity: 'DAY',
@@ -159,7 +179,7 @@ export default function OrderTicket() {
               signal_id: latestSignal?.id ?? null,
               idempotency_key: crypto.randomUUID(),
             })
-            addToast('success', `${order.status}: BUY ${order.symbol} x ${order.quantity}`)
+            addToast('success', `${order.status}: ${order.side} ${order.symbol} x ${order.quantity}`)
             setPrice('')
             setTriggerPrice('')
           } catch (error) {
@@ -169,10 +189,10 @@ export default function OrderTicket() {
           }
         }}
         className={`w-full rounded-sm py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-30 ${
-          optionType === 'CE' ? 'bg-profit' : 'bg-loss'
+          side === 'BUY' ? 'bg-profit' : 'bg-loss'
         }`}
       >
-        {loading ? 'Submitting...' : `BUY ${optionType}`}
+        {loading ? 'Submitting...' : `${side} ${optionType}`}
       </button>
 
       {!selectedQuote && (

@@ -243,6 +243,73 @@ def test_agent_keys_are_portfolio_scoped_and_agent_orders_are_idempotent(client:
     assert close_order.json()["side"] == "SELL"
 
 
+def test_human_sell_and_close_releases_margin(client: TestClient) -> None:
+    headers = _login(client, "admin@lite.trade", "lite-admin-123")
+    csrf_token = client.cookies.get("lite_csrf")
+    portfolios = _portfolio_map(client, headers)
+    manual_portfolio_id = portfolios["manual"]["id"]
+
+    sell_order = client.post(
+        "/api/v1/orders",
+        headers={"X-CSRF-Token": csrf_token},
+        json={
+            "portfolio_id": manual_portfolio_id,
+            "symbol": "NIFTY_2026-03-12_22500_CE",
+            "expiry": "2026-03-12",
+            "strike": 22500,
+            "option_type": "CE",
+            "side": "SELL",
+            "order_type": "MARKET",
+            "product": "NRML",
+            "validity": "DAY",
+            "lots": 1,
+        },
+    )
+    assert sell_order.status_code == 200, sell_order.text
+
+    positions = client.get(f"/api/v1/positions?portfolio_id={manual_portfolio_id}", headers=headers)
+    assert positions.status_code == 200, positions.text
+    payload = positions.json()
+    assert len(payload) == 1
+    assert payload[0]["net_quantity"] < 0
+
+    funds = client.get(f"/api/v1/funds?portfolio_id={manual_portfolio_id}", headers=headers)
+    assert funds.status_code == 200, funds.text
+    assert funds.json()["blocked_margin"] > 0
+
+    close_order = client.post(
+        f"/api/v1/positions/{payload[0]['id']}/close",
+        headers={"X-CSRF-Token": csrf_token},
+    )
+    assert close_order.status_code == 200, close_order.text
+
+    funds_after = client.get(f"/api/v1/funds?portfolio_id={manual_portfolio_id}", headers=headers)
+    assert funds_after.status_code == 200, funds_after.text
+    assert funds_after.json()["blocked_margin"] == 0.0
+
+
+def test_order_request_validation_rejects_missing_limit_price(client: TestClient) -> None:
+    headers = _login(client, "admin@lite.trade", "lite-admin-123")
+    portfolio_id = _portfolio_map(client, headers)["manual"]["id"]
+    response = client.post(
+        "/api/v1/orders",
+        headers=headers,
+        json={
+            "portfolio_id": portfolio_id,
+            "symbol": "NIFTY_2026-03-12_22500_CE",
+            "expiry": "2026-03-12",
+            "strike": 22500,
+            "option_type": "CE",
+            "side": "BUY",
+            "order_type": "LIMIT",
+            "product": "NRML",
+            "validity": "DAY",
+            "lots": 1,
+        },
+    )
+    assert response.status_code == 422
+
+
 def test_signal_adapter_keeps_actionable_signal_when_targets_are_advisory(client: TestClient) -> None:
     payload = {
         "timestamp": "2026-03-06T09:20:00+05:30",
@@ -274,10 +341,28 @@ def test_websocket_requires_auth_and_streams_events(client: TestClient) -> None:
             websocket.receive_text()
     assert exc.value.code == 4401
 
-    headers = _login(client, "admin@lite.trade", "lite-admin-123")
-    token = headers["Authorization"].split(" ", 1)[1]
-    with client.websocket_connect(f"/api/v1/ws?token={token}") as websocket:
+    admin_headers = _login(client, "admin@lite.trade", "lite-admin-123")
+    with client.websocket_connect("/api/v1/ws") as websocket:
         asyncio.run(broadcast_message("market.snapshot", {"spot": 22510}))
         message = websocket.receive_json()
         assert message["type"] == "market.snapshot"
         assert message["payload"]["spot"] == 22510
+
+    portfolios = _portfolio_map(client, admin_headers)
+    key_response = client.post(
+        "/api/v1/auth/api-keys",
+        headers=admin_headers,
+        json={
+            "name": "ws-agent",
+            "portfolio_id": portfolios["agent"]["id"],
+            "scopes": ["orders:read", "orders:write", "positions:read", "positions:write", "funds:read"],
+        },
+    )
+    assert key_response.status_code == 200, key_response.text
+    secret = key_response.json()["secret"]
+
+    with client.websocket_connect("/api/v1/ws", headers={"X-API-Key": secret}) as websocket:
+        asyncio.run(broadcast_message("market.snapshot", {"spot": 22525}))
+        message = websocket.receive_json()
+        assert message["type"] == "market.snapshot"
+        assert message["payload"]["spot"] == 22525
