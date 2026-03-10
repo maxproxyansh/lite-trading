@@ -104,39 +104,43 @@ export default function Analytics() {
     : []
 
   return (
-    <div className="p-5">
-      <h1 className="mb-4 text-base font-medium text-text-primary">Analytics</h1>
+    <div>
+      <div className="flex items-center justify-between border-b border-border-primary px-3 h-9">
+        <h1 className="text-[12px] font-medium text-text-primary">Analytics</h1>
+      </div>
 
-      <LoadingState loading={portfolioLoading} empty={!analytics} emptyText="No analytics available yet">
-        {/* Stat cards */}
-        <div className="mb-5 grid grid-cols-4 gap-3">
-          {([
-            ['Total Orders', analytics?.total_orders ?? 0],
-            ['Filled', analytics?.filled_orders ?? 0],
-            ['Win Rate', `${(analytics?.win_rate ?? 0).toFixed(1)}%`],
-            ['Equity', (analytics?.total_equity ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })],
-          ] as const).map(([label, value]) => (
-            <div key={label} className="rounded bg-bg-secondary p-3">
-              <div className="text-[10px] uppercase tracking-wider text-text-muted">{label}</div>
-              <div className="mt-1.5 text-lg font-medium tabular-nums text-text-primary">{value}</div>
-            </div>
-          ))}
-        </div>
+      <div className="p-3">
+        <LoadingState loading={portfolioLoading} empty={!analytics} emptyText="No analytics available yet">
+          {/* Stat cards */}
+          <div className="mb-5 grid grid-cols-4 gap-3">
+            {([
+              ['Total Orders', analytics?.total_orders ?? 0],
+              ['Filled', analytics?.filled_orders ?? 0],
+              ['Win Rate', `${(analytics?.win_rate ?? 0).toFixed(1)}%`],
+              ['Equity', (analytics?.total_equity ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })],
+            ] as const).map(([label, value]) => (
+              <div key={label} className="rounded bg-bg-secondary p-3">
+                <div className="text-[10px] uppercase tracking-wider text-text-muted">{label}</div>
+                <div className="mt-1.5 text-lg font-medium tabular-nums text-text-primary">{value}</div>
+              </div>
+            ))}
+          </div>
 
-        {/* Charts */}
-        <div className="grid gap-4 xl:grid-cols-2">
-          <div className="rounded bg-bg-secondary p-3">
-            <div className="mb-2 text-xs font-medium text-text-secondary">Equity Curve</div>
-            <EquityCurve points={equityCurve} />
-          </div>
-          <div className="rounded bg-bg-secondary p-3">
-            <div className="mb-2 text-xs font-medium text-text-secondary">P&amp;L by Day</div>
-            <div className="max-h-[220px] overflow-auto">
-              <PnlTable rows={pnlByDay} />
+          {/* Charts */}
+          <div className="grid gap-4 xl:grid-cols-2">
+            <div className="rounded bg-bg-secondary p-3">
+              <div className="mb-2 text-xs font-medium text-text-secondary">Equity Curve</div>
+              <EquityCurve points={equityCurve} />
+            </div>
+            <div className="rounded bg-bg-secondary p-3">
+              <div className="mb-2 text-xs font-medium text-text-secondary">P&amp;L by Day</div>
+              <div className="max-h-[220px] overflow-auto">
+                <PnlTable rows={pnlByDay} />
+              </div>
             </div>
           </div>
-        </div>
-      </LoadingState>
+        </LoadingState>
+      </div>
     </div>
   )
 }

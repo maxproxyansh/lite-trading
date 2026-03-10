@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 
 import ErrorBoundary from './components/ErrorBoundary'
 import Header from './components/Header'
+import MobileNav from './components/MobileNav'
 import Sidebar from './components/Sidebar'
 import TickerBar from './components/TickerBar'
 import Toast from './components/Toast'
@@ -40,9 +41,9 @@ function ProtectedLayout() {
     <ErrorBoundary>
       <div className="flex h-screen flex-col bg-bg-primary text-text-primary">
         <Header />
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-1 overflow-hidden pb-14 md:pb-0">
           <Sidebar />
-          <main className="ml-10 flex-1 overflow-auto">
+          <main className="md:ml-10 flex-1 overflow-auto">
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/positions" element={<Positions />} />
@@ -55,6 +56,7 @@ function ProtectedLayout() {
           </main>
         </div>
         <TickerBar />
+        <MobileNav />
         <Toast />
       </div>
     </ErrorBoundary>

@@ -33,7 +33,7 @@ export default function SignalPanel() {
     <div className="border-b border-border-primary p-2">
       <div className="mb-2 flex items-center justify-between">
         <span className="text-[11px] text-text-muted uppercase tracking-wide">Agent Signal</span>
-        <span className="bg-profit/20 text-profit text-[10px] px-1.5 py-0.5 rounded">
+        <span className={`${tone === 'text-profit' ? 'bg-profit/20 text-profit' : tone === 'text-signal' ? 'bg-signal/20 text-signal' : 'bg-loss/20 text-loss'} text-[10px] px-1.5 py-0.5 rounded`}>
           {latestSignal.confidence_label} {latestSignal.confidence_score.toFixed(0)}%
         </span>
       </div>
@@ -41,8 +41,8 @@ export default function SignalPanel() {
       <div className="border-t border-border-primary/60" />
 
       {/* Direction badge - prominent */}
-      <div className={`my-2 flex items-center justify-center rounded-sm px-3 py-3 ${dirBg}`}>
-        <span className="text-[22px] font-semibold tracking-tight">{latestSignal.direction}</span>
+      <div className={`my-2 flex items-center justify-center rounded-sm px-3 py-1.5 ${dirBg}`}>
+        <span className="text-[13px] tracking-widest font-semibold">{latestSignal.direction}</span>
       </div>
 
       {/* Confidence bar */}

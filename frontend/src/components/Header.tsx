@@ -25,10 +25,6 @@ export default function Header() {
     setSession,
   } = useStore()
 
-  const sensexValue = 79802.35
-  const sensexChange = snapshot ? snapshot.change * 0.82 : 0
-  const sensexChangePct = snapshot ? snapshot.change_pct * 0.95 : 0
-
   return (
     <header className="flex h-[44px] shrink-0 items-center border-b border-border-primary bg-bg-header">
       {/* Left: Market indices */}
@@ -44,24 +40,10 @@ export default function Header() {
             </span>
           )}
         </div>
-
-        <span className="text-text-muted opacity-30">|</span>
-
-        <div className="flex items-center gap-1">
-          <span className="text-[12px] text-text-muted">SENSEX</span>
-          <span className={`text-[15px] font-semibold tabular-nums ${sensexChange >= 0 ? 'text-profit' : 'text-loss'}`}>
-            {sensexValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </span>
-          {snapshot && (
-            <span className={`text-[12px] tabular-nums ${sensexChange >= 0 ? 'text-profit' : 'text-loss'}`}>
-              {sensexChange >= 0 ? '+' : ''}{sensexChange.toFixed(2)} ({sensexChangePct.toFixed(2)}%)
-            </span>
-          )}
-        </div>
       </div>
 
       {/* Center: Navigation */}
-      <div className="flex h-full flex-1 items-center justify-center">
+      <div className="hidden md:flex h-full flex-1 items-center justify-center">
         <nav className="flex h-full items-center gap-0">
           {navItems.map(({ label, path }) => {
             const active = location.pathname === path
