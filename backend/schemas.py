@@ -98,6 +98,7 @@ class OptionQuote(BaseModel):
     ask_qty: int | None = None
     iv: float | None = None
     oi: float | None = None
+    oi_lakhs: float | None = None
     volume: float | None = None
     delta: float | None = None
     gamma: float | None = None
