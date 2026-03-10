@@ -31,6 +31,7 @@ interface AppState {
   snapshot: MarketSnapshot | null
   chain: OptionChainResponse | null
   portfolios: PortfolioSummary[]
+  portfoliosLoaded: boolean
   selectedPortfolioId: string
   selectedExpiry: string | null
   selectedQuote: OptionQuote | null
@@ -72,7 +73,8 @@ export const useStore = create<AppState>((set) => ({
   snapshot: null,
   chain: null,
   portfolios: [],
-  selectedPortfolioId: 'manual',
+  portfoliosLoaded: false,
+  selectedPortfolioId: '',
   selectedExpiry: null,
   selectedQuote: null,
   orders: [],
@@ -97,9 +99,10 @@ export const useStore = create<AppState>((set) => ({
   })),
   setPortfolios: (portfolios) => set((state) => ({
     portfolios,
+    portfoliosLoaded: true,
     selectedPortfolioId: portfolios.some((item) => item.id === state.selectedPortfolioId)
       ? state.selectedPortfolioId
-      : (portfolios[0]?.id ?? 'manual'),
+      : (portfolios[0]?.id ?? ''),
   })),
   setSelectedPortfolioId: (selectedPortfolioId) => set({ selectedPortfolioId }),
   setSelectedExpiry: (selectedExpiry) => set({ selectedExpiry }),

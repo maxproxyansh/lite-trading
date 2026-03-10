@@ -69,6 +69,7 @@ export default function App() {
   const {
     accessToken,
     user,
+    portfoliosLoaded,
     selectedPortfolioId,
     selectedExpiry,
     setSession,
@@ -149,7 +150,7 @@ export default function App() {
   }, [addToast, setLatestSignal, setPortfolios, setSharedLoading, setSnapshot, user])
 
   useEffect(() => {
-    if (!user) return
+    if (!user || !portfoliosLoaded || !selectedPortfolioId) return
     let active = true
     async function loadPortfolioViews() {
       setPortfolioLoading(true)
@@ -181,7 +182,7 @@ export default function App() {
       active = false
       window.clearInterval(interval)
     }
-  }, [addToast, selectedPortfolioId, setAnalytics, setFunds, setOrders, setPortfolioLoading, setPositions, user])
+  }, [addToast, portfoliosLoaded, selectedPortfolioId, setAnalytics, setFunds, setOrders, setPortfolioLoading, setPositions, user])
 
   useEffect(() => {
     if (!user) return
