@@ -5,7 +5,7 @@ import ErrorBoundary from './components/ErrorBoundary'
 import Header from './components/Header'
 import MobileNav from './components/MobileNav'
 import Sidebar from './components/Sidebar'
-import TickerBar from './components/TickerBar'
+import TradingViewTickerTape from './components/TradingViewTickerTape'
 import Toast from './components/Toast'
 import {
   fetchAnalytics,
@@ -74,7 +74,7 @@ function ProtectedLayout() {
             </Routes>
           </main>
         </div>
-        <TickerBar />
+        <TradingViewTickerTape />
         <MobileNav />
         <Toast />
       </div>

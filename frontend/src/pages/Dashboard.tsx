@@ -6,6 +6,7 @@ import NiftyChart from '../components/NiftyChart'
 import OptionsChain from '../components/OptionsChain'
 import OrderTicket from '../components/OrderTicket'
 import SignalPanel from '../components/SignalPanel'
+import TradingViewTechnicalAnalysis from '../components/TradingViewTechnicalAnalysis'
 import { useStore } from '../store/useStore'
 
 export default function Dashboard() {
@@ -34,6 +35,12 @@ export default function Dashboard() {
         <OrderTicket />
         <DepthCard />
         {latestSignal && <SignalPanel />}
+        <div className="border-t border-border-primary">
+          <div className="px-3 py-2 text-xs font-medium text-text-secondary">Technical Analysis</div>
+          <div style={{ height: 350 }}>
+            <TradingViewTechnicalAnalysis />
+          </div>
+        </div>
       </aside>
 
       {/* Mobile floating ticket button */}
