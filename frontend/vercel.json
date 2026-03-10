@@ -3,7 +3,7 @@
     {
       "source": "/(.*)",
       "headers": [
-        { "key": "Content-Security-Policy", "value": "default-src 'self'; connect-src 'self' https: wss:; img-src 'self' data: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; script-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" },
+        { "key": "Content-Security-Policy", "value": "default-src 'self'; connect-src 'self' https: wss:; img-src 'self' data: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://*.tradingview.com; font-src 'self' https://fonts.gstatic.com data:; script-src 'self' 'unsafe-inline' https://s3.tradingview.com https://*.tradingview.com; frame-src https://*.tradingview.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" },
         { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
         { "key": "X-Frame-Options", "value": "DENY" },
         { "key": "X-Content-Type-Options", "value": "nosniff" }
