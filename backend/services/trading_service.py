@@ -52,9 +52,9 @@ def _dialect(db: Session) -> str:
     return db.bind.dialect.name if db.bind else ""
 
 
-def _lock_query(query, db: Session):
+def _lock_query(query, db: Session, *, skip_locked: bool = False):
     if _dialect(db) == "postgresql":
-        return query.with_for_update()
+        return query.with_for_update(skip_locked=skip_locked)
     return query
 
 
@@ -472,7 +472,14 @@ async def process_open_orders() -> None:
 
 def process_open_orders_sync(db: Session) -> int:
     changed = 0
-    open_orders = db.query(Order).filter(Order.status.in_(("OPEN", "TRIGGER_PENDING"))).all()
+    mutated = False
+    open_orders = _lock_query(
+        db.query(Order)
+        .filter(Order.status.in_(("OPEN", "TRIGGER_PENDING")))
+        .order_by(Order.requested_at.asc()),
+        db,
+        skip_locked=True,
+    ).all()
     for order in open_orders:
         quote_data = market_data_service.get_quote(order.symbol)
         if not quote_data:
@@ -485,7 +492,9 @@ def process_open_orders_sync(db: Session) -> int:
             ask=quote_data.get("ask"),
         )
         should_fill, next_status = _should_fill(order.order_type, order.side, quote, order.price, order.trigger_price)
-        order.last_price = quote.ltp
+        if order.last_price != quote.ltp:
+            mutated = True
+            order.last_price = quote.ltp
         if should_fill:
             _fill_order(
                 db,
@@ -495,9 +504,12 @@ def process_open_orders_sync(db: Session) -> int:
                 actor_id=None,
             )
             changed += 1
+            mutated = True
         else:
-            order.status = next_status
-    if changed:
+            if order.status != next_status:
+                mutated = True
+                order.status = next_status
+    if mutated:
         db.commit()
     return changed
 

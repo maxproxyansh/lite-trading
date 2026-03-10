@@ -8,7 +8,7 @@ type ChainQuote = {
 }
 
 export default function OptionsChain() {
-  const { chain, snapshot, selectedQuote, setSelectedQuote, selectedExpiry, setSelectedExpiry } = useStore()
+  const { chain, snapshot, selectedQuote, setSelectedQuote, selectedExpiry, setSelectedExpiry, openOrderModal } = useStore()
 
   if (!chain || !snapshot) {
     return (
@@ -112,12 +112,18 @@ export default function OptionsChain() {
                     </td>
                     {/* CE LTP */}
                     <td
-                      className={`cursor-pointer px-2 py-[2px] text-right tabular-nums font-medium text-[#4caf50] ${
+                      className={`group/ce relative cursor-pointer px-2 py-[2px] text-right tabular-nums font-medium text-[#4caf50] ${
                         activeCall ? 'bg-profit/15' : 'hover:bg-profit/6'
                       }`}
                       onClick={() => setSelectedQuote(row.call)}
                     >
-                      {row.call.ltp.toFixed(2)}
+                      <span className="group-hover/ce:opacity-50">{row.call.ltp.toFixed(2)}</span>
+                      <div className="absolute inset-0 hidden group-hover/ce:flex items-center justify-center gap-1">
+                        <button onClick={(e) => { e.stopPropagation(); openOrderModal(row.call, 'BUY') }}
+                          className="h-5 w-5 rounded-sm bg-profit text-[10px] font-bold text-white hover:brightness-110">B</button>
+                        <button onClick={(e) => { e.stopPropagation(); openOrderModal(row.call, 'SELL') }}
+                          className="h-5 w-5 rounded-sm bg-loss text-[10px] font-bold text-white hover:brightness-110">S</button>
+                      </div>
                     </td>
 
                     {/* Strike */}
@@ -129,12 +135,18 @@ export default function OptionsChain() {
 
                     {/* PE LTP */}
                     <td
-                      className={`cursor-pointer px-2 py-[2px] text-left tabular-nums font-medium text-loss ${
+                      className={`group/pe relative cursor-pointer px-2 py-[2px] text-left tabular-nums font-medium text-loss ${
                         activePut ? 'bg-loss/15' : 'hover:bg-loss/6'
                       }`}
                       onClick={() => setSelectedQuote(row.put)}
                     >
-                      {row.put.ltp.toFixed(2)}
+                      <span className="group-hover/pe:opacity-50">{row.put.ltp.toFixed(2)}</span>
+                      <div className="absolute inset-0 hidden group-hover/pe:flex items-center justify-center gap-1">
+                        <button onClick={(e) => { e.stopPropagation(); openOrderModal(row.put, 'BUY') }}
+                          className="h-5 w-5 rounded-sm bg-profit text-[10px] font-bold text-white hover:brightness-110">B</button>
+                        <button onClick={(e) => { e.stopPropagation(); openOrderModal(row.put, 'SELL') }}
+                          className="h-5 w-5 rounded-sm bg-loss text-[10px] font-bold text-white hover:brightness-110">S</button>
+                      </div>
                     </td>
                     {/* PE IV */}
                     <td className="hidden md:table-cell px-2 py-[2px] text-left tabular-nums text-text-muted">

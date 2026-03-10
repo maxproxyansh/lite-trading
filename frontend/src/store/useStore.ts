@@ -40,7 +40,12 @@ interface AppState {
   funds: FundsResponse | null
   analytics: AnalyticsResponse | null
   latestSignal: SignalResponse | null
+  optionsSidebarOpen: boolean
   toasts: Toast[]
+  orderModal: { isOpen: boolean; quote: OptionQuote; side: 'BUY' | 'SELL' } | null
+  toggleOptionsSidebar: () => void
+  openOrderModal: (quote: OptionQuote, side: 'BUY' | 'SELL') => void
+  closeOrderModal: () => void
   setSession: (token: string | null, user: UserSummary | null) => void
   setSharedLoading: (loading: boolean) => void
   setPortfolioLoading: (loading: boolean) => void
@@ -83,6 +88,11 @@ export const useStore = create<AppState>((set) => ({
   analytics: null,
   latestSignal: null,
   toasts: [],
+  optionsSidebarOpen: false,
+  toggleOptionsSidebar: () => set((state) => ({ optionsSidebarOpen: !state.optionsSidebarOpen })),
+  orderModal: null,
+  openOrderModal: (quote, side) => set({ orderModal: { isOpen: true, quote, side } }),
+  closeOrderModal: () => set({ orderModal: null }),
   setSession: (token, user) => set({ accessToken: token, user }),
   setSharedLoading: (sharedLoading) => set({ sharedLoading }),
   setPortfolioLoading: (portfolioLoading) => set({ portfolioLoading }),
