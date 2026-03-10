@@ -81,3 +81,25 @@ def _run_migrations(eng) -> None:
                 )
             )
             logger.info("Migration: ensured unique order idempotency index")
+
+    # Migrate Float columns to Numeric(14,2) for financial precision
+    # PostgreSQL supports ALTER COLUMN TYPE; SQLite ignores column types anyway
+    dialect = eng.dialect.name
+    if dialect == "postgresql":
+        float_to_numeric = [
+            ("portfolios", ["starting_cash", "cash_balance", "blocked_margin", "blocked_premium", "realized_pnl"]),
+            ("orders", ["price", "trigger_price", "average_price", "last_price", "premium_required", "margin_required", "charges"]),
+            ("fills", ["price", "charges"]),
+            ("positions", ["average_open_price", "last_price", "blocked_margin", "realized_pnl"]),
+            ("daily_stats", ["opening_balance", "closing_balance", "realized_pnl", "unrealized_pnl"]),
+        ]
+        with eng.begin() as conn:
+            for table, cols in float_to_numeric:
+                if table not in inspector.get_table_names():
+                    continue
+                for col in cols:
+                    try:
+                        conn.execute(text(f'ALTER TABLE {table} ALTER COLUMN "{col}" TYPE NUMERIC(14,2)'))
+                    except Exception:
+                        pass  # Column may already be correct type
+            logger.info("Migration: ensured money columns use NUMERIC(14,2)")

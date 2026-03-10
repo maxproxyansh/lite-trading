@@ -3,20 +3,19 @@ import { useEffect, useRef } from 'react'
 import type { MarketSnapshot, OptionChainResponse, SignalResponse } from '../lib/api'
 import { useStore } from '../store/useStore'
 
-function buildWsUrl(token?: string | null) {
+function buildWsUrl() {
+  // Auth is handled via cookies (access_cookie) — never pass tokens in the URL.
   const explicit = import.meta.env.VITE_WS_BASE_URL as string | undefined
   if (explicit) {
-    if (!token) return explicit
-    const separator = explicit.includes('?') ? '&' : '?'
-    return `${explicit}${separator}token=${encodeURIComponent(token)}`
+    return explicit
   }
   const apiBase = import.meta.env.VITE_API_BASE_URL as string | undefined
   if (apiBase) {
     const wsBase = apiBase.replace(/^http/, 'ws')
-    return token ? `${wsBase}/api/v1/ws?token=${encodeURIComponent(token)}` : `${wsBase}/api/v1/ws`
+    return `${wsBase}/api/v1/ws`
   }
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return token ? `${protocol}//${window.location.host}/api/v1/ws?token=${encodeURIComponent(token)}` : `${protocol}//${window.location.host}/api/v1/ws`
+  return `${protocol}//${window.location.host}/api/v1/ws`
 }
 
 export function useWebSocket() {
@@ -42,7 +41,7 @@ export function useWebSocket() {
 
     const connect = () => {
       setWsStatus('connecting')
-      const socket = new WebSocket(buildWsUrl(accessToken))
+      const socket = new WebSocket(buildWsUrl())
       wsRef.current = socket
 
       const armStaleTimer = () => {
