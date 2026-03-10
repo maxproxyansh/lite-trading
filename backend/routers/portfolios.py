@@ -17,13 +17,13 @@ router = APIRouter(prefix=f"{settings.api_prefix}/portfolios", tags=["portfolios
 
 @router.get("", response_model=list[PortfolioSummary])
 def list_portfolios(db: Session = Depends(get_db), user=Depends(get_current_user)):
-    portfolios = db.query(Portfolio).order_by(Portfolio.id.asc()).all()
+    portfolios = db.query(Portfolio).filter(Portfolio.user_id == user.id).order_by(Portfolio.id.asc()).all()
     return [PortfolioSummary(**portfolio_summary(db, portfolio)) for portfolio in portfolios]
 
 
 @router.get("/{portfolio_id}", response_model=PortfolioSummary)
 def get_portfolio(portfolio_id: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
-    portfolio = db.query(Portfolio).filter(Portfolio.id == portfolio_id).first()
+    portfolio = db.query(Portfolio).filter(Portfolio.id == portfolio_id, Portfolio.user_id == user.id).first()
     if not portfolio:
         raise HTTPException(status_code=404, detail="Portfolio not found")
     return PortfolioSummary(**portfolio_summary(db, portfolio))

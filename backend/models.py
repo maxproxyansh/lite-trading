@@ -56,6 +56,7 @@ class Portfolio(Base):
     __tablename__ = "portfolios"
 
     id = Column(String(64), primary_key=True)
+    user_id = Column(String(64), ForeignKey("users.id"), nullable=True, index=True)
     name = Column(String(255), nullable=False)
     description = Column(Text)
     starting_cash = Column(Float, nullable=False, default=500000.0)

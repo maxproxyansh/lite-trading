@@ -7,73 +7,55 @@ from sqlalchemy.orm import Session
 
 from config import get_settings
 from models import AgentApiKey, Portfolio, RefreshToken, User
-from schemas import CreateAgentKeyRequest, CreateUserRequest, UserSummary
+from schemas import CreateAgentKeyRequest, CreateUserRequest, SignupRequest, UserSummary
 from security import hash_password, hash_secret, key_prefix, make_access_token, make_agent_secret, make_csrf_token, make_refresh_token, verify_password
 from services.audit import log_audit
 
 
 settings = get_settings()
 DEFAULT_AGENT_SCOPES = ["orders:write", "positions:read", "positions:write", "signals:read", "signals:write", "funds:read"]
+STARTING_CASH = 500_000.0
 
 
-def ensure_bootstrap_state(db: Session) -> None:
-    admin = db.query(User).filter(User.email == settings.bootstrap_admin_email).first()
-    legacy_admin = db.query(User).filter(User.email == "admin@lite.local").first()
-    if legacy_admin and not admin:
-        legacy_admin.email = settings.bootstrap_admin_email
-        legacy_admin.display_name = legacy_admin.display_name or "Lite Admin"
-        if not legacy_admin.password_hash:
-            legacy_admin.password_hash = hash_password(settings.bootstrap_admin_password)
-        legacy_admin.role = "admin"
-        legacy_admin.is_active = True
-        db.flush()
-        admin = legacy_admin
-    elif legacy_admin and admin and legacy_admin.id != admin.id:
-        legacy_admin.is_active = False
+def _create_default_portfolio(db: Session, user: User) -> Portfolio:
+    portfolio = Portfolio(
+        id=f"portfolio-{user.id[:8]}",
+        user_id=user.id,
+        name=f"{user.display_name}'s Portfolio",
+        description="Virtual options trading portfolio",
+        starting_cash=STARTING_CASH,
+        cash_balance=STARTING_CASH,
+    )
+    db.add(portfolio)
+    return portfolio
 
-    if not admin:
-        admin = User(
-            email=settings.bootstrap_admin_email,
-            display_name="Lite Admin",
-            password_hash=hash_password(settings.bootstrap_admin_password),
-            role="admin",
-            is_active=True,
-        )
-        db.add(admin)
-    elif not verify_password(settings.bootstrap_admin_password, admin.password_hash):
-        admin.password_hash = hash_password(settings.bootstrap_admin_password)
-        admin.is_active = True
 
-    for portfolio_id, name in (("manual", "Manual Trader"), ("agent", "Agent Trader")):
-        if not db.query(Portfolio).filter(Portfolio.id == portfolio_id).first():
-            db.add(
-                Portfolio(
-                    id=portfolio_id,
-                    name=name,
-                    description=f"{name} virtual options portfolio",
-                )
-            )
-
-    key_hash = hash_secret(settings.bootstrap_agent_key)
-    existing_key = db.query(AgentApiKey).filter(AgentApiKey.key_hash == key_hash).first()
-    if existing_key:
-        current_scopes = set(existing_key.scopes or [])
-        merged_scopes = sorted(current_scopes.union(DEFAULT_AGENT_SCOPES))
-        if merged_scopes != list(existing_key.scopes or []):
-            existing_key.scopes = merged_scopes
-            existing_key.is_active = True
-    else:
-        db.add(
-            AgentApiKey(
-                name=settings.bootstrap_agent_name,
-                key_prefix=key_prefix(settings.bootstrap_agent_key),
-                key_hash=key_hash,
-                scopes=DEFAULT_AGENT_SCOPES,
-                is_active=True,
-            )
-        )
-
+def signup_user(db: Session, payload: SignupRequest) -> User:
+    existing = db.query(User).filter(User.email == payload.email).first()
+    if existing:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
+    user = User(
+        email=payload.email,
+        display_name=payload.display_name,
+        password_hash=hash_password(payload.password),
+        role="trader",
+        is_active=True,
+    )
+    db.add(user)
+    db.flush()
+    _create_default_portfolio(db, user)
+    log_audit(
+        db,
+        actor_type="user",
+        actor_id=user.id,
+        action="user.signup",
+        entity_type="user",
+        entity_id=user.id,
+        details={"email": payload.email},
+    )
     db.commit()
+    db.refresh(user)
+    return user
 
 
 def authenticate_user(db: Session, email: str, password: str) -> User:
@@ -145,6 +127,8 @@ def create_user(db: Session, payload: CreateUserRequest, actor: User) -> User:
         is_active=True,
     )
     db.add(user)
+    db.flush()
+    _create_default_portfolio(db, user)
     log_audit(
         db,
         actor_type="user",

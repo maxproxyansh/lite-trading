@@ -7,8 +7,8 @@ from config import get_settings
 from database import get_db
 from dependencies import get_current_user, get_refresh_cookie, require_role
 from rate_limit import rate_limit
-from schemas import AgentKeyResponse, CreateAgentKeyRequest, CreateUserRequest, LoginRequest, TokenEnvelope, UserSummary
-from services.auth_service import authenticate_user, create_agent_key, create_user, issue_tokens, revoke_refresh_token, rotate_refresh_token
+from schemas import AgentKeyResponse, CreateAgentKeyRequest, CreateUserRequest, LoginRequest, SignupRequest, TokenEnvelope, UserSummary
+from services.auth_service import authenticate_user, create_agent_key, create_user, issue_tokens, revoke_refresh_token, rotate_refresh_token, signup_user
 
 
 settings = get_settings()
@@ -47,6 +47,21 @@ def _set_csrf_cookie(response: Response, csrf_token: str, expires_in: int) -> No
         samesite=settings.refresh_cookie_samesite,
         max_age=expires_in,
     )
+
+
+@router.post("/signup", response_model=TokenEnvelope)
+def signup(
+    payload: SignupRequest,
+    response: Response,
+    db: Session = Depends(get_db),
+    _: None = Depends(rate_limit("auth:signup", 5, 60)),
+):
+    user = signup_user(db, payload)
+    access_token, expires_in, refresh_token, csrf_token = issue_tokens(db, user)
+    _set_access_cookie(response, access_token, expires_in)
+    _set_refresh_cookie(response, refresh_token)
+    _set_csrf_cookie(response, csrf_token, expires_in)
+    return TokenEnvelope(access_token=access_token, expires_in=expires_in, user=UserSummary.model_validate(user))
 
 
 @router.post("/login", response_model=TokenEnvelope)

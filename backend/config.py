@@ -41,10 +41,6 @@ class Settings(BaseSettings):
     quote_refresh_seconds: int = 5
     dhan_client_id: str | None = Field(default=None, alias="DHAN_CLIENT_ID")
     dhan_access_token: str | None = Field(default=None, alias="DHAN_ACCESS_TOKEN")
-    bootstrap_admin_email: str = "admin@lite.trade"
-    bootstrap_admin_password: str = "admin123"
-    bootstrap_agent_key: str = "lite_agent_default_key"
-    bootstrap_agent_name: str = "default-agent"
     default_frontend_slug: str = "litetrade"
     default_backend_slug: str = "litetrade-api"
 

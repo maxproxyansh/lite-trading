@@ -115,6 +115,15 @@ export async function login(email: string, password: string) {
   return envelope
 }
 
+export async function signup(email: string, displayName: string, password: string) {
+  const envelope = await rawFetch<TokenEnvelope>('/api/v1/auth/signup', {
+    method: 'POST',
+    body: JSON.stringify({ email, display_name: displayName, password }),
+  }, false)
+  setSession(envelope.access_token, envelope.user)
+  return envelope
+}
+
 export async function refreshSession() {
   try {
     const envelope = await rawFetch<TokenEnvelope>('/api/v1/auth/refresh', { method: 'POST' }, false)

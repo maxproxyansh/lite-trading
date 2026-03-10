@@ -12,7 +12,6 @@ from config import get_settings
 from database import SessionLocal, init_db
 from routers import admin, agent, analytics, auth, funds, market, orders, portfolios, positions, signals, websocket
 from schemas import HealthResponse
-from services.auth_service import ensure_bootstrap_state
 from services.market_data import market_data_service
 from services.signal_adapter import signal_adapter
 from services.trading_service import process_open_orders_sync
@@ -35,12 +34,7 @@ async def _process_open_orders() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    db = SessionLocal()
-    try:
-        ensure_bootstrap_state(db)
-        logger.info("Bootstrap admin: %s", settings.bootstrap_admin_email)
-    finally:
-        db.close()
+    logger.info("Database initialized")
 
     market_data_service.set_broadcast(broadcast_message)
     market_data_service.set_open_order_processor(_process_open_orders)

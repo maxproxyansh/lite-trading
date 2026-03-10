@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from config import get_settings
 from database import get_db
-from models import AgentApiKey, User
+from models import AgentApiKey, Portfolio, User
 from security import decode_access_token, hash_secret
 
 
@@ -44,6 +44,25 @@ def get_current_user(
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
     return user
+
+
+def get_user_portfolio_ids(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[str]:
+    rows = db.query(Portfolio.id).filter(Portfolio.user_id == user.id).all()
+    return [row[0] for row in rows]
+
+
+def require_portfolio_access(
+    portfolio_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> str:
+    portfolio = db.query(Portfolio).filter(Portfolio.id == portfolio_id, Portfolio.user_id == user.id).first()
+    if not portfolio:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio not found")
+    return portfolio_id
 
 
 def require_role(*allowed: str) -> Callable:

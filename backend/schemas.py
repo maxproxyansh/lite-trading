@@ -41,6 +41,12 @@ class TokenEnvelope(BaseModel):
     user: UserSummary
 
 
+class SignupRequest(BaseModel):
+    email: EmailStr
+    display_name: str = Field(min_length=1, max_length=100)
+    password: str = Field(min_length=8)
+
+
 class CreateUserRequest(BaseModel):
     email: EmailStr
     display_name: str
