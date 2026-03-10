@@ -4,6 +4,7 @@ import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-
 import ErrorBoundary from './components/ErrorBoundary'
 import Header from './components/Header'
 import MobileNav from './components/MobileNav'
+import OptionsSidebarPanel from './components/OptionsSidebarPanel'
 import Sidebar from './components/Sidebar'
 import TradingViewTickerTape from './components/TradingViewTickerTape'
 import OrderModal from './components/OrderModal'
