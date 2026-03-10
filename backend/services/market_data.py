@@ -57,6 +57,10 @@ class MarketDataService:
         self.quotes: dict[str, dict[str, Any]] = {}
         self.last_expiry_refresh: datetime | None = None
         self.last_vix_refresh: datetime | None = None
+        self.last_known_spot: float = 0.0
+        self.last_known_prev_close: float = 0.0
+        self.last_known_change: float = 0.0
+        self.last_known_change_pct: float = 0.0
         self._task: asyncio.Task | None = None
 
     def set_broadcast(self, broadcast: BroadcastFn) -> None:
@@ -111,6 +115,19 @@ class MarketDataService:
             self.last_expiry_refresh = now
             if self.expiries and self.active_expiry not in self.expiries:
                 self.active_expiry = self.expiries[0]
+
+        # Auto-advance if active expiry is in the past
+        if self.active_expiry:
+            try:
+                expiry_date = datetime.strptime(self.active_expiry, "%Y-%m-%d").date()
+                if expiry_date < date.today() and self.expiries:
+                    future = [e for e in self.expiries if e >= date.today().isoformat()]
+                    if future:
+                        self.active_expiry = future[0]
+                    elif self.expiries:
+                        self.active_expiry = self.expiries[0]
+            except ValueError:
+                pass
 
         if not self.active_expiry:
             self.snapshot["degraded"] = True
@@ -221,8 +238,26 @@ class MarketDataService:
         quotes: dict[str, dict[str, Any]] = {}
         rows: list[dict[str, Any]] = []
         spot = float(body.get("last_price") or 0.0)
-        prev_close = float(body.get("prev_close") or body.get("previous_close") or spot or 0.0)
-        atm = round(spot / 50) * 50 if spot else None
+        prev_close = float(body.get("prev_close") or body.get("previous_close") or 0.0)
+
+        if spot > 0:
+            self.last_known_spot = spot
+        if prev_close > 0:
+            self.last_known_prev_close = prev_close
+
+        effective_spot = spot if spot > 0 else self.last_known_spot
+        effective_prev = prev_close if prev_close > 0 else self.last_known_prev_close
+
+        atm = round(effective_spot / 50) * 50 if effective_spot else None
+
+        change = round(effective_spot - effective_prev, 2) if effective_prev else self.last_known_change
+        change_pct = round((change / effective_prev) * 100, 2) if effective_prev else self.last_known_change_pct
+
+        if effective_spot > 0:
+            self.last_known_change = change
+            self.last_known_change_pct = change_pct
+
+        strike_range = 2000
         total_call_oi = 0.0
         total_put_oi = 0.0
 
@@ -230,6 +265,8 @@ class MarketDataService:
             try:
                 strike = int(float(strike_key))
             except (TypeError, ValueError):
+                continue
+            if atm and abs(strike - atm) > strike_range:
                 continue
             option_data = raw_map[strike_key] or {}
             call = self._map_option_quote(option_data.get("ce", {}) or {}, expiry, strike, "CE")
@@ -248,14 +285,12 @@ class MarketDataService:
             )
 
         pcr = round(total_put_oi / total_call_oi, 2) if total_call_oi else None
-        change = round(spot - prev_close, 2) if prev_close else 0.0
-        change_pct = round((change / prev_close) * 100, 2) if prev_close else 0.0
         return {
             "quotes": quotes,
             "rows": rows,
             "snapshot": {
                 "spot_symbol": "NIFTY 50",
-                "spot": spot,
+                "spot": effective_spot,
                 "change": change,
                 "change_pct": change_pct,
                 "vix": self.snapshot.get("vix"),
@@ -298,6 +333,7 @@ class MarketDataService:
         )
         greeks = payload.get("greeks", {}) or {}
         symbol = self.resolve_symbol(expiry=expiry, strike=strike, option_type=option_type)
+        raw_oi = self._safe_float(payload.get("oi") or payload.get("open_interest"))
         return {
             "symbol": symbol,
             "security_id": self._extract_security_id(payload),
@@ -310,7 +346,8 @@ class MarketDataService:
             "bid_qty": int(bid_qty) if bid_qty else None,
             "ask_qty": int(ask_qty) if ask_qty else None,
             "iv": self._safe_float(payload.get("implied_volatility") or payload.get("iv")),
-            "oi": self._safe_float(payload.get("oi") or payload.get("open_interest")),
+            "oi": raw_oi,
+            "oi_lakhs": round(raw_oi / 100000, 2) if raw_oi else None,
             "volume": self._safe_float(payload.get("volume") or payload.get("traded_volume")),
             "delta": self._safe_float(greeks.get("delta")),
             "gamma": self._safe_float(greeks.get("gamma")),
