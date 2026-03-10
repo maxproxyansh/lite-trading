@@ -94,7 +94,7 @@ export default function OrderModal() {
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium text-text-primary">{quote.symbol}</span>
             <span className="text-xs text-text-muted">{quote.strike} {quote.option_type}</span>
-            <span className={`px-1.5 py-0.5 text-[10px] font-bold text-white rounded-sm ${isBuy ? 'bg-profit' : 'bg-loss'}`}>
+            <span className={`px-1.5 py-0.5 text-[10px] font-bold text-white rounded-sm ${isBuy ? 'bg-btn-buy' : 'bg-btn-sell'}`}>
               {side}
             </span>
           </div>
@@ -132,7 +132,7 @@ export default function OrderModal() {
                   onClick={() => setOrderType(t)}
                   className={`flex-1 px-2 py-1.5 text-xs font-medium transition-colors ${
                     orderType === t
-                      ? (isBuy ? 'bg-profit text-white' : 'bg-loss text-white')
+                      ? (isBuy ? 'bg-btn-buy text-white' : 'bg-btn-sell text-white')
                       : 'bg-bg-primary text-text-muted hover:text-text-secondary'
                   }`}
                 >
@@ -182,7 +182,7 @@ export default function OrderModal() {
                   onClick={() => setProduct(p)}
                   className={`px-4 py-1.5 text-xs font-medium transition-colors ${
                     product === p
-                      ? (isBuy ? 'bg-profit text-white' : 'bg-loss text-white')
+                      ? (isBuy ? 'bg-btn-buy text-white' : 'bg-btn-sell text-white')
                       : 'bg-bg-primary text-text-muted hover:text-text-secondary'
                   }`}
                 >
@@ -204,8 +204,8 @@ export default function OrderModal() {
           <button
             disabled={!canSubmit || loading}
             onClick={handleSubmit}
-            className={`w-full rounded-sm py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-30 ${
-              isBuy ? 'bg-profit' : 'bg-loss'
+            className={`w-full rounded-sm py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 ${
+              isBuy ? 'bg-btn-buy' : 'bg-btn-sell'
             }`}
           >
             {loading ? 'Submitting...' : side}

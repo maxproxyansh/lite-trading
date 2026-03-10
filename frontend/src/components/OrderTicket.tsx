@@ -73,17 +73,14 @@ export default function OrderTicket() {
               className={`px-4 py-1.5 text-xs font-medium transition-colors ${
                 side === orderSide
                   ? orderSide === 'BUY'
-                    ? 'bg-profit text-white'
-                    : 'bg-loss text-white'
+                    ? 'bg-btn-buy text-white'
+                    : 'bg-btn-sell text-white'
                   : 'bg-bg-primary text-text-muted hover:text-text-secondary'
               }`}
             >
               {orderSide}
             </button>
           ))}
-        </div>
-        <div className="mt-2 text-[11px] text-text-muted">
-          Contract type: <span className="text-text-primary">{optionType}</span>
         </div>
       </div>
 
@@ -123,6 +120,7 @@ export default function OrderTicket() {
             onChange={(e) => setLots(Math.max(1, Number(e.target.value) || 1))}
             className="mt-0.5 w-full rounded-sm border border-border-primary bg-bg-primary px-2 py-1.5 text-[12px] tabular-nums text-text-primary outline-none"
           />
+          <div className="text-[10px] text-text-muted mt-0.5">= {lots * NIFTY_LOT_SIZE} units</div>
         </label>
         <label className="text-[10px] text-text-muted uppercase">
           Price
@@ -188,11 +186,11 @@ export default function OrderTicket() {
             setLoading(false)
           }
         }}
-        className={`w-full rounded-sm py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-30 ${
-          side === 'BUY' ? 'bg-profit' : 'bg-loss'
+        className={`w-full rounded-sm py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 ${
+          side === 'BUY' ? 'bg-btn-buy' : 'bg-btn-sell'
         }`}
       >
-        {loading ? 'Submitting...' : `${side} ${optionType}`}
+        {loading ? 'Submitting...' : selectedQuote ? `${side} ${optionType}` : side}
       </button>
 
       {!selectedQuote && (

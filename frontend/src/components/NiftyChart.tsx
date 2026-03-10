@@ -114,8 +114,9 @@ export default function NiftyChart() {
           </div>
         )}
         {candleCount === 0 && !loading && (
-          <div className="absolute inset-0 flex items-center justify-center text-text-muted text-sm">
-            Market closed
+          <div className="absolute inset-0 flex flex-col items-center justify-center text-text-muted">
+            <span className="text-sm">Market closed</span>
+            <span className="text-xs mt-1">NSE trading hours: 9:15 AM – 3:30 PM IST</span>
           </div>
         )}
       </div>

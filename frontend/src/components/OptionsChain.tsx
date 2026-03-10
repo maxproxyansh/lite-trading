@@ -1,3 +1,5 @@
+import { useEffect, useRef } from 'react'
+
 import { useStore } from '../store/useStore'
 
 type ChainQuote = {
@@ -18,6 +20,14 @@ export default function OptionsChain() {
     )
   }
 
+  const atmRef = useRef<HTMLTableRowElement>(null)
+
+  useEffect(() => {
+    if (atmRef.current) {
+      atmRef.current.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    }
+  }, [chain?.rows])
+
   const getOILakhs = (quote: ChainQuote) => quote.oi_lakhs ?? null
 
   const rows = chain.rows
@@ -33,6 +43,11 @@ export default function OptionsChain() {
   const formatOI = (oi: number | null) => {
     if (oi == null) return '--'
     return oi.toFixed(1)
+  }
+
+  const formatLTP = (ltp: number) => {
+    if (ltp === 0) return '--'
+    return ltp.toFixed(2)
   }
 
   return (
@@ -94,6 +109,7 @@ export default function OptionsChain() {
                 return (
                   <tr
                     key={row.strike}
+                    ref={row.is_atm ? atmRef : undefined}
                     className={`border-t border-border-secondary/40 h-[26px] hover:bg-bg-hover transition-colors ${row.is_atm ? 'bg-[rgba(229,83,75,0.08)]' : ''}`}
                   >
                     {/* CE OI */}
@@ -117,12 +133,12 @@ export default function OptionsChain() {
                       }`}
                       onClick={() => setSelectedQuote(row.call)}
                     >
-                      <span className="group-hover/ce:opacity-50">{row.call.ltp.toFixed(2)}</span>
+                      <span className="group-hover/ce:opacity-50">{formatLTP(row.call.ltp)}</span>
                       <div className="absolute inset-0 hidden group-hover/ce:flex items-center justify-center gap-1">
                         <button onClick={(e) => { e.stopPropagation(); openOrderModal(row.call, 'BUY') }}
-                          className="h-5 w-5 rounded-sm bg-profit text-[10px] font-bold text-white hover:brightness-110">B</button>
+                          className="h-5 w-5 rounded-sm bg-btn-buy text-[10px] font-bold text-white hover:brightness-110">B</button>
                         <button onClick={(e) => { e.stopPropagation(); openOrderModal(row.call, 'SELL') }}
-                          className="h-5 w-5 rounded-sm bg-loss text-[10px] font-bold text-white hover:brightness-110">S</button>
+                          className="h-5 w-5 rounded-sm bg-btn-sell text-[10px] font-bold text-white hover:brightness-110">S</button>
                       </div>
                     </td>
 
@@ -140,12 +156,12 @@ export default function OptionsChain() {
                       }`}
                       onClick={() => setSelectedQuote(row.put)}
                     >
-                      <span className="group-hover/pe:opacity-50">{row.put.ltp.toFixed(2)}</span>
+                      <span className="group-hover/pe:opacity-50">{formatLTP(row.put.ltp)}</span>
                       <div className="absolute inset-0 hidden group-hover/pe:flex items-center justify-center gap-1">
                         <button onClick={(e) => { e.stopPropagation(); openOrderModal(row.put, 'BUY') }}
-                          className="h-5 w-5 rounded-sm bg-profit text-[10px] font-bold text-white hover:brightness-110">B</button>
+                          className="h-5 w-5 rounded-sm bg-btn-buy text-[10px] font-bold text-white hover:brightness-110">B</button>
                         <button onClick={(e) => { e.stopPropagation(); openOrderModal(row.put, 'SELL') }}
-                          className="h-5 w-5 rounded-sm bg-loss text-[10px] font-bold text-white hover:brightness-110">S</button>
+                          className="h-5 w-5 rounded-sm bg-btn-sell text-[10px] font-bold text-white hover:brightness-110">S</button>
                       </div>
                     </td>
                     {/* PE IV */}

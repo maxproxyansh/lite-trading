@@ -27,10 +27,10 @@
   --color-loss: #e53935;
   --color-atm: #e53935;
   --color-neutral: #9a9a9a;
-  --color-btn-buy: #4caf50;
-  --color-btn-sell: #e53935;
-  --color-btn-buy-hover: #43a047;
-  --color-btn-sell-hover: #c62828;
+  --color-btn-buy: #2962FF;
+  --color-btn-sell: #FF6D00;
+  --color-btn-buy-hover: #1b4ecf;
+  --color-btn-sell-hover: #e06000;
 
   /* Charts */
   --color-candle-bull: #4caf50;

@@ -17,8 +17,6 @@ export default function TradingViewTickerTape() {
         { proName: "NSE:BANKNIFTY", title: "BANK NIFTY" },
         { proName: "BSE:SENSEX", title: "SENSEX" },
         { proName: "NSE:INDIAVIX", title: "INDIA VIX" },
-        { proName: "SP:SPX", title: "S&P 500" },
-        { proName: "NASDAQ:NDX", title: "NASDAQ" },
       ],
       showSymbolLogo: false,
       isTransparent: true,
