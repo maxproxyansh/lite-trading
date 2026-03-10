@@ -3,6 +3,7 @@ import { createChart } from 'lightweight-charts'
 import type { IChartApi, Time } from 'lightweight-charts'
 
 import LoadingState from '../components/LoadingState'
+import PnLHeatmap from '../components/PnLHeatmap'
 import { useStore } from '../store/useStore'
 
 function formatCurrency(value: number): string {
@@ -132,6 +133,11 @@ export default function Analytics() {
                 <div className="mt-1.5 text-lg font-medium tabular-nums text-text-primary">{value}</div>
               </div>
             ))}
+          </div>
+
+          {/* P&L Heatmap */}
+          <div className="mb-5">
+            <PnLHeatmap data={analytics?.pnl_by_day ?? []} />
           </div>
 
           {/* Charts */}
