@@ -1,5 +1,6 @@
 import { useLocation, useNavigate } from 'react-router-dom'
 
+import Logo from '../components/Logo'
 import { logout } from '../lib/api'
 import { useStore } from '../store/useStore'
 
@@ -26,22 +27,26 @@ export default function Header() {
 
   return (
     <header className="flex h-[44px] shrink-0 items-center border-b border-border-primary bg-bg-header">
-      {/* Left: Market indices */}
+      {/* Left: Logo + Market indices */}
       <div className="flex items-center gap-3 pl-3 pr-2">
+        <div className="flex items-center gap-1.5">
+          <Logo size={20} />
+          <span className="text-[13px] font-semibold text-text-primary tracking-wide">lite</span>
+        </div>
         <div className="flex items-center gap-1">
           <span className="text-[12px] text-text-muted">NIFTY 50</span>
           <span className={`text-[15px] font-semibold tabular-nums ${snapshot && snapshot.spot > 0 && snapshot.change >= 0 ? 'text-profit' : snapshot && snapshot.spot > 0 ? 'text-loss' : 'text-text-primary'}`}>
             {snapshot && snapshot.spot > 0 ? snapshot.spot.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '--'}
           </span>
-          {snapshot && snapshot.spot > 0 && (
-            <span className={`text-[12px] tabular-nums ${snapshot.change >= 0 ? 'text-profit' : 'text-loss'}`}>
-              {snapshot.change >= 0 ? '+' : ''}{snapshot.change.toFixed(2)} ({snapshot.change_pct.toFixed(2)}%)
-            </span>
-          )}
+          <span className={`hidden md:inline text-[12px] tabular-nums ${snapshot && snapshot.spot > 0 && snapshot.change >= 0 ? 'text-profit' : snapshot && snapshot.spot > 0 ? 'text-loss' : 'text-text-muted'}`}>
+            {snapshot && snapshot.spot > 0
+              ? `${snapshot.change >= 0 ? '+' : ''}${snapshot.change.toFixed(2)} (${snapshot.change_pct.toFixed(2)}%)`
+              : ''}
+          </span>
         </div>
       </div>
 
-      {/* Center: Navigation */}
+      {/* Center: Navigation — hidden on mobile */}
       <div className="hidden md:flex h-full flex-1 items-center justify-center">
         <nav className="flex h-full items-center gap-0">
           {navItems.map(({ label, path }) => {
@@ -52,7 +57,7 @@ export default function Header() {
                 onClick={() => navigate(path)}
                 className={`flex h-full items-center border-b-2 px-3 text-[13px] font-medium transition-colors duration-150 ${
                   active
-                    ? 'border-[#387ed1] text-text-primary'
+                    ? 'border-brand text-brand'
                     : 'border-transparent text-text-secondary hover:text-text-primary'
                 }`}
               >
@@ -62,6 +67,9 @@ export default function Header() {
           })}
         </nav>
       </div>
+
+      {/* Spacer on mobile when nav is hidden */}
+      <div className="flex-1 md:hidden" />
 
       {/* Right: Status + Portfolio + User + Logout */}
       <div className="flex items-center gap-2 pr-3 text-[12px]">
@@ -79,25 +87,25 @@ export default function Header() {
           </div>
         )}
 
-        {/* Portfolio selector */}
+        {/* Portfolio selector — hidden on mobile */}
         <select
           value={selectedPortfolioId}
           onChange={(e) => setSelectedPortfolioId(e.target.value)}
-          className="cursor-pointer border-none bg-transparent text-[11px] text-text-secondary outline-none"
+          className="hidden md:block cursor-pointer border-none bg-transparent text-[11px] text-text-secondary outline-none"
         >
           {portfolios.map((p) => (
             <option key={p.id} value={p.id} className="bg-bg-primary">{p.name.length > 14 ? p.name.slice(0, 12) + '…' : p.name}</option>
           ))}
         </select>
 
-        <div className="h-3 w-px bg-border-primary" />
+        <div className="hidden md:block h-3 w-px bg-border-primary" />
 
         {/* User avatar + name */}
         <div className="flex items-center gap-1">
-          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-signal/20 text-[9px] font-semibold text-signal">
+          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-brand/20 text-[9px] font-semibold text-brand">
             {user?.display_name?.charAt(0)?.toUpperCase() ?? '?'}
           </div>
-          <span className="text-[11px] text-text-secondary">{user?.display_name ?? 'Guest'}</span>
+          <span className="hidden md:inline text-[11px] text-text-secondary">{user?.display_name ?? 'Guest'}</span>
         </div>
 
         {/* Logout */}
