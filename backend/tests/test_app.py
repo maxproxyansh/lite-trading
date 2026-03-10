@@ -24,7 +24,7 @@ os.environ["LITE_DATABASE_URL"] = f"sqlite:///{TEST_ROOT / 'lite-test.db'}"
 os.environ["SIGNAL_ROOT"] = str(SIGNAL_ROOT)
 os.environ["DHAN_CLIENT_ID"] = ""
 os.environ["DHAN_ACCESS_TOKEN"] = ""
-os.environ["ALLOW_PUBLIC_SIGNUP"] = "false"
+os.environ["ALLOW_PUBLIC_SIGNUP"] = "true"
 os.environ["BOOTSTRAP_ADMIN_EMAIL"] = "admin@lite.trade"
 os.environ["BOOTSTRAP_ADMIN_PASSWORD"] = "lite-admin-123"
 os.environ["BOOTSTRAP_ADMIN_NAME"] = "Lite Admin"
@@ -111,12 +111,26 @@ def test_bootstrap_login_creates_manual_and_agent_portfolios(client: TestClient)
     assert portfolios["manual"]["available_funds"] == 500000.0
     assert portfolios["agent"]["available_funds"] == 500000.0
 
+
+def test_public_signup_creates_isolated_manual_and_agent_portfolios(client: TestClient) -> None:
+    admin_headers = _login(client, "admin@lite.trade", "lite-admin-123")
+    admin_portfolios = _portfolio_map(client, admin_headers)
     signup = client.post(
         "/api/v1/auth/signup",
-        json={"email": "blocked@example.com", "display_name": "Blocked", "password": "blocked-pass-1"},
+        json={"email": "signup@example.com", "display_name": "Signup User", "password": "signup-pass-1"},
     )
-    assert signup.status_code == 403
-    assert signup.json()["detail"] == "Public signup is disabled"
+    assert signup.status_code == 200, signup.text
+
+    user_headers = _login(client, "signup@example.com", "signup-pass-1")
+    user_portfolios = _portfolio_map(client, user_headers)
+    assert set(user_portfolios.keys()) == {"manual", "agent"}
+    assert user_portfolios["manual"]["id"] != admin_portfolios["manual"]["id"]
+
+    forbidden = client.get(
+        f"/api/v1/funds?portfolio_id={admin_portfolios['manual']['id']}",
+        headers=user_headers,
+    )
+    assert forbidden.status_code == 404
 
 
 def test_admin_can_create_user_with_isolated_manual_and_agent_portfolios(client: TestClient) -> None:

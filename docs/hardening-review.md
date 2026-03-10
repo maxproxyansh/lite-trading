@@ -19,15 +19,15 @@ Fix:
 - startup now creates or syncs the configured bootstrap admin
 - seed script and tests work again
 
-### 2. Public signup on a private trading terminal
+### 2. Cross-account access from newly created users
 
-Main exposed `/api/v1/auth/signup` and the login UI offered self-signup, which is the wrong default for a private paper-trading platform.
+Main exposed `/api/v1/auth/signup`, but the real bug was not signup itself. The problem was that user creation and portfolio ownership were not strict enough to guarantee account isolation.
 
 Fix:
 
-- `ALLOW_PUBLIC_SIGNUP=false` by default
-- backend blocks signup unless explicitly enabled
-- frontend login no longer advertises public account creation
+- public signup remains supported
+- each signed-up user gets isolated `manual` and `agent` portfolios
+- routes continue to enforce user-owned portfolio access only
 
 ### 3. Agent keys were effectively global
 

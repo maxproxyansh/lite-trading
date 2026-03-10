@@ -71,13 +71,13 @@ Set these on the Railway backend service:
   `^https://(litetrade|lite-options-terminal)(-[a-z0-9-]+)?\.vercel\.app$`
 - `REFRESH_COOKIE_SECURE=true`
 - `REFRESH_COOKIE_SAMESITE=none`
-- `ALLOW_PUBLIC_SIGNUP=false`
+- `ALLOW_PUBLIC_SIGNUP=true`
 - `JWT_SECRET`
   Use a long random secret.
 - `DHAN_CLIENT_ID`
 - `DHAN_ACCESS_TOKEN`
 - `BOOTSTRAP_ADMIN_EMAIL`
-  Required for a private deployment unless you intentionally enable public signup.
+  Recommended so you always have an operator account even when public signup is enabled.
 - `BOOTSTRAP_ADMIN_PASSWORD`
   Set this explicitly in production.
 - `BOOTSTRAP_ADMIN_NAME`

@@ -74,7 +74,7 @@ Lite is a private, options-only paper-trading terminal built to feel broker-grad
 - `JWT_SECRET`
 - `DHAN_CLIENT_ID`
 - `DHAN_ACCESS_TOKEN`
-- `ALLOW_PUBLIC_SIGNUP=false`
+- `ALLOW_PUBLIC_SIGNUP=true`
 - `BOOTSTRAP_ADMIN_EMAIL`
 - `BOOTSTRAP_ADMIN_PASSWORD`
 - `BOOTSTRAP_ADMIN_NAME`
@@ -83,7 +83,7 @@ Lite is a private, options-only paper-trading terminal built to feel broker-grad
 
 ### Security posture
 
-- Public self-signup is disabled by default.
+- Public signup is supported, but each user is isolated to their own portfolios and account data.
 - Each user is isolated to their own `manual` and `agent` portfolios.
 - Agent API keys are scoped to a single owned portfolio and cannot trade across users.
 - Agent write operations require `idempotency_key`.
