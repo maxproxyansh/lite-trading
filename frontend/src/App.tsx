@@ -62,7 +62,7 @@ function ProtectedLayout() {
         <Header />
         <div className="flex flex-1 overflow-hidden pb-14 md:pb-0">
           <Sidebar />
-          <main className="md:ml-10 flex-1 overflow-auto">
+          <main className="md:ml-10 flex-1 overflow-auto animate-fade-in" key={location.pathname}>
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/positions" element={<Positions />} />

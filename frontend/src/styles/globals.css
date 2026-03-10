@@ -124,6 +124,13 @@
     animation: slide-in-right 200ms ease-out;
   }
 
+  tbody tr {
+    transition: background-color 150ms;
+  }
+  tbody tr:hover {
+    background-color: var(--color-bg-hover);
+  }
+
   .skeleton {
     background: linear-gradient(90deg, var(--color-bg-secondary) 25%, var(--color-bg-tertiary) 50%, var(--color-bg-secondary) 75%);
     background-size: 200% 100%;

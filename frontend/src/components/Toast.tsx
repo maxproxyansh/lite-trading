@@ -18,7 +18,7 @@ export default function Toast() {
         return (
           <div
             key={toast.id}
-            className={`flex min-w-[260px] items-start gap-2.5 rounded border px-3 py-2.5 text-xs shadow-lg ${
+            className={`flex min-w-[260px] items-start gap-2.5 rounded border px-3 py-2.5 text-xs shadow-lg animate-slide-in ${
               toast.type === 'success'
                 ? 'border-profit/30 bg-profit/10 text-profit'
                 : toast.type === 'error'
