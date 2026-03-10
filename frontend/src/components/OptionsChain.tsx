@@ -102,7 +102,7 @@ export default function OptionsChain() {
                   </td>
                   {/* CE LTP */}
                   <td
-                    className={`cursor-pointer px-2 py-[2px] text-right tabular-nums font-medium text-[#4bae4f] ${
+                    className={`cursor-pointer px-2 py-[2px] text-right tabular-nums font-medium text-[#4caf50] ${
                       activeCall ? 'bg-profit/15' : 'hover:bg-profit/6'
                     }`}
                     onClick={() => setSelectedQuote(row.call)}
@@ -112,7 +112,7 @@ export default function OptionsChain() {
 
                   {/* Strike */}
                   <td className="px-2 py-[2px] text-center">
-                    <span className={`font-medium ${row.is_atm ? 'text-[#e5534b]' : 'text-text-primary'}`}>
+                    <span className={`font-medium ${row.is_atm ? 'text-[#e53935]' : 'text-text-primary'}`}>
                       {row.strike}
                     </span>
                   </td>

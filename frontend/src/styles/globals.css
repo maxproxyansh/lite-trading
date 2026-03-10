@@ -1,39 +1,48 @@
 @import "tailwindcss";
 
 @theme {
+  --color-brand: #a3e635;
+  --color-brand-dark: #8bc926;
+  --color-signal: #387ed1;
+
   /* Kite Dark — Backgrounds (neutral charcoal, NO blue/navy tint) */
   --color-bg-primary: #1a1a1a;
   --color-bg-secondary: #252525;
-  --color-bg-tertiary: #2e2e2e;
+  --color-bg-tertiary: #2a2a2a;
   --color-bg-sidebar: #1b1b1b;
   --color-bg-header: #1b1b1b;
   --color-bg-hover: #2e2e2e;
 
   /* Kite Dark — Borders (neutral gray) */
-  --color-border-primary: #2f2f2f;
-  --color-border-secondary: #252525;
+  --color-border-primary: #363636;
+  --color-border-secondary: #2e2e2e;
 
   /* Kite Dark — Text */
-  --color-text-primary: #dddddd;
-  --color-text-secondary: #9a9a9a;
+  --color-text-primary: #e0e0e0;
+  --color-text-secondary: #999999;
   --color-text-muted: #666666;
 
   /* Kite Dark — Semantic */
-  --color-profit: #4bae4f;
-  --color-loss: #e5534b;
-  --color-signal: #387ed1;
-  --color-atm: #e5534b;
+  --color-profit: #4caf50;
+  --color-loss: #e53935;
+  --color-atm: #e53935;
   --color-neutral: #9a9a9a;
-  --color-btn-buy: #4bae4f;
-  --color-btn-sell: #e5534b;
+  --color-btn-buy: #4caf50;
+  --color-btn-sell: #e53935;
   --color-btn-buy-hover: #43a047;
   --color-btn-sell-hover: #c62828;
+
+  /* Charts */
+  --color-candle-bull: #4caf50;
+  --color-candle-bear: #e53935;
+  --color-candle-bull-wick: #4caf50;
+  --color-candle-bear-wick: #e53935;
 }
 
 @layer base {
   :root {
-    --candle-bull: #4bae4f;
-    --candle-bear: #e5534b;
+    --candle-bull: #4caf50;
+    --candle-bear: #e53935;
     --ema-9: rgba(232, 232, 238, 0.6);
     --ema-21: rgba(56, 126, 209, 0.6);
   }
@@ -48,7 +57,7 @@
     font-family: "Lato", system-ui, -apple-system, sans-serif;
     font-size: 12px;
     background: #1a1a1a;
-    color: #dddddd;
+    color: #e0e0e0;
     -webkit-font-smoothing: antialiased;
   }
 
@@ -87,5 +96,37 @@
 
   .ticker-scroll:hover {
     animation-play-state: paused;
+  }
+
+  /* Fade in animation */
+  @keyframes fade-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Slide in from right animation */
+  @keyframes slide-in-right {
+    from { opacity: 0; transform: translateX(100%); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  /* Shimmer animation for skeleton loading */
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+
+  .animate-fade-in {
+    animation: fade-in 150ms ease-out;
+  }
+
+  .animate-slide-in {
+    animation: slide-in-right 200ms ease-out;
+  }
+
+  .skeleton {
+    background: linear-gradient(90deg, var(--color-bg-secondary) 25%, var(--color-bg-tertiary) 50%, var(--color-bg-secondary) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
   }
 }
