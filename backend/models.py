@@ -130,7 +130,7 @@ class Position(Base, BaseModelMixin):
     option_type = Column(String(8), nullable=False)
     product = Column(String(16), nullable=False, default="NRML")
     net_quantity = Column(Integer, nullable=False, default=0)
-    lot_size = Column(Integer, nullable=False, default=25)
+    lot_size = Column(Integer, nullable=False, default=65)
     average_open_price = Column(Numeric(14, 2), nullable=False, default=0.0)
     last_price = Column(Numeric(14, 2), nullable=False, default=0.0)
     blocked_margin = Column(Numeric(14, 2), nullable=False, default=0.0)

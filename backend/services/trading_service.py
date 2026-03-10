@@ -17,7 +17,7 @@ from services.market_data import market_data_service
 
 
 settings = get_settings()
-LOT_SIZE = 25
+LOT_SIZE = settings.nifty_lot_size
 MONEY_PLACES = Decimal("0.01")
 
 

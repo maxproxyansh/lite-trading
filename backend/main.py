@@ -87,3 +87,8 @@ def root():
 @app.get("/version")
 def version():
     return {"version": "2.1.0", "cors_regex": settings.frontend_origin_regex, "origin": settings.frontend_origin}
+
+
+@app.get(f"{settings.api_prefix}/config")
+def get_public_config():
+    return {"nifty_lot_size": settings.nifty_lot_size}
