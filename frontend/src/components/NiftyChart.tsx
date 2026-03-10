@@ -6,29 +6,42 @@ import { fetchCandles } from '../lib/api'
 
 const TIMEFRAMES = ['1m', '5m', '15m', '1h', 'D'] as const
 
+function getChartColors() {
+  const styles = getComputedStyle(document.documentElement)
+  const bgPrimary = styles.getPropertyValue('--color-bg-primary').trim() || '#1a1a1a'
+  const bgSecondary = styles.getPropertyValue('--color-bg-secondary').trim() || '#252525'
+  const textMuted = styles.getPropertyValue('--color-text-muted').trim() || '#666666'
+  const borderPrimary = styles.getPropertyValue('--color-border-primary').trim() || '#363636'
+  const bullColor = styles.getPropertyValue('--color-candle-bull').trim() || '#4caf50'
+  const bearColor = styles.getPropertyValue('--color-candle-bear').trim() || '#e53935'
+  return { bgPrimary, bgSecondary, textMuted, borderPrimary, bullColor, bearColor }
+}
+
 export default function NiftyChart() {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
   const [timeframe, setTimeframe] = useState<(typeof TIMEFRAMES)[number]>('15m')
   const [loading, setLoading] = useState(true)
+  const [candleCount, setCandleCount] = useState(0)
 
   useEffect(() => {
     if (!containerRef.current) return
+    const colors = getChartColors()
     const chart = createChart(containerRef.current, {
-      layout: { background: { color: '#1a1a1a' }, textColor: '#666666' },
-      grid: { vertLines: { color: '#2e2e2e' }, horzLines: { color: '#2e2e2e' } },
+      layout: { background: { color: colors.bgPrimary }, textColor: colors.textMuted },
+      grid: { vertLines: { color: colors.bgSecondary }, horzLines: { color: colors.bgSecondary } },
       crosshair: { mode: 0 },
-      rightPriceScale: { borderColor: '#363636' },
-      timeScale: { borderColor: '#363636', timeVisible: true, secondsVisible: false },
+      rightPriceScale: { borderColor: colors.borderPrimary },
+      timeScale: { borderColor: colors.borderPrimary, timeVisible: true, secondsVisible: false },
     })
     const series = chart.addCandlestickSeries({
-      upColor: '#4caf50',
-      downColor: '#e25c4f',
-      borderUpColor: '#4caf50',
-      borderDownColor: '#e25c4f',
-      wickUpColor: '#4caf50',
-      wickDownColor: '#e25c4f',
+      upColor: colors.bullColor,
+      downColor: colors.bearColor,
+      borderUpColor: colors.bullColor,
+      borderDownColor: colors.bearColor,
+      wickUpColor: colors.bullColor,
+      wickDownColor: colors.bearColor,
     })
     chartRef.current = chart
     seriesRef.current = series
@@ -60,6 +73,7 @@ export default function NiftyChart() {
         }))
         seriesRef.current?.setData(candles)
         chartRef.current?.timeScale().fitContent()
+        setCandleCount(candles.length)
       })
       .finally(() => active && setLoading(false))
     return () => {
@@ -82,8 +96,8 @@ export default function NiftyChart() {
               }}
               className={`px-2 py-0.5 text-[11px] transition-colors ${
                 timeframe === tf
-                  ? 'bg-[#387ed1] text-white rounded-sm'
-                  : 'text-text-muted hover:text-text-primary'
+                  ? 'bg-brand text-bg-primary rounded-sm'
+                  : 'text-text-muted hover:text-text-secondary'
               }`}
             >
               {tf}
@@ -97,6 +111,11 @@ export default function NiftyChart() {
         {loading && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-bg-primary/80">
             <div className="h-6 w-6 rounded-full border-2 border-signal border-t-transparent animate-spin" />
+          </div>
+        )}
+        {candleCount === 0 && !loading && (
+          <div className="absolute inset-0 flex items-center justify-center text-text-muted text-sm">
+            Market closed
           </div>
         )}
       </div>

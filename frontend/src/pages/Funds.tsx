@@ -1,13 +1,22 @@
 import LoadingState from '../components/LoadingState'
 import { useStore } from '../store/useStore'
 
-function fmt(value: number): string {
-  if (Math.abs(value) >= 100000) return `${(value / 100000).toFixed(2)}L`
-  return value.toLocaleString('en-IN', { maximumFractionDigits: 2 })
+function formatCurrency(value: number): string {
+  return `₹${value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 export default function Funds() {
   const { funds, portfolioLoading } = useStore()
+
+  const breakdownItems = [
+    { label: 'Cash Balance', value: funds?.cash_balance ?? 0, isPnl: false },
+    { label: 'Blocked Margin', value: funds?.blocked_margin ?? 0, isPnl: false },
+    { label: 'Blocked Premium', value: funds?.blocked_premium ?? 0, isPnl: false },
+    { label: 'Available Funds', value: funds?.available_funds ?? 0, isPnl: false },
+    { label: 'Realised P&L', value: funds?.realized_pnl ?? 0, isPnl: true },
+    { label: 'Unrealised P&L', value: funds?.unrealized_pnl ?? 0, isPnl: true },
+    { label: 'Total Equity', value: funds?.total_equity ?? 0, isPnl: false },
+  ]
 
   return (
     <div>
@@ -29,18 +38,18 @@ export default function Funds() {
               <div className="flex items-start gap-8">
                 <div>
                   <div className="text-[16px] font-semibold tabular-nums text-text-primary">
-                    {fmt(funds?.available_funds ?? 0)}
+                    {formatCurrency(funds?.available_funds ?? 0)}
                   </div>
                   <div className="mt-1 text-xs text-text-muted">Margin available</div>
                 </div>
                 <div className="space-y-1.5 text-xs">
                   <div className="text-text-secondary">
                     Margins used{' '}
-                    <span className="tabular-nums font-medium text-text-primary">{fmt(funds?.blocked_margin ?? 0)}</span>
+                    <span className="tabular-nums font-medium text-text-primary">{formatCurrency(funds?.blocked_margin ?? 0)}</span>
                   </div>
                   <div className="text-text-secondary">
                     Opening balance{' '}
-                    <span className="tabular-nums font-medium text-text-primary">{fmt(funds?.cash_balance ?? 0)}</span>
+                    <span className="tabular-nums font-medium text-text-primary">{formatCurrency(funds?.cash_balance ?? 0)}</span>
                   </div>
                 </div>
               </div>
@@ -57,7 +66,7 @@ export default function Funds() {
               <div className="flex items-start gap-8">
                 <div>
                   <div className={`text-[16px] font-semibold tabular-nums ${(funds?.realized_pnl ?? 0) >= 0 ? 'text-profit' : 'text-loss'}`}>
-                    {(funds?.realized_pnl ?? 0) >= 0 ? '+' : ''}{fmt(funds?.realized_pnl ?? 0)}
+                    {(funds?.realized_pnl ?? 0) >= 0 ? '+' : ''}{formatCurrency(funds?.realized_pnl ?? 0)}
                   </div>
                   <div className="mt-1 text-xs text-text-muted">Realised</div>
                 </div>
@@ -65,12 +74,12 @@ export default function Funds() {
                   <div className="text-text-secondary">
                     Unrealised{' '}
                     <span className={`tabular-nums font-medium ${(funds?.unrealized_pnl ?? 0) >= 0 ? 'text-profit' : 'text-loss'}`}>
-                      {(funds?.unrealized_pnl ?? 0) >= 0 ? '+' : ''}{fmt(funds?.unrealized_pnl ?? 0)}
+                      {(funds?.unrealized_pnl ?? 0) >= 0 ? '+' : ''}{formatCurrency(funds?.unrealized_pnl ?? 0)}
                     </span>
                   </div>
                   <div className="text-text-secondary">
                     Total equity{' '}
-                    <span className="tabular-nums font-medium text-text-primary">{fmt(funds?.total_equity ?? 0)}</span>
+                    <span className="tabular-nums font-medium text-text-primary">{formatCurrency(funds?.total_equity ?? 0)}</span>
                   </div>
                 </div>
               </div>
@@ -78,30 +87,24 @@ export default function Funds() {
           </div>
 
           {/* Breakdown */}
-          <div className="border-t border-border-primary pt-4">
-            <h2 className="mb-3 text-sm font-medium text-text-secondary">Fund Breakdown</h2>
-            <div className="grid grid-cols-3 gap-3 text-xs xl:grid-cols-4">
-              {([
-                ['Cash Balance', funds?.cash_balance],
-                ['Blocked Margin', funds?.blocked_margin],
-                ['Blocked Premium', funds?.blocked_premium],
-                ['Available Funds', funds?.available_funds],
-                ['Realised P&L', funds?.realized_pnl],
-                ['Unrealised P&L', funds?.unrealized_pnl],
-                ['Total Equity', funds?.total_equity],
-              ] as const).map(([label, value]) => (
-                <div key={label} className="rounded bg-bg-secondary p-3">
-                  <div className="mb-1 text-[10px] uppercase tracking-wider text-text-muted">{label}</div>
-                  <div className={`text-sm font-medium tabular-nums ${
-                    label.includes('P&L') && (value ?? 0) < 0 ? 'text-loss' :
-                    label.includes('P&L') && (value ?? 0) > 0 ? 'text-profit' :
-                    'text-text-primary'
-                  }`}>
-                    {value != null ? value.toLocaleString('en-IN', { maximumFractionDigits: 2 }) : '--'}
-                  </div>
-                </div>
-              ))}
-            </div>
+          <div className="mt-6">
+            <h3 className="text-sm font-medium text-text-primary mb-3 px-4">Fund Breakdown</h3>
+            <table className="w-full text-sm">
+              <tbody>
+                {breakdownItems.map(item => (
+                  <tr key={item.label} className="border-b border-border-secondary">
+                    <td className="px-4 py-2 text-text-muted">{item.label}</td>
+                    <td className={`px-4 py-2 text-right font-medium tabular-nums ${
+                      item.isPnl && item.value < 0 ? 'text-loss' :
+                      item.isPnl && item.value > 0 ? 'text-profit' :
+                      'text-text-primary'
+                    }`}>
+                      {formatCurrency(item.value)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </LoadingState>
       </div>

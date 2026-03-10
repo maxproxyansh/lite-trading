@@ -1,22 +1,9 @@
-import { Target, TriangleAlert } from 'lucide-react'
-
 import { useStore } from '../store/useStore'
 
 export default function SignalPanel() {
   const { latestSignal, setSelectedQuote, chain } = useStore()
 
-  if (!latestSignal) {
-    return (
-      <div className="border-b border-border-primary p-2">
-        <div className="text-xs text-text-muted">No signal loaded</div>
-      </div>
-    )
-  }
-
-  const tone =
-    latestSignal.confidence_score >= 70 ? 'text-profit' :
-    latestSignal.confidence_score >= 55 ? 'text-signal' :
-    'text-loss'
+  if (!latestSignal) return null
 
   const dirBg =
     latestSignal.direction === 'BULLISH' ? 'bg-profit/15 text-profit' :
@@ -30,85 +17,53 @@ export default function SignalPanel() {
     'bg-loss'
 
   return (
-    <div className="border-b border-border-primary p-2">
-      <div className="mb-2 flex items-center justify-between">
-        <span className="text-[11px] text-text-muted uppercase tracking-wide">Agent Signal</span>
-        <span className={`${tone === 'text-profit' ? 'bg-profit/20 text-profit' : tone === 'text-signal' ? 'bg-signal/20 text-signal' : 'bg-loss/20 text-loss'} text-[10px] px-1.5 py-0.5 rounded`}>
-          {latestSignal.confidence_label} {latestSignal.confidence_score.toFixed(0)}%
+    <div className="border-b border-border-primary px-3 py-2">
+      {/* Header row: direction badge + confidence */}
+      <div className="flex items-center gap-2">
+        <span className={`inline-flex items-center rounded-sm px-2 py-0.5 text-xs font-semibold ${dirBg}`}>
+          {latestSignal.direction}
         </span>
-      </div>
-
-      <div className="border-t border-border-primary/60" />
-
-      {/* Direction badge - prominent */}
-      <div className={`my-2 flex items-center justify-center rounded-sm px-3 py-1.5 ${dirBg}`}>
-        <span className="text-[13px] tracking-widest font-semibold">{latestSignal.direction}</span>
-      </div>
-
-      {/* Confidence bar */}
-      <div className="mb-2">
-        <div className="mb-0.5 flex items-center justify-between">
-          <span className="text-[10px] text-text-muted">Confidence</span>
-          <span className={`text-[10px] font-medium ${tone}`}>{confidencePct.toFixed(0)}%</span>
-        </div>
-        <div className="h-[3px] w-full rounded-sm bg-bg-primary">
-          <div
-            className={`h-full rounded-sm ${confidenceBarColor}`}
-            style={{ width: `${confidencePct}%` }}
-          />
-        </div>
-      </div>
-
-      <div className="border-t border-border-primary/60" />
-
-      <div className="mt-2 space-y-1.5 text-[11px] text-text-secondary">
-        <div>
-          <span className="text-text-muted">Trade </span>
-          <span className="text-text-primary">{latestSignal.trade_text ?? 'No actionable trade'}</span>
-        </div>
-        <div className="flex gap-3 text-text-muted">
-          <span>{latestSignal.expiry ?? '--'}</span>
-          <span>{latestSignal.strike ?? '--'} {latestSignal.option_type ?? ''}</span>
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <div className="rounded-sm bg-bg-primary px-2 py-1">
-            <div className="text-[10px] text-text-muted">Entry</div>
-            <div className="tabular-nums text-text-primary">
-              {latestSignal.entry_low && latestSignal.entry_high
-                ? `${latestSignal.entry_low.toFixed(1)} - ${latestSignal.entry_high.toFixed(1)}`
-                : '--'}
-            </div>
+        <div className="flex-1 flex items-center gap-1.5">
+          <div className="flex-1 h-1 rounded-sm bg-bg-primary">
+            <div
+              className={`h-full rounded-sm ${confidenceBarColor}`}
+              style={{ width: `${confidencePct}%` }}
+            />
           </div>
-          <div className="rounded-sm bg-bg-primary px-2 py-1">
-            <div className="text-[10px] text-text-muted">Target / Stop</div>
-            <div className="tabular-nums text-text-primary">
-              {latestSignal.target_price?.toFixed(1) ?? '--'} / {latestSignal.stop_loss?.toFixed(1) ?? '--'}
-            </div>
-          </div>
+          <span className="text-[10px] tabular-nums text-text-muted">{confidencePct.toFixed(0)}%</span>
         </div>
       </div>
 
-      <div className="border-t border-border-primary/60 mt-2" />
-
-      <div className="mt-2 flex gap-2">
-        <button
-          disabled={!latestSignal.option_type || !latestSignal.strike || !latestSignal.expiry || !chain}
-          onClick={() => {
-            const quote = chain?.rows.flatMap((row) => [row.call, row.put]).find((q) =>
-              q.expiry === latestSignal.expiry &&
-              q.strike === latestSignal.strike &&
-              q.option_type === latestSignal.option_type,
-            )
-            if (quote) setSelectedQuote(quote)
-          }}
-          className="flex-1 h-[36px] rounded-[4px] bg-signal px-2 text-[11px] font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-30"
-        >
-          Load Into Ticket
-        </button>
-        <div className="self-stretch flex items-center justify-center rounded-sm border border-border-primary px-2 text-text-muted">
-          {latestSignal.target_valid && latestSignal.stop_valid ? <Target size={12} /> : <TriangleAlert size={12} />}
-        </div>
+      {/* Trade details: compact 2-col grid */}
+      <div className="mt-1.5 flex items-baseline gap-3 text-[11px] text-text-muted">
+        <span className="text-text-secondary">{latestSignal.strike ?? '--'} {latestSignal.option_type ?? ''}</span>
+        <span>{latestSignal.expiry ?? '--'}</span>
       </div>
+      <div className="mt-1 flex items-baseline gap-3 text-[11px] tabular-nums text-text-muted">
+        <span>
+          E {latestSignal.entry_low && latestSignal.entry_high
+            ? `${latestSignal.entry_low.toFixed(1)}-${latestSignal.entry_high.toFixed(1)}`
+            : '--'}
+        </span>
+        <span>T {latestSignal.target_price?.toFixed(1) ?? '--'}</span>
+        <span>SL {latestSignal.stop_loss?.toFixed(1) ?? '--'}</span>
+      </div>
+
+      {/* Load button */}
+      <button
+        disabled={!latestSignal.option_type || !latestSignal.strike || !latestSignal.expiry || !chain}
+        onClick={() => {
+          const quote = chain?.rows.flatMap((row) => [row.call, row.put]).find((q) =>
+            q.expiry === latestSignal.expiry &&
+            q.strike === latestSignal.strike &&
+            q.option_type === latestSignal.option_type,
+          )
+          if (quote) setSelectedQuote(quote)
+        }}
+        className="mt-1.5 text-[11px] text-signal hover:text-signal/80 font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+      >
+        Load into ticket →
+      </button>
     </div>
   )
 }

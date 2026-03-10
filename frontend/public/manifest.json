@@ -1,0 +1,12 @@
+{
+  "name": "Lite Options Terminal",
+  "short_name": "Lite",
+  "description": "Paper trading terminal for NIFTY options",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1a1a1a",
+  "theme_color": "#a3e635",
+  "icons": [
+    { "src": "/logo.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

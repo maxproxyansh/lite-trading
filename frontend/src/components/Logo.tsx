@@ -1,0 +1,23 @@
+interface LogoProps {
+  size?: number
+  className?: string
+}
+
+export default function Logo({ size = 24, className = '' }: LogoProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 64 64"
+      fill="none"
+      className={className}
+      aria-label="Lite"
+    >
+      {/* Kite shape pointing right */}
+      <path d="M8 32L28 12L56 32L28 52Z" fill="#a3e635" />
+      <path d="M28 12L56 32L28 52" fill="#8bc926" />
+      <line x1="8" y1="32" x2="56" y2="32" stroke="#1a1a1a" strokeWidth="1.5" />
+      <line x1="28" y1="12" x2="28" y2="52" stroke="#1a1a1a" strokeWidth="1.5" />
+    </svg>
+  )
+}

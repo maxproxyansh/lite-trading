@@ -5,6 +5,7 @@ import { useStore } from '../store/useStore'
 
 const ORDER_TYPES = ['MARKET', 'LIMIT', 'SL', 'SL-M'] as const
 const PRODUCTS = ['NRML', 'MIS'] as const
+const NIFTY_LOT_SIZE = 65
 
 export default function OrderTicket() {
   const { selectedQuote, selectedPortfolioId, latestSignal, addToast } = useStore()
@@ -24,12 +25,12 @@ export default function OrderTicket() {
   }, [selectedQuote])
 
   const defaultPrice = selectedQuote ? (selectedQuote.ask ?? selectedQuote.ltp) : 0
-  const estimatedValue = (price ? Number(price) : defaultPrice) * lots * 25
+  const estimatedValue = (price ? Number(price) : defaultPrice) * lots * NIFTY_LOT_SIZE
 
   const canSubmit = selectedQuote && (orderType === 'MARKET' || price)
 
   return (
-    <div className="p-2">
+    <div className="border-b border-border-primary p-2">
       <div className="mb-2 text-[10px] text-text-muted uppercase">Order Ticket</div>
 
       {/* Contract */}
@@ -48,24 +49,22 @@ export default function OrderTicket() {
         )}
       </div>
 
-      {/* CE / PE toggle */}
-      <div className="mb-2 grid grid-cols-2 gap-1">
-        <button
-          onClick={() => setOptionType('CE')}
-          className={`rounded-sm py-1.5 text-[12px] font-semibold transition-colors ${
-            optionType === 'CE' ? 'bg-profit text-white' : 'bg-bg-tertiary text-text-muted hover:text-text-primary'
-          }`}
-        >
-          CE
-        </button>
-        <button
-          onClick={() => setOptionType('PE')}
-          className={`rounded-sm py-1.5 text-[12px] font-semibold transition-colors ${
-            optionType === 'PE' ? 'bg-loss text-white' : 'bg-bg-tertiary text-text-muted hover:text-text-primary'
-          }`}
-        >
-          PE
-        </button>
+      {/* CE / PE compact pill toggle */}
+      <div className="mb-2">
+        <div className="inline-flex rounded-sm border border-border-primary overflow-hidden">
+          <button
+            onClick={() => setOptionType('CE')}
+            className={`px-4 py-1.5 text-xs font-medium transition-colors ${
+              optionType === 'CE' ? 'bg-profit text-white' : 'bg-bg-primary text-text-muted hover:text-text-secondary'
+            }`}
+          >CE</button>
+          <button
+            onClick={() => setOptionType('PE')}
+            className={`px-4 py-1.5 text-xs font-medium transition-colors ${
+              optionType === 'PE' ? 'bg-loss text-white' : 'bg-bg-primary text-text-muted hover:text-text-secondary'
+            }`}
+          >PE</button>
+        </div>
       </div>
 
       {/* Type + Product */}
@@ -132,14 +131,6 @@ export default function OrderTicket() {
       {/* Summary */}
       <div className="mb-2 space-y-1 border-t border-border-secondary pt-2 text-[11px] text-text-muted">
         <div className="flex justify-between">
-          <span>Portfolio</span>
-          <span className="font-medium text-text-primary">{selectedPortfolioId}</span>
-        </div>
-        <div className="flex justify-between">
-          <span>Signal</span>
-          <span className="text-text-primary">{latestSignal?.id ? 'Attached' : 'None'}</span>
-        </div>
-        <div className="flex justify-between">
           <span>Est. value</span>
           <span className="tabular-nums text-text-primary">{estimatedValue.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
         </div>
@@ -181,8 +172,14 @@ export default function OrderTicket() {
           optionType === 'CE' ? 'bg-profit' : 'bg-loss'
         }`}
       >
-        {loading ? 'Submitting…' : `BUY ${optionType}`}
+        {loading ? 'Submitting...' : `BUY ${optionType}`}
       </button>
+
+      {!selectedQuote && (
+        <p className="text-xs text-text-muted text-center mt-2">
+          ← Select a contract from the chain
+        </p>
+      )}
     </div>
   )
 }

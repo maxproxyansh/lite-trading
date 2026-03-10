@@ -28,7 +28,7 @@ export default function MobileNav() {
             key={path}
             onClick={() => navigate(path)}
             className={`flex flex-1 flex-col items-center justify-center gap-0.5 ${
-              active ? 'text-signal' : 'text-[#666]'
+              active ? 'text-brand' : 'text-text-muted'
             }`}
           >
             <Icon size={16} strokeWidth={1.5} />

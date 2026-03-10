@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 
 import ErrorBoundary from './components/ErrorBoundary'
 import Header from './components/Header'
@@ -31,7 +31,26 @@ import Positions from './pages/Positions'
 import Settings from './pages/Settings'
 
 function ProtectedLayout() {
-  const { user } = useStore()
+  const { user, snapshot } = useStore()
+  const location = useLocation()
+
+  useEffect(() => {
+    const titles: Record<string, string> = {
+      '/': 'Dashboard',
+      '/orders': 'Orders',
+      '/positions': 'Positions',
+      '/history': 'History',
+      '/funds': 'Funds',
+      '/analytics': 'Analytics',
+      '/settings': 'Settings',
+    }
+    const page = titles[location.pathname] ?? 'Dashboard'
+    const spotPrice = snapshot?.spot
+    const prefix = spotPrice && spotPrice > 0
+      ? `${spotPrice.toLocaleString('en-IN')} — `
+      : ''
+    document.title = `${prefix}${page} — Lite`
+  }, [location.pathname, snapshot])
 
   if (!user) {
     return <Navigate to="/login" replace />
@@ -43,7 +62,7 @@ function ProtectedLayout() {
         <Header />
         <div className="flex flex-1 overflow-hidden pb-14 md:pb-0">
           <Sidebar />
-          <main className="md:ml-10 flex-1 overflow-auto">
+          <main className="md:ml-10 flex-1 overflow-auto animate-fade-in" key={location.pathname}>
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/positions" element={<Positions />} />
@@ -69,6 +88,7 @@ export default function App() {
   const {
     accessToken,
     user,
+    portfoliosLoaded,
     selectedPortfolioId,
     selectedExpiry,
     setSession,
@@ -149,7 +169,7 @@ export default function App() {
   }, [addToast, setLatestSignal, setPortfolios, setSharedLoading, setSnapshot, user])
 
   useEffect(() => {
-    if (!user) return
+    if (!user || !portfoliosLoaded || !selectedPortfolioId) return
     let active = true
     async function loadPortfolioViews() {
       setPortfolioLoading(true)
@@ -181,7 +201,7 @@ export default function App() {
       active = false
       window.clearInterval(interval)
     }
-  }, [addToast, selectedPortfolioId, setAnalytics, setFunds, setOrders, setPortfolioLoading, setPositions, user])
+  }, [addToast, portfoliosLoaded, selectedPortfolioId, setAnalytics, setFunds, setOrders, setPortfolioLoading, setPositions, user])
 
   useEffect(() => {
     if (!user) return

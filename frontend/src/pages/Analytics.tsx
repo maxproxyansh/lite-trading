@@ -5,6 +5,10 @@ import type { IChartApi, Time } from 'lightweight-charts'
 import LoadingState from '../components/LoadingState'
 import { useStore } from '../store/useStore'
 
+function formatCurrency(value: number): string {
+  return `₹${value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
 function EquityCurve({ points }: { points: Array<{ date: string; value: number }> }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
@@ -46,7 +50,11 @@ function EquityCurve({ points }: { points: Array<{ date: string; value: number }
   }, [points])
 
   if (!points.length) {
-    return <div className="flex h-[220px] items-center justify-center text-xs text-text-muted">No equity data yet</div>
+    return (
+      <div className="flex items-center justify-center h-48 text-text-muted text-sm">
+        Equity curve will appear after your first trade
+      </div>
+    )
   }
 
   return <div ref={containerRef} />
@@ -117,7 +125,7 @@ export default function Analytics() {
               ['Total Orders', analytics?.total_orders ?? 0],
               ['Filled', analytics?.filled_orders ?? 0],
               ['Win Rate', `${(analytics?.win_rate ?? 0).toFixed(1)}%`],
-              ['Equity', (analytics?.total_equity ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })],
+              ['Equity', formatCurrency(analytics?.total_equity ?? 0)],
             ] as const).map(([label, value]) => (
               <div key={label} className="rounded bg-bg-secondary p-3">
                 <div className="text-[10px] uppercase tracking-wider text-text-muted">{label}</div>
