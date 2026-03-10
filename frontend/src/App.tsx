@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 
 import ErrorBoundary from './components/ErrorBoundary'
 import Header from './components/Header'
@@ -31,7 +31,26 @@ import Positions from './pages/Positions'
 import Settings from './pages/Settings'
 
 function ProtectedLayout() {
-  const { user } = useStore()
+  const { user, snapshot } = useStore()
+  const location = useLocation()
+
+  useEffect(() => {
+    const titles: Record<string, string> = {
+      '/': 'Dashboard',
+      '/orders': 'Orders',
+      '/positions': 'Positions',
+      '/history': 'History',
+      '/funds': 'Funds',
+      '/analytics': 'Analytics',
+      '/settings': 'Settings',
+    }
+    const page = titles[location.pathname] ?? 'Dashboard'
+    const spotPrice = snapshot?.spot
+    const prefix = spotPrice && spotPrice > 0
+      ? `${spotPrice.toLocaleString('en-IN')} — `
+      : ''
+    document.title = `${prefix}${page} — Lite`
+  }, [location.pathname, snapshot])
 
   if (!user) {
     return <Navigate to="/login" replace />
