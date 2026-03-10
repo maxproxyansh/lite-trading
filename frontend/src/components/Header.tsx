@@ -6,7 +6,6 @@ import { useStore } from '../store/useStore'
 const navItems = [
   { label: 'Dashboard', path: '/' },
   { label: 'Orders', path: '/orders' },
-  { label: 'Holdings', path: '/history' },
   { label: 'Positions', path: '/positions' },
   { label: 'Funds', path: '/funds' },
   { label: 'Analytics', path: '/analytics' },
@@ -31,10 +30,10 @@ export default function Header() {
       <div className="flex items-center gap-3 pl-3 pr-2">
         <div className="flex items-center gap-1">
           <span className="text-[12px] text-text-muted">NIFTY 50</span>
-          <span className={`text-[15px] font-semibold tabular-nums ${snapshot && snapshot.change >= 0 ? 'text-profit' : snapshot ? 'text-loss' : 'text-text-primary'}`}>
-            {snapshot?.spot?.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) ?? '--'}
+          <span className={`text-[15px] font-semibold tabular-nums ${snapshot && snapshot.spot > 0 && snapshot.change >= 0 ? 'text-profit' : snapshot && snapshot.spot > 0 ? 'text-loss' : 'text-text-primary'}`}>
+            {snapshot && snapshot.spot > 0 ? snapshot.spot.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '--'}
           </span>
-          {snapshot && (
+          {snapshot && snapshot.spot > 0 && (
             <span className={`text-[12px] tabular-nums ${snapshot.change >= 0 ? 'text-profit' : 'text-loss'}`}>
               {snapshot.change >= 0 ? '+' : ''}{snapshot.change.toFixed(2)} ({snapshot.change_pct.toFixed(2)}%)
             </span>
@@ -66,17 +65,19 @@ export default function Header() {
 
       {/* Right: Status + Portfolio + User + Logout */}
       <div className="flex items-center gap-2 pr-3 text-[12px]">
-        {/* WS status dot */}
-        <div className="relative flex items-center justify-center" title={`WebSocket: ${wsStatus}`}>
-          <div
-            className={`h-1.5 w-1.5 rounded-full ${
-              wsStatus === 'connected' ? 'bg-profit' : wsStatus === 'connecting' ? 'bg-yellow-500' : 'bg-loss'
-            }`}
-          />
-          {wsStatus === 'connected' && (
-            <div className="absolute h-1.5 w-1.5 animate-ping rounded-full bg-profit opacity-75" />
-          )}
-        </div>
+        {/* WS status — only shown when NOT connected */}
+        {wsStatus !== 'connected' && (
+          <div className="flex items-center gap-1" title={`WebSocket: ${wsStatus}`}>
+            <div
+              className={`h-1.5 w-1.5 rounded-full ${
+                wsStatus === 'connecting' ? 'bg-yellow-500' : 'bg-loss'
+              }`}
+            />
+            <span className="text-[10px] text-yellow-500">
+              {wsStatus === 'connecting' ? 'Connecting…' : 'Disconnected'}
+            </span>
+          </div>
+        )}
 
         {/* Portfolio selector */}
         <select
@@ -85,7 +86,7 @@ export default function Header() {
           className="cursor-pointer border-none bg-transparent text-[11px] text-text-secondary outline-none"
         >
           {portfolios.map((p) => (
-            <option key={p.id} value={p.id} className="bg-bg-primary">{p.name}</option>
+            <option key={p.id} value={p.id} className="bg-bg-primary">{p.name.length > 14 ? p.name.slice(0, 12) + '…' : p.name}</option>
           ))}
         </select>
 
