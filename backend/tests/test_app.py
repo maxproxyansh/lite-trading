@@ -373,6 +373,12 @@ def test_agent_api_key_can_access_market_routes(client: TestClient) -> None:
     assert depth.json()["symbol"] == "NIFTY_2026-03-12_22500_CE"
 
 
+def test_unauthenticated_market_access_rejected(client: TestClient) -> None:
+    for path in ["/api/v1/market/snapshot", "/api/v1/market/expiries", "/api/v1/market/chain", "/api/v1/market/candles", "/api/v1/market/depth/NIFTY"]:
+        resp = client.get(path)
+        assert resp.status_code == 401, f"{path} should reject unauthenticated requests, got {resp.status_code}"
+
+
 def test_human_sell_and_close_releases_margin(client: TestClient) -> None:
     headers = _login(client, "admin@lite.trade", "lite-admin-123")
     csrf_token = client.cookies.get("lite_csrf")

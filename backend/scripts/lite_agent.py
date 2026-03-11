@@ -145,7 +145,7 @@ def handle_market_chain(args: argparse.Namespace) -> Any:
 
 def handle_market_candles(args: argparse.Namespace) -> Any:
     client, _, _ = make_client(args)
-    return client.candles(timeframe=args.timeframe)
+    return client.candles(timeframe=args.timeframe, before=args.before)
 
 
 def handle_market_depth(args: argparse.Namespace) -> Any:
@@ -255,6 +255,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     market_candles = market_subparsers.add_parser("candles", help="Show OHLC candle data")
     market_candles.add_argument("--timeframe", default="15m")
+    market_candles.add_argument("--before", type=int, default=None, help="Unix timestamp for pagination")
     market_candles.set_defaults(handler=handle_market_candles)
 
     market_depth = market_subparsers.add_parser("depth", help="Show bid/ask depth for a symbol")

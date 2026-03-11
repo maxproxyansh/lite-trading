@@ -93,8 +93,11 @@ class LiteAgentClient:
         params = {"expiry": expiry} if expiry else None
         return self._request("GET", "/api/v1/market/chain", params=params)
 
-    def candles(self, timeframe: str = "15m") -> dict[str, Any]:
-        return self._request("GET", "/api/v1/market/candles", params={"timeframe": timeframe})
+    def candles(self, timeframe: str = "15m", before: int | None = None) -> dict[str, Any]:
+        params: dict[str, Any] = {"timeframe": timeframe}
+        if before is not None:
+            params["before"] = before
+        return self._request("GET", "/api/v1/market/candles", params=params)
 
     def depth(self, symbol: str) -> dict[str, Any]:
         return self._request("GET", f"/api/v1/market/depth/{quote(symbol, safe='')}")
