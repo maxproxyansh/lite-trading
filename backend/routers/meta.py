@@ -19,12 +19,20 @@ settings = get_settings()
 router = APIRouter(prefix=settings.api_prefix, tags=["meta"])
 
 
+def _request_origin(request: Request) -> str:
+    forwarded_proto = request.headers.get("x-forwarded-proto")
+    forwarded_host = request.headers.get("x-forwarded-host")
+    if forwarded_proto and forwarded_host:
+        return f"{forwarded_proto}://{forwarded_host}"
+    return str(request.base_url).rstrip("/")
+
+
 def _absolute_http_url(request: Request, path: str) -> str:
-    return f"{str(request.base_url).rstrip('/')}{path}"
+    return f"{_request_origin(request)}{path}"
 
 
 def _absolute_ws_url(request: Request, path: str) -> str:
-    scheme = "wss" if request.url.scheme == "https" else "ws"
+    scheme = "wss" if request.headers.get("x-forwarded-proto", request.url.scheme) == "https" else "ws"
     return f"{scheme}://{request.url.netloc}{path}"
 
 
@@ -41,7 +49,7 @@ def api_meta(request: Request):
         app=settings.app_name,
         version=settings.app_version,
         api_prefix=settings.api_prefix,
-        base_url=str(request.base_url).rstrip("/"),
+        base_url=_request_origin(request),
         meta_url=_absolute_http_url(request, f"{settings.api_prefix}/meta"),
         docs_url=_absolute_http_url(request, f"{settings.api_prefix}/docs"),
         openapi_url=_absolute_http_url(request, f"{settings.api_prefix}/openapi.json"),

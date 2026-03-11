@@ -31,6 +31,14 @@ REDOC_URL = f"{settings.api_prefix}/redoc"
 META_URL = f"{settings.api_prefix}/meta"
 
 
+def _request_origin(request: Request) -> str:
+    forwarded_proto = request.headers.get("x-forwarded-proto")
+    forwarded_host = request.headers.get("x-forwarded-host")
+    if forwarded_proto and forwarded_host:
+        return f"{forwarded_proto}://{forwarded_host}"
+    return str(request.base_url).rstrip("/")
+
+
 async def _process_market_side_effects(symbols: set[str]) -> None:
     db = SessionLocal()
     changed_portfolios: set[str] = set()
@@ -107,7 +115,7 @@ for router in (auth, admin, meta, market, alerts, portfolios, orders, positions,
 
 @app.get("/", response_model=HealthResponse)
 def root(request: Request):
-    base_url = str(request.base_url).rstrip("/")
+    base_url = _request_origin(request)
     return HealthResponse(
         status="ok",
         app=settings.app_name,

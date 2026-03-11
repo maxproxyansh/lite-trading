@@ -245,6 +245,23 @@ def test_root_meta_docs_and_openapi_are_agent_discoverable(client: TestClient) -
     assert {"market.snapshot", "option.chain", "option.quotes", "portfolio.refresh", "signal.updated"} <= event_types
 
 
+def test_meta_uses_forwarded_host_headers_for_public_urls(client: TestClient) -> None:
+    response = client.get(
+        "/api/v1/meta",
+        headers={
+            "Host": "lite-options-api-production.up.railway.app",
+            "X-Forwarded-Proto": "https",
+            "X-Forwarded-Host": "litetrade.vercel.app",
+        },
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["base_url"] == "https://litetrade.vercel.app"
+    assert payload["docs_url"] == "https://litetrade.vercel.app/api/v1/docs"
+    assert payload["openapi_url"] == "https://litetrade.vercel.app/api/v1/openapi.json"
+    assert payload["websocket"]["url"] == "wss://lite-options-api-production.up.railway.app/api/v1/ws"
+
+
 def test_agent_keys_are_portfolio_scoped_and_agent_orders_are_idempotent(client: TestClient) -> None:
     admin_headers = _login(client, "admin@lite.trade", "lite-admin-123")
     portfolios = _portfolio_map(client, admin_headers)

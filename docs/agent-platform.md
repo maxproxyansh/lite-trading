@@ -18,6 +18,13 @@ An agent does not need to reverse-engineer the frontend to discover the API.
 - `GET /api/v1/openapi.json` serves the OpenAPI schema
 - `GET /api/v1/redoc` serves ReDoc
 
+Friendly public aliases on the frontend domain:
+
+- `https://litetrade.vercel.app/api/meta`
+- `https://litetrade.vercel.app/api/docs`
+- `https://litetrade.vercel.app/api/openapi.json`
+- `https://litetrade.vercel.app/api/redoc`
+
 Start here:
 
 ```bash

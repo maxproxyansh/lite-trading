@@ -11,6 +11,14 @@
     }
   ],
   "rewrites": [
+    { "source": "/api/meta", "destination": "https://lite-options-api-production.up.railway.app/api/v1/meta" },
+    { "source": "/api/docs", "destination": "https://lite-options-api-production.up.railway.app/api/v1/docs" },
+    { "source": "/api/openapi.json", "destination": "https://lite-options-api-production.up.railway.app/api/v1/openapi.json" },
+    { "source": "/api/redoc", "destination": "https://lite-options-api-production.up.railway.app/api/v1/redoc" },
+    { "source": "/api/v1/meta", "destination": "https://lite-options-api-production.up.railway.app/api/v1/meta" },
+    { "source": "/api/v1/docs", "destination": "https://lite-options-api-production.up.railway.app/api/v1/docs" },
+    { "source": "/api/v1/openapi.json", "destination": "https://lite-options-api-production.up.railway.app/api/v1/openapi.json" },
+    { "source": "/api/v1/redoc", "destination": "https://lite-options-api-production.up.railway.app/api/v1/redoc" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
