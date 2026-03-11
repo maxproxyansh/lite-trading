@@ -384,6 +384,53 @@ def test_agent_api_key_can_access_market_routes(client: TestClient) -> None:
     assert depth.json()["symbol"] == "NIFTY_2026-03-12_22500_CE"
 
 
+def test_market_chain_failed_expiry_switch_keeps_cached_chain(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bootstrap = _bootstrap_agent(client, agent_name="expiry-agent")
+    api_key = bootstrap["api_key"]
+    original_rows = market_data_service.option_rows
+    original_snapshot = dict(market_data_service.snapshot)
+    original_expiries = list(market_data_service.expiries)
+    original_active_expiry = market_data_service.active_expiry
+
+    call = dict(market_data_service.quotes["NIFTY_2026-03-12_22500_CE"])
+    put = {
+        **call,
+        "symbol": "NIFTY_2026-03-12_22500_PE",
+        "option_type": "PE",
+        "ltp": 98.4,
+        "bid": 98.1,
+        "ask": 98.7,
+    }
+
+    market_data_service.option_rows = [{"strike": 22500, "is_atm": True, "call": call, "put": put}]
+    market_data_service.snapshot.update({"active_expiry": "2026-03-12", "expiries": ["2026-03-12", "2026-03-19"]})
+    market_data_service.expiries = ["2026-03-12", "2026-03-19"]
+    market_data_service.active_expiry = "2026-03-12"
+
+    async def fake_activate_expiry(expiry: str) -> bool:
+        assert expiry == "2026-03-19"
+        return False
+
+    monkeypatch.setattr(market_data_service, "activate_expiry", fake_activate_expiry)
+    try:
+        response = client.get("/api/v1/market/chain?expiry=2026-03-19", headers={"X-API-Key": api_key})
+    finally:
+        market_data_service.option_rows = original_rows
+        market_data_service.snapshot.clear()
+        market_data_service.snapshot.update(original_snapshot)
+        market_data_service.expiries = original_expiries
+        market_data_service.active_expiry = original_active_expiry
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["snapshot"]["active_expiry"] == "2026-03-12"
+    assert len(payload["rows"]) == 1
+    assert payload["rows"][0]["call"]["symbol"] == "NIFTY_2026-03-12_22500_CE"
+
+
 def test_agent_alerts_are_portfolio_scoped(client: TestClient) -> None:
     admin_headers = _login(client, "admin@lite.trade", "lite-admin-123")
     portfolios = _portfolio_map(client, admin_headers)
@@ -1429,6 +1476,7 @@ def test_fetch_candles_aggregates_weekly_and_monthly_from_daily_history(monkeypa
     fake_client = FakeDhanClient()
     monkeypatch.setattr(market_data_service, "_has_dhan", lambda: True)
     monkeypatch.setattr(market_data_service, "_client", lambda: fake_client)
+    monkeypatch.setattr(market_data_service, "_live_price_for_target", lambda target: None)
 
     weekly = market_data_service._fetch_candles("W")
     monthly = market_data_service._fetch_candles("M")

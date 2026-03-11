@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import { Bell, X } from 'lucide-react'
 import { createChart, LineStyle } from 'lightweight-charts'
 import type { CandlestickData, IChartApi, IPriceLine, ISeriesApi, LogicalRange, MouseEventParams, Time } from 'lightweight-charts'
@@ -104,6 +104,53 @@ export default function NiftyChart() {
   const [pendingAlert, setPendingAlert] = useState<{ price: number; x: number; y: number } | null>(null)
   const [submittingAlert, setSubmittingAlert] = useState(false)
   const [alertsPanelOpen, setAlertsPanelOpen] = useState(false)
+
+  const syncLiveChartPrice = useEffectEvent(() => {
+    const price = chartQuote?.ltp ?? spot
+    if (!price || price <= 0 || !seriesRef.current || !lastBarRef.current) {
+      return
+    }
+
+    const lastBar = lastBarRef.current
+    const nextBoundary = nextBarBoundary(Number(lastBar.time), timeframe)
+    const now = Math.floor(Date.now() / 1000)
+
+    if (now >= nextBoundary) {
+      const nextBar: CandlestickData<Time> = {
+        time: nextBoundary as Time,
+        open: lastBar.close,
+        high: price,
+        low: price,
+        close: price,
+      }
+      lastBarRef.current = nextBar
+      candlesRef.current = [...candlesRef.current, nextBar]
+      setCandleCount(candlesRef.current.length)
+      seriesRef.current.update(nextBar)
+      return
+    }
+
+    const nextBar: CandlestickData<Time> = {
+      ...lastBar,
+      high: Math.max(lastBar.high, price),
+      low: Math.min(lastBar.low, price),
+      close: price,
+    }
+
+    if (
+      nextBar.close === lastBar.close
+      && nextBar.high === lastBar.high
+      && nextBar.low === lastBar.low
+    ) {
+      return
+    }
+
+    lastBarRef.current = nextBar
+    candlesRef.current = candlesRef.current.map((bar, index, source) => (
+      index === source.length - 1 ? nextBar : bar
+    ))
+    seriesRef.current.update(nextBar)
+  })
 
   useEffect(() => {
     const container = containerRef.current
@@ -240,6 +287,7 @@ export default function NiftyChart() {
         seriesRef.current?.setData(candles)
         chartRef.current?.timeScale().fitContent()
         setCandleCount(candles.length)
+        syncLiveChartPrice()
       })
       .catch((error) => {
         if (!active || historySessionRef.current !== session) {
@@ -353,50 +401,8 @@ export default function NiftyChart() {
   }, [addToast, chartSecurityId, chartSymbol, loading, timeframe])
 
   useEffect(() => {
-    if (!chartPrice || chartPrice <= 0 || !seriesRef.current || !lastBarRef.current) {
-      return
-    }
-
-    const lastBar = lastBarRef.current
-    const nextBoundary = nextBarBoundary(Number(lastBar.time), timeframe)
-    const now = Math.floor(Date.now() / 1000)
-
-    if (now >= nextBoundary) {
-      const nextBar: CandlestickData<Time> = {
-        time: nextBoundary as Time,
-        open: lastBar.close,
-        high: chartPrice,
-        low: chartPrice,
-        close: chartPrice,
-      }
-      lastBarRef.current = nextBar
-      candlesRef.current = [...candlesRef.current, nextBar]
-      setCandleCount(candlesRef.current.length)
-      seriesRef.current.update(nextBar)
-      return
-    }
-
-    const nextBar: CandlestickData<Time> = {
-      ...lastBar,
-      high: Math.max(lastBar.high, chartPrice),
-      low: Math.min(lastBar.low, chartPrice),
-      close: chartPrice,
-    }
-
-    if (
-      nextBar.close === lastBar.close
-      && nextBar.high === lastBar.high
-      && nextBar.low === lastBar.low
-    ) {
-      return
-    }
-
-    lastBarRef.current = nextBar
-    candlesRef.current = candlesRef.current.map((bar, index, source) => (
-      index === source.length - 1 ? nextBar : bar
-    ))
-    seriesRef.current.update(nextBar)
-  }, [chartPrice, timeframe])
+    syncLiveChartPrice()
+  }, [candleCount, chartPrice, chartSymbol, timeframe])
 
   useEffect(() => {
     const series = seriesRef.current

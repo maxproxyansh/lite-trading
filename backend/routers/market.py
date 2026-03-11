@@ -25,9 +25,10 @@ def expiries(_actor=Depends(get_current_user_or_agent)):
 @router.get("/chain", response_model=OptionChainResponse)
 async def chain(expiry: str | None = None, _actor=Depends(get_current_user_or_agent)):
     if expiry and expiry != market_data_service.active_expiry:
-        market_data_service.set_active_expiry(expiry)
-        await market_data_service.refresh()
-    return market_data_service.get_option_chain(expiry)
+        activated = await market_data_service.activate_expiry(expiry)
+        if not activated and not market_data_service.option_rows:
+            raise HTTPException(status_code=503, detail="OPTION_CHAIN_UNAVAILABLE")
+    return market_data_service.get_option_chain()
 
 
 @router.get("/candles", response_model=CandleResponse)

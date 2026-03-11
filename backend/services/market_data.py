@@ -319,22 +319,22 @@ class MarketDataService:
 
         chain = await asyncio.to_thread(self._fetch_option_chain, self.active_expiry)
         if not chain:
+            if self.option_rows:
+                self.snapshot["expiries"] = self.expiries
+                self.snapshot["active_expiry"] = self.active_expiry
+                self.snapshot["market_status"] = market_status()
+                self.snapshot["degraded"] = True
+                self.snapshot["degraded_reason"] = "OPTION_CHAIN_STALE"
+                self.snapshot["updated_at"] = now
+                await self._broadcast_snapshot()
+                return
             self.snapshot["degraded"] = True
             self.snapshot["degraded_reason"] = "OPTION_CHAIN_UNAVAILABLE"
             self.snapshot["updated_at"] = now
             await self._broadcast_snapshot()
             return
 
-        self.option_rows = chain["rows"]
-        self.quotes = chain["quotes"]
-        self._security_id_to_symbol = chain["security_id_to_symbol"]
-        self.snapshot.update(chain["snapshot"])
-        self.snapshot["expiries"] = self.expiries
-        self.snapshot["active_expiry"] = self.active_expiry
-        self.snapshot["market_status"] = market_status()
-        self.snapshot["degraded"] = False
-        self.snapshot["degraded_reason"] = None
-        self.snapshot["updated_at"] = now
+        self._apply_chain_payload(chain, expiry=self.active_expiry, now=now)
 
         if not self.last_vix_refresh or now - self.last_vix_refresh > timedelta(minutes=5):
             vix = await asyncio.to_thread(self._fetch_vix)
@@ -342,9 +342,6 @@ class MarketDataService:
                 self.snapshot["vix"] = vix
             self.last_vix_refresh = now
 
-        self._desired_feed_instruments = self._build_feed_instruments()
-        self._dirty_quote_symbols.clear()
-        self._pcr_dirty = False
         await self._broadcast_snapshot()
         await self._broadcast_chain()
 
@@ -354,19 +351,45 @@ class MarketDataService:
 
     async def _broadcast_chain(self) -> None:
         if self._broadcast:
-            response = self.get_option_chain(self.active_expiry)
+            response = self.get_option_chain()
             await self._broadcast("option.chain", response.model_dump(mode="json"))
 
     def set_active_expiry(self, expiry: str) -> None:
         self.active_expiry = expiry
 
+    async def activate_expiry(self, expiry: str) -> bool:
+        requested = expiry.strip()
+        if not requested:
+            return False
+        if self.expiries and requested not in self.expiries:
+            return False
+        chain = await asyncio.to_thread(self._fetch_option_chain, requested)
+        if not chain:
+            return False
+        self._apply_chain_payload(chain, expiry=requested, now=datetime.now(timezone.utc))
+        return True
+
     def get_snapshot(self) -> MarketSnapshot:
         return MarketSnapshot(**self.snapshot)
 
     def get_option_chain(self, expiry: str | None = None) -> OptionChainResponse:
-        if expiry and expiry != self.active_expiry:
-            self.active_expiry = expiry
         return OptionChainResponse(snapshot=self.get_snapshot(), rows=self.option_rows)
+
+    def _apply_chain_payload(self, chain: dict[str, Any], *, expiry: str, now: datetime) -> None:
+        self.active_expiry = expiry
+        self.option_rows = chain["rows"]
+        self.quotes = chain["quotes"]
+        self._security_id_to_symbol = chain["security_id_to_symbol"]
+        self.snapshot.update(chain["snapshot"])
+        self.snapshot["expiries"] = self.expiries
+        self.snapshot["active_expiry"] = expiry
+        self.snapshot["market_status"] = market_status()
+        self.snapshot["degraded"] = False
+        self.snapshot["degraded_reason"] = None
+        self.snapshot["updated_at"] = now
+        self._desired_feed_instruments = self._build_feed_instruments()
+        self._dirty_quote_symbols.clear()
+        self._pcr_dirty = False
 
     def get_quote(self, symbol: str) -> dict[str, Any] | None:
         return self.quotes.get(symbol)
@@ -501,6 +524,64 @@ class MarketDataService:
             bucket["volume"] = float(bucket["volume"]) + float(candle.get("volume") or 0.0)
 
         return [buckets[key] for key in sorted(buckets)]
+
+    @staticmethod
+    def _current_bucket_time(timeframe: str) -> int:
+        now = datetime.now(timezone.utc).astimezone(IST)
+        if timeframe == "W":
+            bucket_date = now.date() - timedelta(days=now.weekday())
+        elif timeframe == "M":
+            bucket_date = now.date().replace(day=1)
+        else:
+            bucket_date = now.date()
+        return int(datetime.combine(bucket_date, datetime.min.time(), tzinfo=IST).timestamp())
+
+    @staticmethod
+    def _overlay_live_price(
+        candles: list[dict[str, Any]],
+        *,
+        timeframe: str,
+        live_price: float | None,
+    ) -> list[dict[str, Any]]:
+        if live_price is None or live_price <= 0:
+            return candles
+
+        bucket_time = MarketDataService._current_bucket_time(timeframe)
+        if candles and int(candles[-1]["time"]) == bucket_time:
+            last = candles[-1]
+            next_candle = {
+                **last,
+                "high": max(float(last["high"]), live_price),
+                "low": min(float(last["low"]), live_price),
+                "close": live_price,
+            }
+            return [*candles[:-1], next_candle]
+
+        open_price = float(candles[-1]["close"]) if candles else live_price
+        return [
+            *candles,
+            {
+                "time": bucket_time,
+                "open": open_price,
+                "high": max(open_price, live_price),
+                "low": min(open_price, live_price),
+                "close": live_price,
+                "volume": 0.0,
+            },
+        ]
+
+    def _live_price_for_target(self, target: CandleInstrument) -> float | None:
+        if target.security_id == NIFTY_INDEX_SECURITY_ID:
+            live_spot = self._safe_float(self.snapshot.get("spot"))
+            return live_spot if live_spot and live_spot > 0 else self.last_known_spot or None
+
+        quote = self._lookup_quote_by_security_id(target.security_id)
+        if not quote:
+            quote = self._lookup_quote_by_symbol(target.symbol)
+        if not quote:
+            return None
+        live_price = self._safe_float(quote.get("ltp"))
+        return live_price if live_price and live_price > 0 else None
 
     def _fetch_expiries(self) -> list[str]:
         try:
@@ -909,6 +990,12 @@ class MarketDataService:
             )
             payload = result.get("data", {}) if isinstance(result, dict) and isinstance(result.get("data"), dict) else {}
             candles = self._aggregate_candles(self._map_candles(payload), timeframe)
+            if before is None:
+                candles = self._overlay_live_price(
+                    candles,
+                    timeframe=timeframe,
+                    live_price=self._live_price_for_target(target),
+                )
             candles = self._filter_history_before(candles, before)
             has_more = lower_date > oldest_date
             return {

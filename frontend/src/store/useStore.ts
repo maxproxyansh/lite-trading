@@ -181,6 +181,23 @@ function stabilizeSnapshot(previous: MarketSnapshot | null, next: MarketSnapshot
   }
 }
 
+function resolveSelectedExpiry(
+  selectedExpiry: string | null,
+  snapshot: Pick<MarketSnapshot, 'expiries' | 'active_expiry'> | null | undefined,
+): string | null {
+  const expiries = snapshot?.expiries ?? []
+  if (!expiries.length) {
+    return selectedExpiry ?? snapshot?.active_expiry ?? null
+  }
+  if (selectedExpiry && expiries.includes(selectedExpiry)) {
+    return selectedExpiry
+  }
+  if (snapshot?.active_expiry && expiries.includes(snapshot.active_expiry)) {
+    return snapshot.active_expiry
+  }
+  return expiries[0] ?? null
+}
+
 function buildChainIndex(chain: OptionChainResponse | null): ChainIndex {
   if (!chain) {
     return {}
@@ -367,7 +384,7 @@ export const useStore = create<AppState>((set) => ({
     const nextSnapshot = stabilizeSnapshot(state.snapshot, snapshot)
     return {
       snapshot: nextSnapshot,
-      selectedExpiry: state.selectedExpiry ?? nextSnapshot?.active_expiry ?? null,
+      selectedExpiry: resolveSelectedExpiry(state.selectedExpiry, nextSnapshot),
     }
   }),
   setChain: (chain) => set((state) => {
@@ -384,7 +401,7 @@ export const useStore = create<AppState>((set) => ({
       chain,
       chainIndex,
       snapshot,
-      selectedExpiry: state.selectedExpiry ?? chain?.snapshot.active_expiry ?? null,
+      selectedExpiry: resolveSelectedExpiry(state.selectedExpiry, chain?.snapshot),
       selectedQuote,
       optionChartSymbol,
       positions,
@@ -436,7 +453,7 @@ export const useStore = create<AppState>((set) => ({
       chain,
       chainIndex,
       snapshot,
-      selectedExpiry: state.selectedExpiry ?? chain.snapshot.active_expiry ?? null,
+      selectedExpiry: resolveSelectedExpiry(state.selectedExpiry, chain.snapshot),
       selectedQuote,
       optionChartSymbol,
       positions,
