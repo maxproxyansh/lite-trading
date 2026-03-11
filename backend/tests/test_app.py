@@ -532,6 +532,115 @@ def test_agent_can_modify_open_order_and_partially_close_position(client: TestCl
     assert after_full_close.json() == []
 
 
+def test_agent_bracket_orders_activate_children_and_cancel_oco_sibling(client: TestClient) -> None:
+    bootstrap = _bootstrap_agent(client, agent_name="bracket-agent")
+    api_key = bootstrap["api_key"]
+    portfolio_id = bootstrap["portfolio"]["id"]
+
+    cancelled_bracket = client.post(
+        "/api/v1/agent/orders/bracket",
+        headers={"X-API-Key": api_key},
+        json={
+            "portfolio_id": portfolio_id,
+            "symbol": "NIFTY_2026-03-12_22500_CE",
+            "expiry": "2026-03-12",
+            "strike": 22500,
+            "option_type": "CE",
+            "side": "BUY",
+            "lots": 1,
+            "entry_order_type": "LIMIT",
+            "entry_price": 100.0,
+            "stop_loss_price": 94.0,
+            "stop_loss_trigger_price": 95.0,
+            "target_price": 120.0,
+            "idempotency_key": "bracket-cancel-1",
+        },
+    )
+    assert cancelled_bracket.status_code == 200, cancelled_bracket.text
+    assert cancelled_bracket.json()["parent"]["status"] == "OPEN"
+    assert cancelled_bracket.json()["stop_loss"]["status"] == "PARKED"
+    assert cancelled_bracket.json()["target"]["status"] == "PARKED"
+
+    cancel_parent = client.post(
+        f"/api/v1/agent/orders/{cancelled_bracket.json()['parent']['id']}/cancel",
+        headers={"X-API-Key": api_key},
+    )
+    assert cancel_parent.status_code == 200, cancel_parent.text
+
+    cancelled_linked = client.get(
+        f"/api/v1/agent/orders/{cancelled_bracket.json()['parent']['id']}/linked",
+        headers={"X-API-Key": api_key},
+    )
+    assert cancelled_linked.status_code == 200, cancelled_linked.text
+    cancelled_statuses = {item["link_type"]: item["status"] for item in cancelled_linked.json()}
+    assert cancelled_statuses["ENTRY"] == "CANCELLED"
+    assert cancelled_statuses["STOP_LOSS"] == "CANCELLED"
+    assert cancelled_statuses["TARGET"] == "CANCELLED"
+
+    live_bracket = client.post(
+        "/api/v1/agent/orders/bracket",
+        headers={"X-API-Key": api_key},
+        json={
+            "portfolio_id": portfolio_id,
+            "symbol": "NIFTY_2026-03-12_22500_CE",
+            "expiry": "2026-03-12",
+            "strike": 22500,
+            "option_type": "CE",
+            "side": "BUY",
+            "lots": 1,
+            "entry_order_type": "LIMIT",
+            "entry_price": 100.0,
+            "stop_loss_price": 94.0,
+            "stop_loss_trigger_price": 95.0,
+            "target_price": 120.0,
+            "idempotency_key": "bracket-live-1",
+        },
+    )
+    assert live_bracket.status_code == 200, live_bracket.text
+
+    market_data_service.quotes["NIFTY_2026-03-12_22500_CE"]["ask"] = 99.0
+    market_data_service.quotes["NIFTY_2026-03-12_22500_CE"]["ltp"] = 99.0
+    db = SessionLocal()
+    try:
+        changed = process_open_orders_sync(db, {"NIFTY_2026-03-12_22500_CE"})
+        assert changed == {portfolio_id}
+    finally:
+        db.close()
+
+    activated_linked = client.get(
+        f"/api/v1/agent/orders/{live_bracket.json()['parent']['id']}/linked",
+        headers={"X-API-Key": api_key},
+    )
+    assert activated_linked.status_code == 200, activated_linked.text
+    activated_statuses = {item["link_type"]: item["status"] for item in activated_linked.json()}
+    assert activated_statuses["ENTRY"] == "FILLED"
+    assert activated_statuses["STOP_LOSS"] == "TRIGGER_PENDING"
+    assert activated_statuses["TARGET"] == "OPEN"
+
+    market_data_service.quotes["NIFTY_2026-03-12_22500_CE"]["bid"] = 121.0
+    market_data_service.quotes["NIFTY_2026-03-12_22500_CE"]["ask"] = 121.2
+    market_data_service.quotes["NIFTY_2026-03-12_22500_CE"]["ltp"] = 121.0
+    db = SessionLocal()
+    try:
+        changed = process_open_orders_sync(db, {"NIFTY_2026-03-12_22500_CE"})
+        assert changed == {portfolio_id}
+    finally:
+        db.close()
+
+    final_linked = client.get(
+        f"/api/v1/agent/orders/{live_bracket.json()['parent']['id']}/linked",
+        headers={"X-API-Key": api_key},
+    )
+    assert final_linked.status_code == 200, final_linked.text
+    final_statuses = {item["link_type"]: item["status"] for item in final_linked.json()}
+    assert final_statuses["TARGET"] == "FILLED"
+    assert final_statuses["STOP_LOSS"] == "CANCELLED"
+
+    positions = client.get("/api/v1/agent/positions", headers={"X-API-Key": api_key})
+    assert positions.status_code == 200, positions.text
+    assert positions.json() == []
+
+
 def test_agent_orders_support_filters_and_pagination(client: TestClient) -> None:
     market_data_service.quotes["BANKNIFTY_2026-03-12_51000_CE"] = {
         "symbol": "BANKNIFTY_2026-03-12_51000_CE",
@@ -649,6 +758,216 @@ def test_agent_orders_support_filters_and_pagination(client: TestClient) -> None
     assert paged.json()["total"] == 3
     assert len(paged.json()["items"]) == 1
     assert paged.json()["items"][0]["id"] == filled.json()["id"]
+
+
+def test_agent_detailed_analytics_returns_trade_breakdowns(client: TestClient) -> None:
+    bootstrap = _bootstrap_agent(client, agent_name="analytics-agent")
+    api_key = bootstrap["api_key"]
+    portfolio_id = bootstrap["portfolio"]["id"]
+
+    first_buy = client.post(
+        "/api/v1/agent/orders",
+        headers={"X-API-Key": api_key},
+        json={
+            "portfolio_id": portfolio_id,
+            "symbol": "NIFTY_2026-03-12_22500_CE",
+            "expiry": "2026-03-12",
+            "strike": 22500,
+            "option_type": "CE",
+            "side": "BUY",
+            "order_type": "MARKET",
+            "product": "NRML",
+            "validity": "DAY",
+            "lots": 1,
+            "idempotency_key": "analytics-buy-1",
+        },
+    )
+    assert first_buy.status_code == 200, first_buy.text
+
+    market_data_service.quotes["NIFTY_2026-03-12_22500_CE"]["bid"] = 125.0
+    market_data_service.quotes["NIFTY_2026-03-12_22500_CE"]["ask"] = 125.2
+    market_data_service.quotes["NIFTY_2026-03-12_22500_CE"]["ltp"] = 125.0
+    first_sell = client.post(
+        "/api/v1/agent/orders",
+        headers={"X-API-Key": api_key},
+        json={
+            "portfolio_id": portfolio_id,
+            "symbol": "NIFTY_2026-03-12_22500_CE",
+            "expiry": "2026-03-12",
+            "strike": 22500,
+            "option_type": "CE",
+            "side": "SELL",
+            "order_type": "MARKET",
+            "product": "NRML",
+            "validity": "DAY",
+            "lots": 1,
+            "idempotency_key": "analytics-sell-1",
+        },
+    )
+    assert first_sell.status_code == 200, first_sell.text
+
+    second_buy = client.post(
+        "/api/v1/agent/orders",
+        headers={"X-API-Key": api_key},
+        json={
+            "portfolio_id": portfolio_id,
+            "symbol": "NIFTY_2026-03-12_22500_CE",
+            "expiry": "2026-03-12",
+            "strike": 22500,
+            "option_type": "CE",
+            "side": "BUY",
+            "order_type": "MARKET",
+            "product": "NRML",
+            "validity": "DAY",
+            "lots": 1,
+            "idempotency_key": "analytics-buy-2",
+        },
+    )
+    assert second_buy.status_code == 200, second_buy.text
+
+    market_data_service.quotes["NIFTY_2026-03-12_22500_CE"]["bid"] = 100.0
+    market_data_service.quotes["NIFTY_2026-03-12_22500_CE"]["ask"] = 100.2
+    market_data_service.quotes["NIFTY_2026-03-12_22500_CE"]["ltp"] = 100.0
+    second_sell = client.post(
+        "/api/v1/agent/orders",
+        headers={"X-API-Key": api_key},
+        json={
+            "portfolio_id": portfolio_id,
+            "symbol": "NIFTY_2026-03-12_22500_CE",
+            "expiry": "2026-03-12",
+            "strike": 22500,
+            "option_type": "CE",
+            "side": "SELL",
+            "order_type": "MARKET",
+            "product": "NRML",
+            "validity": "DAY",
+            "lots": 1,
+            "idempotency_key": "analytics-sell-2",
+        },
+    )
+    assert second_sell.status_code == 200, second_sell.text
+
+    today = datetime.now(timezone.utc).date().isoformat()
+    detailed = client.get(
+        f"/api/v1/agent/analytics/detailed?from={today}&to={today}",
+        headers={"X-API-Key": api_key},
+    )
+    assert detailed.status_code == 200, detailed.text
+    payload = detailed.json()
+    assert payload["portfolio_id"] == portfolio_id
+    assert payload["total_closed_trades"] == 2
+    assert len(payload["closed_trades"]) == 2
+    assert payload["trade_attribution"][0]["symbol"] == "NIFTY_2026-03-12_22500_CE"
+    assert payload["average_hold_seconds"] >= 0
+    assert payload["max_consecutive_wins"] >= 1
+    assert payload["max_consecutive_losses"] >= 1
+    assert sum(bucket["value"] for bucket in payload["win_loss_distribution"]) == 2
+
+
+def test_agent_detailed_analytics_counts_trades_closed_inside_window(client: TestClient) -> None:
+    bootstrap = _bootstrap_agent(client, agent_name="analytics-window-agent")
+    api_key = bootstrap["api_key"]
+    portfolio_id = bootstrap["portfolio"]["id"]
+
+    buy = client.post(
+        "/api/v1/agent/orders",
+        headers={"X-API-Key": api_key},
+        json={
+            "portfolio_id": portfolio_id,
+            "symbol": "NIFTY_2026-03-12_22500_CE",
+            "expiry": "2026-03-12",
+            "strike": 22500,
+            "option_type": "CE",
+            "side": "BUY",
+            "order_type": "MARKET",
+            "product": "NRML",
+            "validity": "DAY",
+            "lots": 1,
+            "idempotency_key": "analytics-window-buy",
+        },
+    )
+    assert buy.status_code == 200, buy.text
+
+    market_data_service.quotes["NIFTY_2026-03-12_22500_CE"]["bid"] = 124.0
+    market_data_service.quotes["NIFTY_2026-03-12_22500_CE"]["ask"] = 124.2
+    market_data_service.quotes["NIFTY_2026-03-12_22500_CE"]["ltp"] = 124.0
+    sell = client.post(
+        "/api/v1/agent/orders",
+        headers={"X-API-Key": api_key},
+        json={
+            "portfolio_id": portfolio_id,
+            "symbol": "NIFTY_2026-03-12_22500_CE",
+            "expiry": "2026-03-12",
+            "strike": 22500,
+            "option_type": "CE",
+            "side": "SELL",
+            "order_type": "MARKET",
+            "product": "NRML",
+            "validity": "DAY",
+            "lots": 1,
+            "idempotency_key": "analytics-window-sell",
+        },
+    )
+    assert sell.status_code == 200, sell.text
+
+    db = SessionLocal()
+    try:
+        from models import Fill
+
+        buy_fill = db.query(Fill).filter(Fill.order_id == buy.json()["id"]).first()
+        sell_fill = db.query(Fill).filter(Fill.order_id == sell.json()["id"]).first()
+        assert buy_fill is not None
+        assert sell_fill is not None
+        buy_fill.executed_at = datetime(2026, 3, 10, 15, 0, tzinfo=timezone.utc)
+        sell_fill.executed_at = datetime(2026, 3, 11, 10, 0, tzinfo=timezone.utc)
+        db.commit()
+    finally:
+        db.close()
+
+    detailed = client.get(
+        "/api/v1/agent/analytics/detailed?from=2026-03-11&to=2026-03-11",
+        headers={"X-API-Key": api_key},
+    )
+    assert detailed.status_code == 200, detailed.text
+    payload = detailed.json()
+    assert payload["total_closed_trades"] == 1
+    assert len(payload["closed_trades"]) == 1
+    assert payload["closed_trades"][0]["exit_time"].startswith("2026-03-11T10:00:00")
+
+
+def test_agent_websocket_receives_option_quote_batches(client: TestClient) -> None:
+    bootstrap = _bootstrap_agent(client, agent_name="quote-ws-agent")
+    api_key = bootstrap["api_key"]
+
+    with client.websocket_connect("/api/v1/ws", headers={"X-API-Key": api_key}) as websocket:
+        market_data_service._security_id_to_symbol = {"12345": "NIFTY_2026-03-12_22500_CE"}
+        market_data_service._handle_feed_packet(
+            {
+                "type": "Full Data",
+                "security_id": 12345,
+                "LTP": "119.25",
+                "volume": 28000,
+                "OI": 121000,
+                "depth": [
+                    {
+                        "bid_price": "119.20",
+                        "ask_price": "119.35",
+                        "bid_quantity": 700,
+                        "ask_quantity": 650,
+                    }
+                ],
+            }
+        )
+        asyncio.run(
+            broadcast_message(
+                "option.quotes",
+                market_data_service._build_quote_batch(tuple(market_data_service._dirty_quote_symbols)),
+            )
+        )
+        message = websocket.receive_json()
+        assert message["type"] == "option.quotes"
+        assert message["payload"]["quotes"][0]["symbol"] == "NIFTY_2026-03-12_22500_CE"
+        assert message["payload"]["quotes"][0]["ltp"] == 119.25
 
 
 def test_rate_limited_endpoints_emit_headers_on_success_and_429(client: TestClient) -> None:

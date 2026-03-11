@@ -160,8 +160,14 @@ class LiteAgentClient:
     def order(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._request("POST", "/api/v1/agent/orders", json_data=payload)
 
+    def bracket_order(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request("POST", "/api/v1/agent/orders/bracket", json_data=payload)
+
     def order_detail(self, order_id: str) -> dict[str, Any]:
         return self._request("GET", f"/api/v1/agent/orders/{order_id}")
+
+    def linked_orders(self, order_id: str) -> list[dict[str, Any]]:
+        return self._request("GET", f"/api/v1/agent/orders/{order_id}/linked")
 
     def cancel_order(self, order_id: str) -> dict[str, Any]:
         return self._request("POST", f"/api/v1/agent/orders/{order_id}/cancel")
@@ -202,6 +208,14 @@ class LiteAgentClient:
 
     def delete_webhook(self, webhook_id: str) -> None:
         return self._request("DELETE", f"/api/v1/agent/webhooks/{webhook_id}")
+
+    def detailed_analytics(self, *, date_from: str | None = None, date_to: str | None = None) -> dict[str, Any]:
+        params: dict[str, Any] = {}
+        if date_from:
+            params["from"] = date_from
+        if date_to:
+            params["to"] = date_to
+        return self._request("GET", "/api/v1/agent/analytics/detailed", params=params or None)
 
     def dhan_funds(self) -> dict[str, Any]:
         return self._request("GET", "/api/v1/agent/dhan/fundlimit")

@@ -3193,6 +3193,70 @@
         }
       }
     },
+    "/api/v1/agent/orders/bracket": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Agent Bracket Order",
+        "operationId": "agent_bracket_order_api_v1_agent_orders_bracket_post",
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BracketOrderRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BracketOrderResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-ratelimit": {
+          "bucket": "agent:bracket-orders",
+          "limit": 60,
+          "window_seconds": 60
+        }
+      }
+    },
     "/api/v1/agent/orders/{order_id}": {
       "get": {
         "tags": [
@@ -3319,6 +3383,68 @@
           "bucket": "agent:modify-order",
           "limit": 120,
           "window_seconds": 60
+        }
+      }
+    },
+    "/api/v1/agent/orders/{order_id}/linked": {
+      "get": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Agent Linked Orders",
+        "operationId": "agent_linked_orders_api_v1_agent_orders__order_id__linked_get",
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Order Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OrderSummary"
+                  },
+                  "title": "Response Agent Linked Orders Api V1 Agent Orders  Order Id  Linked Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -4088,6 +4214,89 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/FundsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/analytics/detailed": {
+      "get": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Agent Detailed Analytics",
+        "operationId": "agent_detailed_analytics_api_v1_agent_analytics_detailed_get",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DetailedAnalyticsResponse"
                 }
               }
             }
@@ -5315,6 +5524,52 @@
         ],
         "title": "AlertSummary"
       },
+      "AnalyticsAttribution": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "strike": {
+            "type": "integer",
+            "title": "Strike"
+          },
+          "option_type": {
+            "type": "string",
+            "enum": [
+              "CE",
+              "PE"
+            ],
+            "title": "Option Type"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "LONG",
+              "SHORT"
+            ],
+            "title": "Direction"
+          },
+          "closed_trades": {
+            "type": "integer",
+            "title": "Closed Trades"
+          },
+          "realized_pnl": {
+            "type": "number",
+            "title": "Realized Pnl"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol",
+          "strike",
+          "option_type",
+          "direction",
+          "closed_trades",
+          "realized_pnl"
+        ],
+        "title": "AnalyticsAttribution"
+      },
       "AnalyticsPoint": {
         "properties": {
           "label": {
@@ -5391,6 +5646,150 @@
           "pnl_by_day"
         ],
         "title": "AnalyticsResponse"
+      },
+      "BracketOrderRequest": {
+        "properties": {
+          "portfolio_id": {
+            "type": "string",
+            "title": "Portfolio Id"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Symbol"
+          },
+          "expiry": {
+            "type": "string",
+            "title": "Expiry"
+          },
+          "strike": {
+            "type": "integer",
+            "title": "Strike"
+          },
+          "option_type": {
+            "type": "string",
+            "enum": [
+              "CE",
+              "PE"
+            ],
+            "title": "Option Type"
+          },
+          "side": {
+            "type": "string",
+            "enum": [
+              "BUY",
+              "SELL"
+            ],
+            "title": "Side"
+          },
+          "product": {
+            "type": "string",
+            "enum": [
+              "NRML",
+              "MIS"
+            ],
+            "title": "Product",
+            "default": "NRML"
+          },
+          "validity": {
+            "type": "string",
+            "const": "DAY",
+            "title": "Validity",
+            "default": "DAY"
+          },
+          "lots": {
+            "type": "integer",
+            "maximum": 200.0,
+            "minimum": 1.0,
+            "title": "Lots",
+            "default": 1
+          },
+          "entry_order_type": {
+            "type": "string",
+            "enum": [
+              "MARKET",
+              "LIMIT"
+            ],
+            "title": "Entry Order Type",
+            "default": "LIMIT"
+          },
+          "entry_price": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Price"
+          },
+          "stop_loss_price": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Stop Loss Price"
+          },
+          "stop_loss_trigger_price": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Stop Loss Trigger Price"
+          },
+          "target_price": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Target Price"
+          },
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Idempotency Key"
+          }
+        },
+        "type": "object",
+        "required": [
+          "portfolio_id",
+          "expiry",
+          "strike",
+          "option_type",
+          "side",
+          "stop_loss_price",
+          "stop_loss_trigger_price",
+          "target_price"
+        ],
+        "title": "BracketOrderRequest"
+      },
+      "BracketOrderResponse": {
+        "properties": {
+          "parent": {
+            "$ref": "#/components/schemas/OrderSummary"
+          },
+          "stop_loss": {
+            "$ref": "#/components/schemas/OrderSummary"
+          },
+          "target": {
+            "$ref": "#/components/schemas/OrderSummary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "parent",
+          "stop_loss",
+          "target"
+        ],
+        "title": "BracketOrderResponse"
       },
       "Candle": {
         "properties": {
@@ -5556,6 +5955,188 @@
           "password"
         ],
         "title": "CreateUserRequest"
+      },
+      "DetailedAnalyticsResponse": {
+        "properties": {
+          "portfolio_id": {
+            "type": "string",
+            "title": "Portfolio Id"
+          },
+          "from_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Date"
+          },
+          "to_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Date"
+          },
+          "total_closed_trades": {
+            "type": "integer",
+            "title": "Total Closed Trades"
+          },
+          "realized_pnl": {
+            "type": "number",
+            "title": "Realized Pnl"
+          },
+          "unrealized_pnl": {
+            "type": "number",
+            "title": "Unrealized Pnl"
+          },
+          "total_equity": {
+            "type": "number",
+            "title": "Total Equity"
+          },
+          "trade_attribution": {
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsAttribution"
+            },
+            "type": "array",
+            "title": "Trade Attribution"
+          },
+          "closed_trades": {
+            "items": {
+              "$ref": "#/components/schemas/DetailedTradeSummary"
+            },
+            "type": "array",
+            "title": "Closed Trades"
+          },
+          "drawdown_curve": {
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsPoint"
+            },
+            "type": "array",
+            "title": "Drawdown Curve"
+          },
+          "sharpe_ratio": {
+            "type": "number",
+            "title": "Sharpe Ratio"
+          },
+          "sortino_ratio": {
+            "type": "number",
+            "title": "Sortino Ratio"
+          },
+          "calmar_ratio": {
+            "type": "number",
+            "title": "Calmar Ratio"
+          },
+          "win_loss_distribution": {
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsPoint"
+            },
+            "type": "array",
+            "title": "Win Loss Distribution"
+          },
+          "average_hold_seconds": {
+            "type": "number",
+            "title": "Average Hold Seconds"
+          },
+          "max_consecutive_wins": {
+            "type": "integer",
+            "title": "Max Consecutive Wins"
+          },
+          "max_consecutive_losses": {
+            "type": "integer",
+            "title": "Max Consecutive Losses"
+          }
+        },
+        "type": "object",
+        "required": [
+          "portfolio_id",
+          "total_closed_trades",
+          "realized_pnl",
+          "unrealized_pnl",
+          "total_equity",
+          "trade_attribution",
+          "closed_trades",
+          "drawdown_curve",
+          "sharpe_ratio",
+          "sortino_ratio",
+          "calmar_ratio",
+          "win_loss_distribution",
+          "average_hold_seconds",
+          "max_consecutive_wins",
+          "max_consecutive_losses"
+        ],
+        "title": "DetailedAnalyticsResponse"
+      },
+      "DetailedTradeSummary": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "strike": {
+            "type": "integer",
+            "title": "Strike"
+          },
+          "option_type": {
+            "type": "string",
+            "enum": [
+              "CE",
+              "PE"
+            ],
+            "title": "Option Type"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "LONG",
+              "SHORT"
+            ],
+            "title": "Direction"
+          },
+          "quantity": {
+            "type": "integer",
+            "title": "Quantity"
+          },
+          "entry_time": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Entry Time"
+          },
+          "exit_time": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Exit Time"
+          },
+          "hold_seconds": {
+            "type": "number",
+            "title": "Hold Seconds"
+          },
+          "realized_pnl": {
+            "type": "number",
+            "title": "Realized Pnl"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol",
+          "strike",
+          "option_type",
+          "direction",
+          "quantity",
+          "entry_time",
+          "exit_time",
+          "hold_seconds",
+          "realized_pnl"
+        ],
+        "title": "DetailedTradeSummary"
       },
       "DhanFundResponse": {
         "properties": {
@@ -6717,6 +7298,33 @@
           "status": {
             "type": "string",
             "title": "Status"
+          },
+          "parent_order_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Order Id"
+          },
+          "link_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "ENTRY",
+                  "STOP_LOSS",
+                  "TARGET"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Link Type"
           },
           "average_price": {
             "anyOf": [

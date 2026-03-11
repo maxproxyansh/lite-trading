@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import ipaddress
 from urllib.parse import urlparse
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, EmailStr, Field, model_validator
@@ -11,9 +11,11 @@ from pydantic import BaseModel, EmailStr, Field, model_validator
 Role = Literal["admin", "trader", "viewer"]
 OrderSide = Literal["BUY", "SELL"]
 OrderType = Literal["MARKET", "LIMIT", "SL", "SL-M"]
+BracketEntryOrderType = Literal["MARKET", "LIMIT"]
 OrderProduct = Literal["NRML", "MIS"]
 OrderValidity = Literal["DAY"]
 OrderSort = Literal["asc", "desc"]
+OrderLinkType = Literal["ENTRY", "STOP_LOSS", "TARGET"]
 AlertDirection = Literal["ABOVE", "BELOW"]
 AlertStatus = Literal["ACTIVE", "TRIGGERED", "CANCELLED"]
 PortfolioKind = Literal["manual", "agent"]
@@ -368,6 +370,8 @@ class OrderSummary(BaseModel):
     price: float | None = None
     trigger_price: float | None = None
     status: str
+    parent_order_id: str | None = None
+    link_type: OrderLinkType | None = None
     average_price: float | None = None
     filled_quantity: int
     premium_required: float
@@ -386,6 +390,38 @@ class OrderListResponse(BaseModel):
     total: int
     offset: int
     limit: int
+
+
+class BracketOrderRequest(BaseModel):
+    portfolio_id: str
+    symbol: str | None = None
+    expiry: str
+    strike: int
+    option_type: Literal["CE", "PE"]
+    side: OrderSide
+    product: OrderProduct = "NRML"
+    validity: OrderValidity = "DAY"
+    lots: int = Field(default=1, ge=1, le=200)
+    entry_order_type: BracketEntryOrderType = "LIMIT"
+    entry_price: float | None = Field(default=None, gt=0)
+    stop_loss_price: float = Field(gt=0)
+    stop_loss_trigger_price: float = Field(gt=0)
+    target_price: float = Field(gt=0)
+    idempotency_key: str | None = None
+
+    @model_validator(mode="after")
+    def validate_prices(self):
+        if self.entry_order_type == "LIMIT" and self.entry_price is None:
+            raise ValueError("entry_price is required for LIMIT bracket entries")
+        if self.entry_order_type == "MARKET" and self.entry_price is not None:
+            raise ValueError("entry_price is not allowed for MARKET bracket entries")
+        return self
+
+
+class BracketOrderResponse(BaseModel):
+    parent: OrderSummary
+    stop_loss: OrderSummary
+    target: OrderSummary
 
 
 class OrderModifyRequest(BaseModel):
@@ -530,6 +566,47 @@ class AnalyticsResponse(BaseModel):
     total_equity: float
     equity_curve: list[AnalyticsPoint]
     pnl_by_day: list[AnalyticsPoint]
+
+
+class DetailedTradeSummary(BaseModel):
+    symbol: str
+    strike: int
+    option_type: Literal["CE", "PE"]
+    direction: Literal["LONG", "SHORT"]
+    quantity: int
+    entry_time: datetime
+    exit_time: datetime
+    hold_seconds: float
+    realized_pnl: float
+
+
+class AnalyticsAttribution(BaseModel):
+    symbol: str
+    strike: int
+    option_type: Literal["CE", "PE"]
+    direction: Literal["LONG", "SHORT"]
+    closed_trades: int
+    realized_pnl: float
+
+
+class DetailedAnalyticsResponse(BaseModel):
+    portfolio_id: str
+    from_date: date | None = None
+    to_date: date | None = None
+    total_closed_trades: int
+    realized_pnl: float
+    unrealized_pnl: float
+    total_equity: float
+    trade_attribution: list[AnalyticsAttribution]
+    closed_trades: list[DetailedTradeSummary]
+    drawdown_curve: list[AnalyticsPoint]
+    sharpe_ratio: float
+    sortino_ratio: float
+    calmar_ratio: float
+    win_loss_distribution: list[AnalyticsPoint]
+    average_hold_seconds: float
+    max_consecutive_wins: int
+    max_consecutive_losses: int
 
 
 class WebsocketEnvelope(BaseModel):

@@ -6,12 +6,13 @@ from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 
 from fastapi import HTTPException, status
+from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from config import get_settings
 from models import Fill, Order, Portfolio, Position
-from schemas import FundsResponse, OrderModifyRequest, OrderRequest
+from schemas import BracketOrderRequest, FundsResponse, OrderModifyRequest, OrderRequest
 from services.audit import log_audit
 from services.market_data import market_data_service
 from services.webhook_service import enqueue_webhook_event
@@ -307,6 +308,10 @@ def _refresh_position_mark(position: Position) -> None:
         position.last_price = float(quote["ltp"])
 
 
+def _active_status_for_order(order_type: str) -> str:
+    return "TRIGGER_PENDING" if order_type in {"SL", "SL-M"} else "OPEN"
+
+
 def _position_payload(position: Position, *, previous_quantity: int | None = None) -> dict[str, Any]:
     payload = {
         "position_id": position.id,
@@ -384,6 +389,197 @@ def _queue_position_events(db: Session, *, position: Position, previous_quantity
         )
 
 
+def _estimate_order_requirements(
+    *,
+    order: Order,
+    quote: QuoteContext,
+    existing_qty: int,
+) -> tuple[float, float, float, float]:
+    reference_price = (
+        float(order.price)
+        if order.order_type in {"LIMIT", "SL"} and order.price is not None
+        else _price_for_market(quote, order.side)
+    )
+    charges = _estimate_charges(reference_price, order.quantity, order.side)
+    premium_required = _to_float(_money(reference_price) * Decimal(order.quantity)) if order.side == "BUY" else 0.0
+    opening_short_quantity = 0
+    if order.side == "SELL":
+        if existing_qty > 0:
+            opening_short_quantity = max(order.quantity - existing_qty, 0)
+        else:
+            opening_short_quantity = order.quantity
+    margin_required = 0.0
+    if opening_short_quantity > 0:
+        margin_required = _margin_from_dhan(
+            quote.security_id,
+            order.side,
+            opening_short_quantity,
+            reference_price,
+            order.product,
+        )
+        if margin_required is None:
+            margin_required = _fallback_short_margin(reference_price, opening_short_quantity)
+    return reference_price, charges, premium_required, margin_required
+
+
+def _cancel_order_record(
+    db: Session,
+    order: Order,
+    *,
+    actor_type: str,
+    actor_id: str | None,
+    message: str,
+) -> None:
+    portfolio = _lock_query(db.query(Portfolio).filter(Portfolio.id == order.portfolio_id), db).first()
+    if not portfolio:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio not found")
+
+    if order.side == "BUY" and order.premium_required:
+        portfolio.blocked_premium = _to_float(max(_money(portfolio.blocked_premium) - _money(order.premium_required), Decimal("0.00")))
+    if order.side == "SELL" and order.margin_required:
+        portfolio.blocked_margin = _to_float(max(_money(portfolio.blocked_margin) - _money(order.margin_required), Decimal("0.00")))
+
+    order.status = "CANCELLED"
+    order.message = message
+    order.updated_at = _utcnow()
+
+    log_audit(
+        db,
+        actor_type=actor_type,
+        actor_id=actor_id,
+        action="order.cancelled",
+        entity_type="order",
+        entity_id=order.id,
+        details={"symbol": order.symbol, "portfolio_id": order.portfolio_id, "reason": message},
+    )
+    enqueue_webhook_event(
+        db,
+        portfolio_id=order.portfolio_id,
+        event_type="order.cancelled",
+        payload={
+            "event": "order.cancelled",
+            "occurred_at": order.updated_at.isoformat(),
+            "portfolio_id": order.portfolio_id,
+            "data": {
+                "order_id": order.id,
+                "symbol": order.symbol,
+                "status": order.status,
+                "side": order.side,
+                "quantity": order.quantity,
+                "product": order.product,
+                "source": order.source,
+                "parent_order_id": order.parent_order_id,
+                "link_type": order.link_type,
+            },
+        },
+    )
+
+
+def _cancel_linked_siblings(db: Session, order: Order, *, actor_type: str, actor_id: str | None) -> None:
+    if not order.parent_order_id:
+        return
+    siblings = (
+        db.query(Order)
+        .filter(
+            Order.parent_order_id == order.parent_order_id,
+            Order.id != order.id,
+            Order.status.in_(("PARKED", "OPEN", "TRIGGER_PENDING")),
+        )
+        .all()
+    )
+    for sibling in siblings:
+        _cancel_order_record(
+            db,
+            sibling,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            message="Cancelled by OCO sibling fill",
+        )
+
+
+def _activate_bracket_children(db: Session, parent: Order, *, actor_type: str, actor_id: str | None) -> None:
+    children = (
+        db.query(Order)
+        .filter(Order.parent_order_id == parent.id, Order.status == "PARKED")
+        .order_by(Order.created_at.asc())
+        .all()
+    )
+    if not children:
+        return
+
+    portfolio = _lock_query(db.query(Portfolio).filter(Portfolio.id == parent.portfolio_id), db).first()
+    position = _lock_query(
+        db.query(Position).filter(
+            Position.portfolio_id == parent.portfolio_id,
+            Position.symbol == parent.symbol,
+            Position.product == parent.product,
+        ),
+        db,
+    ).first()
+    if not portfolio or not position or position.net_quantity == 0:
+        for child in children:
+            _cancel_order_record(
+                db,
+                child,
+                actor_type=actor_type,
+                actor_id=actor_id,
+                message="Bracket entry is not open",
+            )
+        return
+
+    for child in children:
+        if child.status != "PARKED":
+            continue
+        child.quantity = min(child.quantity, abs(position.net_quantity))
+        child.lots = max(child.quantity // position.lot_size, 1)
+        quote = _quote_context_for_symbol(child.symbol)
+        reference_price, charges, premium_required, margin_required = _estimate_order_requirements(
+            order=child,
+            quote=quote,
+            existing_qty=position.net_quantity,
+        )
+        should_fill, next_status = _should_fill(
+            child.order_type,
+            child.side,
+            quote,
+            float(child.price) if child.price is not None else None,
+            float(child.trigger_price) if child.trigger_price is not None else None,
+        )
+
+        if child.side == "BUY":
+            portfolio.blocked_premium = _to_float(_money(portfolio.blocked_premium) + _money(premium_required))
+        else:
+            portfolio.blocked_margin = _to_float(_money(portfolio.blocked_margin) + _money(margin_required))
+
+        child.last_price = quote.ltp
+        child.charges = charges
+        child.premium_required = premium_required
+        child.margin_required = margin_required
+        child.updated_at = _utcnow()
+        child.message = None
+
+        log_audit(
+            db,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            action="order.activated",
+            entity_type="order",
+            entity_id=child.id,
+            details={"symbol": child.symbol, "parent_order_id": parent.id, "link_type": child.link_type},
+        )
+
+        if should_fill:
+            child.status = _active_status_for_order(child.order_type)
+            _fill_order(
+                db,
+                child,
+                fill_price=_price_for_market(quote, child.side) if child.order_type in {"MARKET", "SL-M"} else reference_price,
+                actor_type=actor_type,
+                actor_id=actor_id,
+            )
+        else:
+            child.status = next_status
+
 def _position_unrealized(position: Position) -> float:
     if position.net_quantity == 0:
         return 0.0
@@ -400,6 +596,7 @@ def place_order(
     actor_id: str | None,
     source: str,
     quantity_override: int | None = None,
+    auto_commit: bool = True,
 ) -> Order:
     try:
         if payload.idempotency_key:
@@ -484,10 +681,13 @@ def place_order(
                 action="order.placed",
                 entity_type="order",
                 entity_id=order.id,
-                details={"status": order.status, "symbol": order.symbol},
-            )
-            db.commit()
-            db.refresh(order)
+                    details={"status": order.status, "symbol": order.symbol},
+                )
+            if auto_commit:
+                db.commit()
+                db.refresh(order)
+            else:
+                db.flush()
             return order
 
         _fill_order(
@@ -497,8 +697,11 @@ def place_order(
             actor_type=actor_type,
             actor_id=actor_id,
         )
-        db.commit()
-        db.refresh(order)
+        if auto_commit:
+            db.commit()
+            db.refresh(order)
+        else:
+            db.flush()
         return order
     except IntegrityError as exc:
         db.rollback()
@@ -523,6 +726,19 @@ def _fill_order(db: Session, order: Order, *, fill_price: float, actor_type: str
         product=order.product,
     )
     previous_quantity = position.net_quantity
+    if order.parent_order_id and order.link_type in {"STOP_LOSS", "TARGET"}:
+        if previous_quantity == 0:
+            _cancel_order_record(
+                db,
+                order,
+                actor_type=actor_type,
+                actor_id=actor_id,
+                message="Bracket position is already closed",
+            )
+            return
+        if abs(previous_quantity) < order.quantity:
+            order.quantity = abs(previous_quantity)
+            order.lots = max(order.quantity // position.lot_size, 1)
 
     if was_pending and order.side == "BUY":
         portfolio.blocked_premium = _to_float(max(_money(portfolio.blocked_premium) - _money(order.premium_required), Decimal("0.00")))
@@ -589,6 +805,8 @@ def _fill_order(db: Session, order: Order, *, fill_price: float, actor_type: str
                 "filled_quantity": order.filled_quantity,
                 "product": order.product,
                 "source": order.source,
+                "parent_order_id": order.parent_order_id,
+                "link_type": order.link_type,
             },
         },
     )
@@ -598,6 +816,10 @@ def _fill_order(db: Session, order: Order, *, fill_price: float, actor_type: str
         previous_quantity=previous_quantity,
         occurred_at=order.filled_at or _utcnow(),
     )
+    if order.link_type == "ENTRY":
+        _activate_bracket_children(db, order, actor_type=actor_type, actor_id=actor_id)
+    elif order.parent_order_id and order.link_type in {"STOP_LOSS", "TARGET"}:
+        _cancel_linked_siblings(db, order, actor_type=actor_type, actor_id=actor_id)
 
 
 async def process_open_orders() -> None:
@@ -706,50 +928,30 @@ def cancel_order(
     order = _lock_query(db.query(Order).filter(Order.id == order_id), db).first()
     if not order or (portfolio_id and order.portfolio_id != portfolio_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
-    if order.status not in {"OPEN", "TRIGGER_PENDING"}:
+    if order.status not in {"OPEN", "TRIGGER_PENDING", "PARKED"}:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="ORDER_NOT_CANCELLABLE")
 
-    portfolio = _lock_query(db.query(Portfolio).filter(Portfolio.id == order.portfolio_id), db).first()
-    if not portfolio:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio not found")
-
-    if order.side == "BUY" and order.premium_required:
-        portfolio.blocked_premium = _to_float(max(_money(portfolio.blocked_premium) - _money(order.premium_required), Decimal("0.00")))
-    if order.side == "SELL" and order.margin_required:
-        portfolio.blocked_margin = _to_float(max(_money(portfolio.blocked_margin) - _money(order.margin_required), Decimal("0.00")))
-
-    order.status = "CANCELLED"
-    order.message = "Order cancelled"
-    order.updated_at = _utcnow()
-
-    log_audit(
+    _cancel_order_record(
         db,
+        order,
         actor_type=actor_type,
         actor_id=actor_id,
-        action="order.cancelled",
-        entity_type="order",
-        entity_id=order.id,
-        details={"symbol": order.symbol, "portfolio_id": order.portfolio_id},
+        message="Order cancelled",
     )
-    enqueue_webhook_event(
-        db,
-        portfolio_id=order.portfolio_id,
-        event_type="order.cancelled",
-        payload={
-            "event": "order.cancelled",
-            "occurred_at": order.updated_at.isoformat(),
-            "portfolio_id": order.portfolio_id,
-            "data": {
-                "order_id": order.id,
-                "symbol": order.symbol,
-                "status": order.status,
-                "side": order.side,
-                "quantity": order.quantity,
-                "product": order.product,
-                "source": order.source,
-            },
-        },
-    )
+    if order.parent_order_id is None:
+        children = (
+            db.query(Order)
+            .filter(Order.parent_order_id == order.id, Order.status.in_(("PARKED", "OPEN", "TRIGGER_PENDING")))
+            .all()
+        )
+        for child in children:
+            _cancel_order_record(
+                db,
+                child,
+                actor_type=actor_type,
+                actor_id=actor_id,
+                message="Parent order cancelled",
+            )
     db.commit()
     db.refresh(order)
     return order
@@ -879,6 +1081,136 @@ def modify_order(
     db.commit()
     db.refresh(order)
     return order
+
+
+def list_linked_orders(db: Session, order_id: str, *, portfolio_id: str | None = None) -> list[Order]:
+    query = db.query(Order).filter(Order.id == order_id)
+    if portfolio_id:
+        query = query.filter(Order.portfolio_id == portfolio_id)
+    order = query.first()
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+
+    root_id = order.parent_order_id or order.id
+    linked_query = db.query(Order).filter(or_(Order.id == root_id, Order.parent_order_id == root_id))
+    if portfolio_id:
+        linked_query = linked_query.filter(Order.portfolio_id == portfolio_id)
+    return linked_query.order_by(Order.parent_order_id.is_not(None).asc(), Order.created_at.asc()).all()
+
+
+def place_bracket_order(
+    db: Session,
+    payload: BracketOrderRequest,
+    *,
+    actor_type: str,
+    actor_id: str | None,
+) -> tuple[Order, Order, Order]:
+    if not payload.idempotency_key:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Bracket orders require idempotency_key")
+
+    existing_parent = db.query(Order).filter(Order.idempotency_key == payload.idempotency_key).first()
+    if existing_parent:
+        linked = list_linked_orders(db, existing_parent.id, portfolio_id=payload.portfolio_id)
+        if len(linked) >= 3:
+            by_link_type = {order.link_type: order for order in linked}
+            return by_link_type["ENTRY"], by_link_type["STOP_LOSS"], by_link_type["TARGET"]
+
+    entry_order = place_order(
+        db,
+        OrderRequest(
+            portfolio_id=payload.portfolio_id,
+            symbol=payload.symbol,
+            expiry=payload.expiry,
+            strike=payload.strike,
+            option_type=payload.option_type,
+            side=payload.side,
+            order_type=payload.entry_order_type,
+            product=payload.product,
+            validity=payload.validity,
+            lots=payload.lots,
+            price=payload.entry_price,
+            idempotency_key=payload.idempotency_key,
+        ),
+        actor_type=actor_type,
+        actor_id=actor_id,
+        source="bracket",
+        auto_commit=False,
+    )
+    entry_order = _lock_query(db.query(Order).filter(Order.id == entry_order.id), db).first()
+    if not entry_order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entry order not found")
+
+    exit_side = "SELL" if entry_order.side == "BUY" else "BUY"
+    entry_order.link_type = "ENTRY"
+    entry_order.source = "bracket"
+
+    stop_order = Order(
+        portfolio_id=entry_order.portfolio_id,
+        symbol=entry_order.symbol,
+        security_id=entry_order.security_id,
+        expiry=entry_order.expiry,
+        strike=entry_order.strike,
+        option_type=entry_order.option_type,
+        side=exit_side,
+        order_type="SL",
+        product=entry_order.product,
+        validity=entry_order.validity,
+        lots=entry_order.lots,
+        quantity=entry_order.quantity,
+        price=payload.stop_loss_price,
+        trigger_price=payload.stop_loss_trigger_price,
+        status="PARKED",
+        last_price=entry_order.last_price,
+        parent_order_id=entry_order.id,
+        link_type="STOP_LOSS",
+        source="bracket",
+        idempotency_key=f"{payload.idempotency_key}:stop",
+        message="Waiting for entry fill",
+    )
+    target_order = Order(
+        portfolio_id=entry_order.portfolio_id,
+        symbol=entry_order.symbol,
+        security_id=entry_order.security_id,
+        expiry=entry_order.expiry,
+        strike=entry_order.strike,
+        option_type=entry_order.option_type,
+        side=exit_side,
+        order_type="LIMIT",
+        product=entry_order.product,
+        validity=entry_order.validity,
+        lots=entry_order.lots,
+        quantity=entry_order.quantity,
+        price=payload.target_price,
+        status="PARKED",
+        last_price=entry_order.last_price,
+        parent_order_id=entry_order.id,
+        link_type="TARGET",
+        source="bracket",
+        idempotency_key=f"{payload.idempotency_key}:target",
+        message="Waiting for entry fill",
+    )
+    db.add(stop_order)
+    db.add(target_order)
+    db.flush()
+
+    log_audit(
+        db,
+        actor_type=actor_type,
+        actor_id=actor_id,
+        action="order.bracket_created",
+        entity_type="order",
+        entity_id=entry_order.id,
+        details={"symbol": entry_order.symbol, "child_order_ids": [stop_order.id, target_order.id]},
+    )
+
+    if entry_order.status == "FILLED":
+        _activate_bracket_children(db, entry_order, actor_type=actor_type, actor_id=actor_id)
+
+    db.commit()
+    db.refresh(entry_order)
+    db.refresh(stop_order)
+    db.refresh(target_order)
+    return entry_order, stop_order, target_order
 
 
 def list_positions(db: Session, portfolio_id: str | None = None) -> list[Position]:
