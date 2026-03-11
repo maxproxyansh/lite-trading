@@ -21,6 +21,7 @@ AlertStatus = Literal["ACTIVE", "TRIGGERED", "CANCELLED"]
 PortfolioKind = Literal["manual", "agent"]
 ExchangeSegment = Literal["NSE_FNO"]
 WebhookEvent = Literal["order.filled", "order.cancelled", "position.opened", "position.closed", "alert.triggered"]
+PcrScope = Literal["all_loaded_strikes_for_active_expiry"]
 
 
 def default_agent_scopes() -> list[str]:
@@ -41,6 +42,68 @@ class HealthResponse(BaseModel):
     status: str
     app: str
     environment: str
+    api_prefix: str | None = None
+    meta_url: str | None = None
+    docs_url: str | None = None
+    openapi_url: str | None = None
+    redoc_url: str | None = None
+
+
+class WebSocketEventMeta(BaseModel):
+    type: str
+    description: str
+
+
+class HumanAuthMeta(BaseModel):
+    mode: Literal["jwt_bearer"] = "jwt_bearer"
+    recommended_for_agents: bool = False
+    login_path: str
+    refresh_path: str
+    access_token_expires_in_seconds: int
+
+
+class AgentAuthMeta(BaseModel):
+    mode: Literal["api_key"] = "api_key"
+    recommended_for_agents: bool = True
+    header: str = "X-API-Key"
+    bootstrap_path: str
+    signup_path: str
+    default_key_expires_in_days: int
+    rotation_supported: bool = True
+
+
+class AuthContractMeta(BaseModel):
+    human: HumanAuthMeta
+    agent: AgentAuthMeta
+
+
+class WebSocketMeta(BaseModel):
+    path: str
+    url: str
+    auth_header: str = "X-API-Key"
+    ping_message: str = "ping"
+    pong_message: str = "pong"
+    events: list[WebSocketEventMeta]
+
+
+class MarketDataContractMeta(BaseModel):
+    pcr_scope: PcrScope = "all_loaded_strikes_for_active_expiry"
+    pcr_description: str
+
+
+class ApiMetaResponse(BaseModel):
+    app: str
+    version: str
+    api_prefix: str
+    base_url: str
+    meta_url: str
+    docs_url: str
+    openapi_url: str
+    redoc_url: str | None = None
+    websocket: WebSocketMeta
+    auth: AuthContractMeta
+    market_data: MarketDataContractMeta
+    links: dict[str, str]
 
 
 class UserSummary(BaseModel):
@@ -176,6 +239,9 @@ class MarketSnapshot(BaseModel):
     change_pct: float
     vix: float | None = None
     pcr: float | None = None
+    pcr_scope: PcrScope = "all_loaded_strikes_for_active_expiry"
+    call_oi_total: float = 0.0
+    put_oi_total: float = 0.0
     market_status: str
     expiries: list[str] = Field(default_factory=list)
     active_expiry: str | None = None

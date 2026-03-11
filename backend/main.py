@@ -6,11 +6,11 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import RedirectResponse, Response
 
 from config import get_settings
 from database import SessionLocal, init_db
-from routers import admin, agent, alerts, analytics, auth, funds, market, orders, portfolios, positions, signals, websocket
+from routers import admin, agent, alerts, analytics, auth, funds, market, meta, orders, portfolios, positions, signals, websocket
 from schemas import HealthResponse
 from services.alert_service import sync_alerts
 from services.market_data import market_data_service
@@ -24,6 +24,19 @@ from routers.websocket import broadcast_message, broadcast_portfolio_message
 settings = get_settings()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("lite.backend")
+APP_VERSION = settings.app_version
+OPENAPI_URL = f"{settings.api_prefix}/openapi.json"
+DOCS_URL = f"{settings.api_prefix}/docs"
+REDOC_URL = f"{settings.api_prefix}/redoc"
+META_URL = f"{settings.api_prefix}/meta"
+
+
+def _request_origin(request: Request) -> str:
+    forwarded_proto = request.headers.get("x-forwarded-proto")
+    forwarded_host = request.headers.get("x-forwarded-host")
+    if forwarded_proto and forwarded_host:
+        return f"{forwarded_proto}://{forwarded_host}"
+    return str(request.base_url).rstrip("/")
 
 
 async def _process_market_side_effects(symbols: set[str]) -> None:
@@ -67,7 +80,14 @@ async def lifespan(app: FastAPI):
     await market_data_service.stop()
 
 
-app = FastAPI(title=settings.app_name, version="2.2.0", lifespan=lifespan)
+app = FastAPI(
+    title=settings.app_name,
+    version=APP_VERSION,
+    lifespan=lifespan,
+    docs_url=DOCS_URL,
+    redoc_url=REDOC_URL,
+    openapi_url=OPENAPI_URL,
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -89,18 +109,43 @@ async def security_headers(request: Request, call_next):
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     return response
 
-for router in (auth, admin, market, alerts, portfolios, orders, positions, funds, analytics, signals, agent, websocket):
+for router in (auth, admin, meta, market, alerts, portfolios, orders, positions, funds, analytics, signals, agent, websocket):
     app.include_router(router)
 
 
 @app.get("/", response_model=HealthResponse)
-def root():
-    return HealthResponse(status="ok", app=settings.app_name, environment=settings.app_env)
+def root(request: Request):
+    base_url = _request_origin(request)
+    return HealthResponse(
+        status="ok",
+        app=settings.app_name,
+        environment=settings.app_env,
+        api_prefix=settings.api_prefix,
+        meta_url=f"{base_url}{META_URL}",
+        docs_url=f"{base_url}{DOCS_URL}",
+        openapi_url=f"{base_url}{OPENAPI_URL}",
+        redoc_url=f"{base_url}{REDOC_URL}",
+    )
 
 
 @app.get("/version")
 def version():
-    return {"version": "2.2.0", "cors_regex": settings.frontend_origin_regex, "origin": settings.frontend_origin}
+    return {"version": APP_VERSION, "cors_regex": settings.frontend_origin_regex, "origin": settings.frontend_origin}
+
+
+@app.get("/docs", include_in_schema=False)
+def legacy_docs_redirect():
+    return RedirectResponse(url=DOCS_URL)
+
+
+@app.get("/redoc", include_in_schema=False)
+def legacy_redoc_redirect():
+    return RedirectResponse(url=REDOC_URL)
+
+
+@app.get("/openapi.json", include_in_schema=False)
+def legacy_openapi_redirect():
+    return RedirectResponse(url=OPENAPI_URL)
 
 
 @app.get(f"{settings.api_prefix}/config")

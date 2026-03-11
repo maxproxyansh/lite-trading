@@ -5,6 +5,7 @@ from .auth import admin_router as admin
 from .auth import router as auth
 from .funds import router as funds
 from .market import router as market
+from .meta import router as meta
 from .orders import router as orders
 from .portfolios import router as portfolios
 from .positions import router as positions
@@ -19,6 +20,7 @@ __all__ = [
     "auth",
     "funds",
     "market",
+    "meta",
     "orders",
     "portfolios",
     "positions",

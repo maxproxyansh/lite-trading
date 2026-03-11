@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Lite Options Terminal",
-    "version": "2.2.0"
+    "version": "2.3.0"
   },
   "paths": {
     "/api/v1/auth/signup": {
@@ -846,6 +846,27 @@
         }
       }
     },
+    "/api/v1/meta": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "Api Meta",
+        "operationId": "api_meta_api_v1_meta_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiMetaResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/market/snapshot": {
       "get": {
         "tags": [
@@ -1229,6 +1250,38 @@
                 }
               ],
               "title": "Before"
+            }
+          },
+          {
+            "name": "symbol",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Symbol"
+            }
+          },
+          {
+            "name": "security_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Security Id"
             }
           },
           {
@@ -4895,6 +4948,50 @@
   },
   "components": {
     "schemas": {
+      "AgentAuthMeta": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "const": "api_key",
+            "title": "Mode",
+            "default": "api_key"
+          },
+          "recommended_for_agents": {
+            "type": "boolean",
+            "title": "Recommended For Agents",
+            "default": true
+          },
+          "header": {
+            "type": "string",
+            "title": "Header",
+            "default": "X-API-Key"
+          },
+          "bootstrap_path": {
+            "type": "string",
+            "title": "Bootstrap Path"
+          },
+          "signup_path": {
+            "type": "string",
+            "title": "Signup Path"
+          },
+          "default_key_expires_in_days": {
+            "type": "integer",
+            "title": "Default Key Expires In Days"
+          },
+          "rotation_supported": {
+            "type": "boolean",
+            "title": "Rotation Supported",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "bootstrap_path",
+          "signup_path",
+          "default_key_expires_in_days"
+        ],
+        "title": "AgentAuthMeta"
+      },
       "AgentBootstrapRequest": {
         "properties": {
           "email": {
@@ -5646,6 +5743,96 @@
           "pnl_by_day"
         ],
         "title": "AnalyticsResponse"
+      },
+      "ApiMetaResponse": {
+        "properties": {
+          "app": {
+            "type": "string",
+            "title": "App"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "api_prefix": {
+            "type": "string",
+            "title": "Api Prefix"
+          },
+          "base_url": {
+            "type": "string",
+            "title": "Base Url"
+          },
+          "meta_url": {
+            "type": "string",
+            "title": "Meta Url"
+          },
+          "docs_url": {
+            "type": "string",
+            "title": "Docs Url"
+          },
+          "openapi_url": {
+            "type": "string",
+            "title": "Openapi Url"
+          },
+          "redoc_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Redoc Url"
+          },
+          "websocket": {
+            "$ref": "#/components/schemas/WebSocketMeta"
+          },
+          "auth": {
+            "$ref": "#/components/schemas/AuthContractMeta"
+          },
+          "market_data": {
+            "$ref": "#/components/schemas/MarketDataContractMeta"
+          },
+          "links": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Links"
+          }
+        },
+        "type": "object",
+        "required": [
+          "app",
+          "version",
+          "api_prefix",
+          "base_url",
+          "meta_url",
+          "docs_url",
+          "openapi_url",
+          "websocket",
+          "auth",
+          "market_data",
+          "links"
+        ],
+        "title": "ApiMetaResponse"
+      },
+      "AuthContractMeta": {
+        "properties": {
+          "human": {
+            "$ref": "#/components/schemas/HumanAuthMeta"
+          },
+          "agent": {
+            "$ref": "#/components/schemas/AgentAuthMeta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "human",
+          "agent"
+        ],
+        "title": "AuthContractMeta"
       },
       "BracketOrderRequest": {
         "properties": {
@@ -6651,6 +6838,61 @@
           "environment": {
             "type": "string",
             "title": "Environment"
+          },
+          "api_prefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Prefix"
+          },
+          "meta_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meta Url"
+          },
+          "docs_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Docs Url"
+          },
+          "openapi_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Openapi Url"
+          },
+          "redoc_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Redoc Url"
           }
         },
         "type": "object",
@@ -6660,6 +6902,40 @@
           "environment"
         ],
         "title": "HealthResponse"
+      },
+      "HumanAuthMeta": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "const": "jwt_bearer",
+            "title": "Mode",
+            "default": "jwt_bearer"
+          },
+          "recommended_for_agents": {
+            "type": "boolean",
+            "title": "Recommended For Agents",
+            "default": false
+          },
+          "login_path": {
+            "type": "string",
+            "title": "Login Path"
+          },
+          "refresh_path": {
+            "type": "string",
+            "title": "Refresh Path"
+          },
+          "access_token_expires_in_seconds": {
+            "type": "integer",
+            "title": "Access Token Expires In Seconds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "login_path",
+          "refresh_path",
+          "access_token_expires_in_seconds"
+        ],
+        "title": "HumanAuthMeta"
       },
       "LoginRequest": {
         "properties": {
@@ -6680,6 +6956,25 @@
           "password"
         ],
         "title": "LoginRequest"
+      },
+      "MarketDataContractMeta": {
+        "properties": {
+          "pcr_scope": {
+            "type": "string",
+            "const": "all_loaded_strikes_for_active_expiry",
+            "title": "Pcr Scope",
+            "default": "all_loaded_strikes_for_active_expiry"
+          },
+          "pcr_description": {
+            "type": "string",
+            "title": "Pcr Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pcr_description"
+        ],
+        "title": "MarketDataContractMeta"
       },
       "MarketSnapshot": {
         "properties": {
@@ -6721,6 +7016,22 @@
               }
             ],
             "title": "Pcr"
+          },
+          "pcr_scope": {
+            "type": "string",
+            "const": "all_loaded_strikes_for_active_expiry",
+            "title": "Pcr Scope",
+            "default": "all_loaded_strikes_for_active_expiry"
+          },
+          "call_oi_total": {
+            "type": "number",
+            "title": "Call Oi Total",
+            "default": 0.0
+          },
+          "put_oi_total": {
+            "type": "number",
+            "title": "Put Oi Total",
+            "default": 0.0
           },
           "market_status": {
             "type": "string",
@@ -7882,6 +8193,65 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "WebSocketEventMeta": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "description"
+        ],
+        "title": "WebSocketEventMeta"
+      },
+      "WebSocketMeta": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "auth_header": {
+            "type": "string",
+            "title": "Auth Header",
+            "default": "X-API-Key"
+          },
+          "ping_message": {
+            "type": "string",
+            "title": "Ping Message",
+            "default": "ping"
+          },
+          "pong_message": {
+            "type": "string",
+            "title": "Pong Message",
+            "default": "pong"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/WebSocketEventMeta"
+            },
+            "type": "array",
+            "title": "Events"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path",
+          "url",
+          "events"
+        ],
+        "title": "WebSocketMeta"
       }
     }
   }

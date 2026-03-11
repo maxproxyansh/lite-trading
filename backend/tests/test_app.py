@@ -55,6 +55,9 @@ def _seed_market() -> None:
             "change_pct": 0.54,
             "vix": 14.2,
             "pcr": 0.96,
+            "pcr_scope": "all_loaded_strikes_for_active_expiry",
+            "call_oi_total": 100000.0,
+            "put_oi_total": 96000.0,
             "market_status": "OPEN",
             "expiries": ["2026-03-12"],
             "active_expiry": "2026-03-12",
@@ -209,6 +212,56 @@ def test_admin_can_create_user_with_isolated_manual_and_agent_portfolios(client:
     assert forbidden.status_code == 404
 
 
+def test_root_meta_docs_and_openapi_are_agent_discoverable(client: TestClient) -> None:
+    root = client.get("/")
+    assert root.status_code == 200, root.text
+    root_payload = root.json()
+    assert root_payload["api_prefix"] == "/api/v1"
+    assert root_payload["meta_url"].endswith("/api/v1/meta")
+    assert root_payload["docs_url"].endswith("/api/v1/docs")
+    assert root_payload["openapi_url"].endswith("/api/v1/openapi.json")
+
+    docs = client.get("/api/v1/docs")
+    assert docs.status_code == 200, docs.text
+    assert "Swagger UI" in docs.text
+
+    openapi = client.get("/api/v1/openapi.json")
+    assert openapi.status_code == 200, openapi.text
+    assert "/api/v1/meta" in openapi.json()["paths"]
+
+    meta = client.get("/api/v1/meta")
+    assert meta.status_code == 200, meta.text
+    payload = meta.json()
+    assert payload["docs_url"].endswith("/api/v1/docs")
+    assert payload["openapi_url"].endswith("/api/v1/openapi.json")
+    assert payload["redoc_url"].endswith("/api/v1/redoc")
+    assert payload["meta_url"].endswith("/api/v1/meta")
+    assert payload["websocket"]["url"].endswith("/api/v1/ws")
+    assert payload["auth"]["human"]["access_token_expires_in_seconds"] == 900
+    assert payload["auth"]["agent"]["header"] == "X-API-Key"
+    assert payload["auth"]["agent"]["default_key_expires_in_days"] == 30
+    assert payload["market_data"]["pcr_scope"] == "all_loaded_strikes_for_active_expiry"
+    event_types = {event["type"] for event in payload["websocket"]["events"]}
+    assert {"market.snapshot", "option.chain", "option.quotes", "portfolio.refresh", "signal.updated"} <= event_types
+
+
+def test_meta_uses_forwarded_host_headers_for_public_urls(client: TestClient) -> None:
+    response = client.get(
+        "/api/v1/meta",
+        headers={
+            "Host": "lite-options-api-production.up.railway.app",
+            "X-Forwarded-Proto": "https",
+            "X-Forwarded-Host": "litetrade.vercel.app",
+        },
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["base_url"] == "https://litetrade.vercel.app"
+    assert payload["docs_url"] == "https://litetrade.vercel.app/api/v1/docs"
+    assert payload["openapi_url"] == "https://litetrade.vercel.app/api/v1/openapi.json"
+    assert payload["websocket"]["url"] == "wss://lite-options-api-production.up.railway.app/api/v1/ws"
+
+
 def test_agent_keys_are_portfolio_scoped_and_agent_orders_are_idempotent(client: TestClient) -> None:
     admin_headers = _login(client, "admin@lite.trade", "lite-admin-123")
     portfolios = _portfolio_map(client, admin_headers)
@@ -290,6 +343,19 @@ def test_agent_keys_are_portfolio_scoped_and_agent_orders_are_idempotent(client:
     )
     assert close_order.status_code == 200, close_order.text
     assert close_order.json()["side"] == "SELL"
+
+
+def test_agent_bootstrap_includes_discovery_links_and_key_expiry(client: TestClient) -> None:
+    bootstrap = _bootstrap_agent(client, agent_name="discovery-agent")
+
+    assert bootstrap["agent"]["expires_at"] is not None
+    assert bootstrap["links"]["meta"] == "/api/v1/meta"
+    assert bootstrap["links"]["docs"] == "/api/v1/docs"
+    assert bootstrap["links"]["openapi"] == "/api/v1/openapi.json"
+    assert bootstrap["links"]["redoc"] == "/api/v1/redoc"
+    assert bootstrap["links"]["websocket"] == "/api/v1/ws"
+    assert bootstrap["links"]["market_snapshot"] == "/api/v1/market/snapshot"
+    assert bootstrap["links"]["market_chain"] == "/api/v1/market/chain"
 
 
 def test_agent_bootstrap_rotates_same_name_key_and_exposes_profile(client: TestClient) -> None:
@@ -376,6 +442,9 @@ def test_agent_api_key_can_access_market_routes(client: TestClient) -> None:
     snapshot = client.get("/api/v1/market/snapshot", headers={"X-API-Key": api_key})
     assert snapshot.status_code == 200, snapshot.text
     assert snapshot.json()["spot_symbol"] == "NIFTY 50"
+    assert snapshot.json()["pcr_scope"] == "all_loaded_strikes_for_active_expiry"
+    assert snapshot.json()["call_oi_total"] == 100000.0
+    assert snapshot.json()["put_oi_total"] == 96000.0
 
     expiries = client.get("/api/v1/market/expiries", headers={"X-API-Key": api_key})
     assert expiries.status_code == 200, expiries.text
@@ -384,6 +453,7 @@ def test_agent_api_key_can_access_market_routes(client: TestClient) -> None:
     chain = client.get("/api/v1/market/chain", headers={"X-API-Key": api_key})
     assert chain.status_code == 200, chain.text
     assert chain.json()["snapshot"]["active_expiry"] == "2026-03-12"
+    assert chain.json()["snapshot"]["pcr_scope"] == "all_loaded_strikes_for_active_expiry"
 
     candles = client.get("/api/v1/market/candles?timeframe=15m", headers={"X-API-Key": api_key})
     assert candles.status_code == 200, candles.text

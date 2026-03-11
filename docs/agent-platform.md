@@ -8,6 +8,39 @@ Base URL used in all examples:
 https://lite-options-api-production.up.railway.app
 ```
 
+## Discovery
+
+An agent does not need to reverse-engineer the frontend to discover the API.
+
+- `GET /` returns health plus links to the API meta, docs, and OpenAPI endpoints
+- `GET /api/v1/meta` returns the machine-readable discovery contract
+- `GET /api/v1/docs` serves Swagger UI
+- `GET /api/v1/openapi.json` serves the OpenAPI schema
+- `GET /api/v1/redoc` serves ReDoc
+
+Friendly public aliases on the frontend domain:
+
+- `https://litetrade.vercel.app/api/meta`
+- `https://litetrade.vercel.app/api/docs`
+- `https://litetrade.vercel.app/api/openapi.json`
+- `https://litetrade.vercel.app/api/redoc`
+
+Start here:
+
+```bash
+curl https://lite-options-api-production.up.railway.app/api/v1/meta
+```
+
+The response includes:
+
+- `docs_url`
+- `openapi_url`
+- `redoc_url`
+- `websocket.url`
+- auth expectations for human JWT vs agent API keys
+- PCR calculation semantics
+- absolute URLs for the major agent and market routes
+
 ## Quickstart
 
 ### Zero to first trade
@@ -48,6 +81,13 @@ curl -X POST https://lite-options-api-production.up.railway.app/api/v1/agent/boo
 ```
 
 Save the returned `api_key` as `LITE_AGENT_API_KEY`.
+
+The returned payload also includes:
+
+- `agent.expires_at` so the agent can see when the key expires
+- `links.meta`, `links.docs`, `links.openapi`, and `links.websocket` for self-discovery
+
+Use the returned `api_key` for autonomous agent workflows. The human JWT login token is for browser or human-session auth and expires much faster.
 
 ### 2. Check the market snapshot
 
@@ -127,6 +167,8 @@ curl https://lite-options-api-production.up.railway.app/api/v1/agent/funds \
 
 - Human session auth uses JWT plus cookies on `/api/v1/auth/*`
 - Agent auth uses `X-API-Key` on `/api/v1/agent/*`, `/api/v1/agent/dhan/*`, `/api/v1/market/*`, and the WebSocket
+- Human JWT access tokens are short-lived by design. The default expiry is 15 minutes.
+- Agent API keys are the recommended auth mode for autonomous agents. The default expiry is 30 days unless `expires_in_days` overrides it.
 - Agent keys are portfolio-scoped, expiring, revocable, and rotatable
 - Reusing the same `agent_name` on bootstrap rotates the prior active key by default
 
@@ -153,6 +195,9 @@ Sample response:
   "change_pct": 0.54,
   "vix": 14.2,
   "pcr": 0.96,
+  "pcr_scope": "all_loaded_strikes_for_active_expiry",
+  "call_oi_total": 100000.0,
+  "put_oi_total": 96000.0,
   "market_status": "OPEN",
   "expiries": ["2026-03-12"],
   "active_expiry": "2026-03-12",
@@ -172,6 +217,12 @@ curl "https://lite-options-api-production.up.railway.app/api/v1/market/chain?exp
 ```
 
 The response includes strike rows, LTP, bid/ask, IV, OI, and Greeks for both CE and PE legs.
+
+PCR note:
+
+- `pcr` is calculated as `put_oi_total / call_oi_total`
+- `pcr_scope=all_loaded_strikes_for_active_expiry` means it uses all currently loaded strikes for the active expiry, not only ATM or near-ATM strikes
+- use `call_oi_total` and `put_oi_total` if you want to verify the ratio directly
 
 ### `GET /api/v1/market/expiries`
 
@@ -213,17 +264,33 @@ These routes use `X-API-Key: <secret>`.
 - `GET /api/v1/agent/me`
 - `GET /api/v1/agent/orders`
 - `GET /api/v1/agent/orders/{order_id}`
+- `GET /api/v1/agent/orders/{order_id}/linked`
 - `POST /api/v1/agent/orders`
+- `POST /api/v1/agent/orders/bracket`
+- `PATCH /api/v1/agent/orders/{order_id}`
 - `POST /api/v1/agent/orders/{order_id}/cancel`
 - `GET /api/v1/agent/positions`
 - `POST /api/v1/agent/positions/{position_id}/close`
 - `POST /api/v1/agent/positions/{position_id}/square-off`
 - `POST /api/v1/agent/positions/square-off`
 - `GET /api/v1/agent/funds`
+- `GET /api/v1/agent/alerts`
+- `POST /api/v1/agent/alerts`
+- `DELETE /api/v1/agent/alerts/{alert_id}`
+- `GET /api/v1/agent/webhooks`
+- `POST /api/v1/agent/webhooks`
+- `DELETE /api/v1/agent/webhooks/{webhook_id}`
+- `GET /api/v1/agent/analytics/detailed`
 - `GET /api/v1/agent/signals/latest`
 - `POST /api/v1/agent/signals`
 
 Native writes require `idempotency_key`.
+
+Order `source` semantics:
+
+- `source="agent"` means the order was submitted through the agent API key surface
+- `source="human"` means it came through the human JWT/session surface
+- `source` describes the submission channel, not the portfolio kind
 
 ## Dhan-Compatible Agent API
 
@@ -281,7 +348,14 @@ Current event types:
 
 - `market.snapshot`
 - `option.chain`
+- `option.quotes`
+- `portfolio.refresh`
 - `signal.updated`
+
+Notes:
+
+- send `ping` to receive `pong`
+- agents should reconnect on disconnect and then reconcile state using `/api/v1/agent/me`, `/api/v1/agent/orders`, `/api/v1/agent/positions`, and `/api/v1/agent/funds`
 
 ## SDK
 
@@ -296,16 +370,25 @@ Key methods:
 - `bootstrap(...)`
 - `signup(...)`
 - `profile()`
+- `bracket_order(payload)`
 - `snapshot()`
 - `expiries()`
 - `chain(expiry=None)`
 - `candles(timeframe="15m")`
 - `depth(symbol)`
+- `alerts()`
+- `create_alert(...)`
+- `delete_alert(alert_id)`
 - `funds()`
 - `positions()`
 - `orders()`
 - `order(payload)`
+- `linked_orders(order_id)`
+- `detailed_analytics(...)`
 - `dhan_order(payload)`
+- `webhooks()`
+- `create_webhook(url, events)`
+- `delete_webhook(webhook_id)`
 - `square_off(position_id)`
 - `square_off_all()`
 

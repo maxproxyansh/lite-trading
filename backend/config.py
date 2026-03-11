@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     app_name: str = "Lite Options Terminal"
+    app_version: str = "2.3.0"
     app_env: Literal["development", "staging", "production"] = "development"
     api_prefix: str = "/api/v1"
     frontend_origin: str = "http://localhost:5173"
