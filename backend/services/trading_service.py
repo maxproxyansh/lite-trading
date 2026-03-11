@@ -10,6 +10,7 @@ from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+import market_hours
 from config import get_settings
 from models import Fill, Order, Portfolio, Position
 from schemas import BracketOrderRequest, FundsResponse, OrderModifyRequest, OrderRequest
@@ -134,6 +135,12 @@ def _quote_context_for_symbol(symbol: str) -> QuoteContext:
         bid=quote.get("bid"),
         ask=quote.get("ask"),
     )
+
+
+def _ensure_market_accepts_order_entry() -> None:
+    rejection_reason = market_hours.order_entry_rejection_reason()
+    if rejection_reason:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=rejection_reason)
 
 
 def _validate_order_modification(order: Order, *, price: float | None, trigger_price: float | None, quantity: int) -> None:
@@ -604,6 +611,8 @@ def place_order(
             if existing:
                 return existing
 
+        _ensure_market_accepts_order_entry()
+
         portfolio = _lock_query(db.query(Portfolio).filter(Portfolio.id == payload.portfolio_id), db).first()
         if not portfolio:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio not found")
@@ -828,6 +837,8 @@ async def process_open_orders() -> None:
 
 def process_open_orders_sync(db: Session, symbols: set[str] | None = None) -> set[str]:
     changed_portfolios: set[str] = set()
+    if not market_hours.is_market_open():
+        return changed_portfolios
     mutated = False
     query = (
         db.query(Order)
@@ -971,6 +982,8 @@ def modify_order(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
     if order.status not in {"OPEN", "TRIGGER_PENDING"}:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="ORDER_NOT_MODIFIABLE")
+
+    _ensure_market_accepts_order_entry()
 
     portfolio = _lock_query(db.query(Portfolio).filter(Portfolio.id == order.portfolio_id), db).first()
     if not portfolio:

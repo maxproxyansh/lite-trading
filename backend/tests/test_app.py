@@ -43,6 +43,7 @@ from services.market_data import market_data_service  # noqa: E402
 from services.signal_adapter import signal_adapter  # noqa: E402
 from services.trading_service import process_open_orders_sync  # noqa: E402
 from services.webhook_service import process_webhook_deliveries_once, webhook_signature  # noqa: E402
+import market_hours  # noqa: E402
 
 
 def _seed_market() -> None:
@@ -78,6 +79,15 @@ def _seed_market() -> None:
             "volume": 25000,
         }
     }
+
+
+@pytest.fixture(autouse=True)
+def _freeze_market_open(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        market_hours,
+        "now_ist",
+        lambda: datetime(2026, 3, 12, 10, 0, tzinfo=market_hours.IST),
+    )
 
 
 def _login(client: TestClient, email: str, password: str) -> dict[str, str]:
@@ -1182,6 +1192,114 @@ def test_human_sell_and_close_releases_margin(client: TestClient) -> None:
     funds_after = client.get(f"/api/v1/funds?portfolio_id={manual_portfolio_id}", headers=headers)
     assert funds_after.status_code == 200, funds_after.text
     assert funds_after.json()["blocked_margin"] == 0.0
+
+
+def test_human_orders_reject_outside_market_hours(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        market_hours,
+        "now_ist",
+        lambda: datetime(2026, 3, 12, 9, 5, tzinfo=market_hours.IST),
+    )
+    headers = _login(client, "admin@lite.trade", "lite-admin-123")
+    csrf_token = client.cookies.get("lite_csrf")
+    portfolio_id = _portfolio_map(client, headers)["manual"]["id"]
+    response = client.post(
+        "/api/v1/orders",
+        headers={"X-CSRF-Token": csrf_token},
+        json={
+            "portfolio_id": portfolio_id,
+            "symbol": "NIFTY_2026-03-12_22500_CE",
+            "expiry": "2026-03-12",
+            "strike": 22500,
+            "option_type": "CE",
+            "side": "BUY",
+            "order_type": "MARKET",
+            "product": "NRML",
+            "validity": "DAY",
+            "lots": 1,
+        },
+    )
+    assert response.status_code == 400, response.text
+    assert response.json()["detail"] == (
+        "Order rejected: NSE F&O regular trading starts at 9:15 AM IST. "
+        "Lite does not support pre-open or after-market order entry."
+    )
+
+
+def test_agent_orders_reject_on_trading_holiday(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        market_hours,
+        "now_ist",
+        lambda: datetime(2026, 3, 26, 10, 0, tzinfo=market_hours.IST),
+    )
+    bootstrap = _bootstrap_agent(client, agent_name="holiday-agent")
+    response = client.post(
+        "/api/v1/agent/orders",
+        headers={"X-API-Key": bootstrap["api_key"]},
+        json={
+            "portfolio_id": bootstrap["portfolio"]["id"],
+            "symbol": "NIFTY_2026-03-12_22500_CE",
+            "expiry": "2026-03-12",
+            "strike": 22500,
+            "option_type": "CE",
+            "side": "BUY",
+            "order_type": "MARKET",
+            "product": "NRML",
+            "validity": "DAY",
+            "lots": 1,
+            "idempotency_key": "holiday-agent-order",
+        },
+    )
+    assert response.status_code == 400, response.text
+    assert response.json()["detail"] == (
+        "Order rejected: NSE F&O is closed on March 26, 2026 for Shri Ram Navami. "
+        "Lite accepts orders only on trading days between 9:15 AM to 3:30 PM IST."
+    )
+
+
+def test_process_open_orders_does_not_fill_when_market_closed(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    headers = _login(client, "admin@lite.trade", "lite-admin-123")
+    csrf_token = client.cookies.get("lite_csrf")
+    portfolio_id = _portfolio_map(client, headers)["manual"]["id"]
+
+    response = client.post(
+        "/api/v1/orders",
+        headers={"X-CSRF-Token": csrf_token},
+        json={
+            "portfolio_id": portfolio_id,
+            "symbol": "NIFTY_2026-03-12_22500_CE",
+            "expiry": "2026-03-12",
+            "strike": 22500,
+            "option_type": "CE",
+            "side": "BUY",
+            "order_type": "LIMIT",
+            "product": "NRML",
+            "validity": "DAY",
+            "lots": 1,
+            "price": 111.0,
+            "idempotency_key": "closed-market-open-order",
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "OPEN"
+
+    original_quote = dict(market_data_service.quotes["NIFTY_2026-03-12_22500_CE"])
+    market_data_service.quotes["NIFTY_2026-03-12_22500_CE"].update({"ltp": 111.2, "bid": 110.9, "ask": 110.5})
+    monkeypatch.setattr(
+        market_hours,
+        "now_ist",
+        lambda: datetime(2026, 3, 12, 15, 45, tzinfo=market_hours.IST),
+    )
+    try:
+        with SessionLocal() as db:
+            changed = process_open_orders_sync(db, {"NIFTY_2026-03-12_22500_CE"})
+    finally:
+        market_data_service.quotes["NIFTY_2026-03-12_22500_CE"] = original_quote
+
+    assert changed == set()
+    orders = client.get(f"/api/v1/orders?portfolio_id={portfolio_id}", headers=headers)
+    assert orders.status_code == 200, orders.text
+    assert orders.json()[0]["status"] == "OPEN"
 
 
 def test_order_request_validation_rejects_missing_limit_price(client: TestClient) -> None:

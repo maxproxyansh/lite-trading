@@ -53,6 +53,27 @@ export class ApiError extends Error {
   }
 }
 
+function formatErrorDetail(detail: unknown): string | null {
+  if (typeof detail === 'string') {
+    return detail
+  }
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => {
+        if (typeof item === 'string') {
+          return item
+        }
+        if (item && typeof item === 'object' && 'msg' in item && typeof item.msg === 'string') {
+          return item.msg
+        }
+        return null
+      })
+      .filter((item): item is string => Boolean(item))
+      .join(', ')
+  }
+  return null
+}
+
 function getAccessToken() {
   return useStore.getState().accessToken
 }
@@ -109,7 +130,18 @@ async function rawFetch<T>(path: string, init: RequestInit = {}, retry = true): 
   }
 
   if (!response.ok) {
-    const errorText = await response.text()
+    let errorText = response.statusText
+    const contentType = response.headers.get('content-type') ?? ''
+    if (contentType.includes('application/json')) {
+      try {
+        const payload = await response.json() as { detail?: unknown }
+        errorText = formatErrorDetail(payload?.detail) ?? JSON.stringify(payload)
+      } catch {
+        errorText = response.statusText
+      }
+    } else {
+      errorText = await response.text() || response.statusText
+    }
     throw new ApiError(
       errorText || response.statusText,
       response.status,
