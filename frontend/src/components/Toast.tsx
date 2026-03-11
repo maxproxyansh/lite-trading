@@ -2,35 +2,37 @@ import { CheckCircle2, Info, TriangleAlert, X } from 'lucide-react'
 
 import { useStore } from '../store/useStore'
 
-const iconMap = {
-  success: CheckCircle2,
-  error: TriangleAlert,
-  info: Info,
-}
+const config = {
+  success: { icon: CheckCircle2, accent: 'text-profit', label: 'Success' },
+  error: { icon: TriangleAlert, accent: 'text-loss', label: 'Error' },
+  info: { icon: Info, accent: 'text-signal', label: 'Info' },
+} as const
 
 export default function Toast() {
   const { toasts, removeToast } = useStore()
 
   return (
-    <div className="fixed bottom-3 right-3 z-[120] space-y-1.5">
+    <div className="fixed bottom-3 right-3 z-[120] space-y-2">
       {toasts.map((toast) => {
-        const Icon = iconMap[toast.type]
+        const { icon: Icon, accent, label } = config[toast.type]
         return (
           <div
             key={toast.id}
-            className={`flex min-w-[260px] items-start gap-2.5 rounded border px-3 py-2.5 text-xs shadow-lg animate-slide-in ${
-              toast.type === 'success'
-                ? 'border-profit/30 bg-profit/10 text-profit'
-                : toast.type === 'error'
-                  ? 'border-loss/30 bg-loss/10 text-loss'
-                  : 'border-signal/30 bg-signal/10 text-text-primary'
-            }`}
+            className="w-64 rounded-md border border-border-primary bg-bg-secondary/95 p-3 shadow-xl backdrop-blur animate-slide-in"
           >
-            <Icon size={14} className="mt-0.5 shrink-0" />
-            <div className="flex-1 leading-4">{toast.message}</div>
-            <button onClick={() => removeToast(toast.id)} className="opacity-50 transition-opacity hover:opacity-100">
-              <X size={12} />
-            </button>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Icon size={14} className={accent} />
+                <span className="text-[11px] font-medium text-text-primary">{label}</span>
+              </div>
+              <button
+                onClick={() => removeToast(toast.id)}
+                className="text-text-muted hover:text-text-primary transition-colors"
+              >
+                <X size={12} />
+              </button>
+            </div>
+            <div className="mt-1.5 text-[11px] leading-4 text-text-muted">{toast.message}</div>
           </div>
         )
       })}
