@@ -6,7 +6,7 @@ import os
 import sys
 import tempfile
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -831,6 +831,65 @@ def test_fetch_candles_returns_full_intraday_window_without_legacy_truncation(mo
     assert response["has_more"] is True
     assert response["next_before"] == timestamps[0]
     assert fake_client.last_kwargs["interval"] == 15
+
+
+def test_fetch_candles_aggregates_weekly_and_monthly_from_daily_history(monkeypatch: pytest.MonkeyPatch) -> None:
+    timestamps = [
+        "2026-01-26T00:00:00+00:00",
+        "2026-01-27T00:00:00+00:00",
+        "2026-01-28T00:00:00+00:00",
+        "2026-01-29T00:00:00+00:00",
+        "2026-01-30T00:00:00+00:00",
+        "2026-02-02T00:00:00+00:00",
+        "2026-02-03T00:00:00+00:00",
+    ]
+
+    class FakeDhanClient:
+        def historical_daily_data(self, **kwargs):
+            self.last_kwargs = kwargs
+            return {
+                "data": {
+                    "timestamp": timestamps,
+                    "open": [100.0, 101.0, 102.0, 103.0, 104.0, 110.0, 111.0],
+                    "high": [101.0, 105.0, 103.0, 106.0, 107.0, 112.0, 115.0],
+                    "low": [99.0, 100.0, 101.0, 102.0, 103.0, 109.0, 110.0],
+                    "close": [100.5, 104.0, 102.5, 105.0, 106.5, 111.0, 114.0],
+                    "volume": [10, 20, 30, 40, 50, 60, 70],
+                }
+            }
+
+    fake_client = FakeDhanClient()
+    monkeypatch.setattr(market_data_service, "_has_dhan", lambda: True)
+    monkeypatch.setattr(market_data_service, "_client", lambda: fake_client)
+
+    weekly = market_data_service._fetch_candles("W")
+    monthly = market_data_service._fetch_candles("M")
+
+    ist = timezone(timedelta(hours=5, minutes=30))
+    assert [candle["time"] for candle in weekly["candles"]] == [
+        int(datetime(2026, 1, 26, tzinfo=ist).timestamp()),
+        int(datetime(2026, 2, 2, tzinfo=ist).timestamp()),
+    ]
+    assert weekly["candles"][0]["open"] == 100.0
+    assert weekly["candles"][0]["high"] == 107.0
+    assert weekly["candles"][0]["low"] == 99.0
+    assert weekly["candles"][0]["close"] == 106.5
+    assert weekly["candles"][0]["volume"] == 150.0
+    assert weekly["candles"][1]["close"] == 114.0
+    assert weekly["candles"][1]["volume"] == 130.0
+
+    assert [candle["time"] for candle in monthly["candles"]] == [
+        int(datetime(2026, 1, 1, tzinfo=ist).timestamp()),
+        int(datetime(2026, 2, 1, tzinfo=ist).timestamp()),
+    ]
+    assert monthly["candles"][0]["open"] == 100.0
+    assert monthly["candles"][0]["high"] == 107.0
+    assert monthly["candles"][0]["low"] == 99.0
+    assert monthly["candles"][0]["close"] == 106.5
+    assert monthly["candles"][0]["volume"] == 150.0
+    assert monthly["candles"][1]["close"] == 114.0
+    assert monthly["candles"][1]["volume"] == 130.0
+    assert fake_client.last_kwargs["instrument_type"] == "INDEX"
 
 
 def test_market_candles_route_supports_before_cursor(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
