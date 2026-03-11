@@ -253,6 +253,20 @@ class MarketDataService:
         spot = float(body.get("last_price") or 0.0)
         prev_close = float(body.get("prev_close") or body.get("previous_close") or 0.0)
 
+        # Dhan option chain doesn't provide prev_close at top level — derive from daily candles
+        if prev_close == 0.0 and self.last_known_prev_close == 0.0:
+            try:
+                daily = self._fetch_candles("D")
+                if daily.get("candles"):
+                    # Use second-to-last candle's close as prev_close (last candle is today)
+                    candles = daily["candles"]
+                    if len(candles) >= 2:
+                        prev_close = float(candles[-2]["close"])
+                    elif candles:
+                        prev_close = float(candles[-1]["close"])
+            except Exception:  # noqa: BLE001
+                pass
+
         if spot > 0:
             self.last_known_spot = spot
         if prev_close > 0:

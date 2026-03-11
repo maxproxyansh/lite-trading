@@ -40,3 +40,5 @@ async def candles(timeframe: str = "15m", user=Depends(get_current_user)):
 def depth(symbol: str, user=Depends(get_current_user)):
     depth_data = market_data_service.get_depth(symbol)
     return {"symbol": symbol, "depth": depth_data}
+
+

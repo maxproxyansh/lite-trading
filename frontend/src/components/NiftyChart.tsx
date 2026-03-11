@@ -26,6 +26,7 @@ export default function NiftyChart() {
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
   const priceLinesRef = useRef<Map<string, IPriceLine>>(new Map())
   const announcedAlertIdsRef = useRef<Set<string>>(new Set())
+  const lastCandleRef = useRef<CandlestickData | null>(null)
   const [timeframe, setTimeframe] = useState<(typeof TIMEFRAMES)[number]>('D')
   const [loading, setLoading] = useState(true)
   const [candleCount, setCandleCount] = useState(0)
@@ -134,6 +135,7 @@ export default function NiftyChart() {
         }))
         seriesRef.current?.setData(candles)
         chartRef.current?.timeScale().fitContent()
+        lastCandleRef.current = candles.length > 0 ? candles[candles.length - 1] : null
         setCandleCount(candles.length)
       })
       .finally(() => active && setLoading(false))
@@ -141,6 +143,23 @@ export default function NiftyChart() {
       active = false
     }
   }, [timeframe])
+
+  // Real-time candle update: when spot price changes via WebSocket, update the last candle
+  useEffect(() => {
+    const series = seriesRef.current
+    const lastCandle = lastCandleRef.current
+    if (!series || !lastCandle || !snapshot?.spot || snapshot.spot <= 0) return
+
+    const spot = snapshot.spot
+    const updated: CandlestickData = {
+      ...lastCandle,
+      close: spot,
+      high: Math.max(lastCandle.high, spot),
+      low: Math.min(lastCandle.low, spot),
+    }
+    series.update(updated)
+    lastCandleRef.current = updated
+  }, [snapshot?.spot])
 
   useEffect(() => {
     const series = seriesRef.current

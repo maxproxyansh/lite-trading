@@ -1,47 +1,31 @@
 import { useState } from 'react'
 import { Ticket, X } from 'lucide-react'
 
-import DepthCard from '../components/DepthCard'
 import NiftyChart from '../components/NiftyChart'
-import OptionsChain from '../components/OptionsChain'
+import OptionsPanel from '../components/OptionsPanel'
 import OrderTicket from '../components/OrderTicket'
-import SignalPanel from '../components/SignalPanel'
-import TradingViewTechnicalAnalysis from '../components/TradingViewTechnicalAnalysis'
 import { useStore } from '../store/useStore'
 
 export default function Dashboard() {
-  const { snapshot, latestSignal } = useStore()
+  const { snapshot } = useStore()
   const [showMobileTicket, setShowMobileTicket] = useState(false)
 
   return (
     <div className="flex h-full">
-      {/* Center: Chart + Options Chain */}
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <div className="h-[42%] shrink-0 border-b border-border-primary">
-          <NiftyChart />
-        </div>
-        <div className="flex-1 overflow-auto">
-          <OptionsChain />
-        </div>
-      </div>
+      {/* Left: Options Panel */}
+      <OptionsPanel />
 
-      {/* Right Panel — hidden on mobile */}
-      <aside className="hidden md:flex md:w-[300px] md:shrink-0 md:flex-col overflow-y-auto border-l border-border-primary bg-bg-secondary">
+      {/* Center: Full-height Chart */}
+      <div className="flex flex-1 flex-col overflow-hidden">
         {snapshot?.degraded && (
-          <div className="border-b border-loss/30 bg-loss/10 px-3 py-2 text-xs text-loss">
+          <div className="border-b border-loss/30 bg-loss/10 px-3 py-1.5 text-xs text-loss">
             Market data degraded: {snapshot.degraded_reason ?? 'unknown'}
           </div>
         )}
-        <OrderTicket />
-        <DepthCard />
-        {latestSignal && <SignalPanel />}
-        <div className="border-t border-border-primary">
-          <div className="px-3 py-2 text-xs font-medium text-text-secondary">Technical Analysis</div>
-          <div style={{ height: 350 }}>
-            <TradingViewTechnicalAnalysis />
-          </div>
+        <div className="flex-1 min-h-0">
+          <NiftyChart />
         </div>
-      </aside>
+      </div>
 
       {/* Mobile floating ticket button */}
       <button

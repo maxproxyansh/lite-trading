@@ -4,9 +4,7 @@ import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-
 import ErrorBoundary from './components/ErrorBoundary'
 import Header from './components/Header'
 import MobileNav from './components/MobileNav'
-import OptionsSidebarPanel from './components/OptionsSidebarPanel'
 import Sidebar from './components/Sidebar'
-import TradingViewTickerTape from './components/TradingViewTickerTape'
 import OrderModal from './components/OrderModal'
 import Toast from './components/Toast'
 import {
@@ -64,7 +62,6 @@ function ProtectedLayout() {
         <Header />
         <div className="flex flex-1 overflow-hidden pb-14 md:pb-0">
           <Sidebar />
-          <OptionsSidebarPanel />
           <main className="md:ml-10 flex-1 overflow-auto animate-fade-in" key={location.pathname}>
             <Routes>
               <Route path="/" element={<Dashboard />} />
@@ -77,7 +74,6 @@ function ProtectedLayout() {
             </Routes>
           </main>
         </div>
-        <TradingViewTickerTape />
         <MobileNav />
         <Toast />
         <OrderModal />

@@ -40,10 +40,16 @@ interface AppState {
   funds: FundsResponse | null
   analytics: AnalyticsResponse | null
   latestSignal: SignalResponse | null
-  optionsSidebarOpen: boolean
+  chainView: 'collapsed' | 'expanded'
+  chainFilter: 'ALL' | 'ITM' | 'ATM' | 'OTM'
+  chainPanelOpen: boolean
+  optionChartSymbol: string | null
   toasts: Toast[]
   orderModal: { isOpen: boolean; quote: OptionQuote; side: 'BUY' | 'SELL' } | null
-  toggleOptionsSidebar: () => void
+  setChainView: (view: AppState['chainView']) => void
+  setChainFilter: (filter: AppState['chainFilter']) => void
+  setChainPanelOpen: (open: boolean) => void
+  setOptionChartSymbol: (symbol: string | null) => void
   openOrderModal: (quote: OptionQuote, side: 'BUY' | 'SELL') => void
   closeOrderModal: () => void
   setSession: (token: string | null, user: UserSummary | null) => void
@@ -88,8 +94,14 @@ export const useStore = create<AppState>((set) => ({
   analytics: null,
   latestSignal: null,
   toasts: [],
-  optionsSidebarOpen: false,
-  toggleOptionsSidebar: () => set((state) => ({ optionsSidebarOpen: !state.optionsSidebarOpen })),
+  chainView: 'collapsed',
+  chainFilter: 'ALL',
+  chainPanelOpen: true,
+  optionChartSymbol: null,
+  setChainView: (chainView) => set({ chainView }),
+  setChainFilter: (chainFilter) => set({ chainFilter }),
+  setChainPanelOpen: (chainPanelOpen) => set({ chainPanelOpen }),
+  setOptionChartSymbol: (optionChartSymbol) => set({ optionChartSymbol }),
   orderModal: null,
   openOrderModal: (quote, side) => set({ orderModal: { isOpen: true, quote, side } }),
   closeOrderModal: () => set({ orderModal: null }),
@@ -105,7 +117,7 @@ export const useStore = create<AppState>((set) => ({
   setChain: (chain) => set((state) => ({
     chain,
     snapshot: chain?.snapshot ?? state.snapshot,
-    selectedExpiry: chain?.snapshot.active_expiry ?? state.selectedExpiry,
+    selectedExpiry: state.selectedExpiry ?? chain?.snapshot.active_expiry ?? null,
   })),
   setPortfolios: (portfolios) => set((state) => ({
     portfolios,
@@ -130,7 +142,7 @@ export const useStore = create<AppState>((set) => ({
     return {
       chain,
       snapshot: chain.snapshot,
-      selectedExpiry: chain.snapshot.active_expiry ?? state.selectedExpiry,
+      selectedExpiry: state.selectedExpiry ?? chain.snapshot.active_expiry ?? null,
       selectedQuote: nextSelected,
     }
   }),
