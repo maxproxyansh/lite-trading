@@ -53,7 +53,7 @@ const OptionsChainCollapsedRow = memo(function OptionsChainCollapsedRow({
             ? 'border-l-2 border-l-[rgba(229,83,75,0.4)] bg-[rgba(229,83,75,0.05)]'
             : 'hover:bg-bg-hover'
         }`}
-        style={{ gridTemplateColumns: '1fr 56px 1fr', height: '26px' }}
+        style={{ gridTemplateColumns: '1fr 56px 1fr', height: '24px' }}
       >
         <div
           className={`group/ce relative flex cursor-pointer items-center justify-end px-1 ${
@@ -163,7 +163,7 @@ const OptionsChainCollapsedRow = memo(function OptionsChainCollapsedRow({
         </div>
       </div>
 
-      <div className="mb-[1px] grid" style={{ gridTemplateColumns: '1fr 56px 1fr', height: '3px' }}>
+      <div className="grid" style={{ gridTemplateColumns: '1fr 56px 1fr', height: '2px' }}>
         <div className="relative overflow-hidden">
           <div
             className="absolute right-0 top-0 h-full"

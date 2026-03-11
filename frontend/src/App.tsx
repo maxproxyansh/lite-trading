@@ -8,6 +8,7 @@ import MobileNav from './components/MobileNav'
 import OrderModal from './components/OrderModal'
 import Sidebar from './components/Sidebar'
 import Toast from './components/Toast'
+import useKeyboardShortcuts from './hooks/useKeyboardShortcuts'
 import { useWebSocket } from './hooks/useWebSocket'
 import {
   fetchAnalytics,
@@ -87,6 +88,7 @@ function ProtectedLayout() {
 
 export default function App() {
   useWebSocket()
+  useKeyboardShortcuts()
   const navigate = useNavigate()
   const {
     accessToken,

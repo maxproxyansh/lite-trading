@@ -84,20 +84,6 @@
     color: #fff;
   }
 
-  /* Ticker bar scroll animation */
-  @keyframes ticker-scroll {
-    0% { transform: translateX(0); }
-    100% { transform: translateX(-50%); }
-  }
-
-  .ticker-scroll {
-    animation: ticker-scroll 40s linear infinite;
-  }
-
-  .ticker-scroll:hover {
-    animation-play-state: paused;
-  }
-
   /* Fade in animation */
   @keyframes fade-in {
     from { opacity: 0; transform: translateY(4px); }

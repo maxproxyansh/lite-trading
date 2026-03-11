@@ -447,22 +447,22 @@ export default function NiftyChart() {
 
   return (
     <div className="relative flex h-full flex-col bg-bg-primary">
-      <div className="flex items-center gap-1 border-b border-border-secondary px-3 py-1">
-        <span className="mr-2 text-[11px] text-text-muted">{chartLabel}</span>
+      <div className={`flex items-center gap-1 border-b px-3 py-1 ${chartQuote ? 'border-brand/30 bg-brand/5' : 'border-border-secondary'}`}>
+        <span className={`mr-2 text-[11px] ${chartQuote ? 'font-medium text-brand' : 'text-text-muted'}`}>{chartLabel}</span>
         {chartQuote && (
           <div className="mr-2 flex items-center gap-1">
-            <span className="text-[11px] text-brand">{chartQuote.expiry}</span>
+            <span className="text-[10px] text-text-muted">{chartQuote.expiry}</span>
             <button
               onClick={() => setOptionChartSymbol(null)}
-              className="text-[10px] text-text-muted hover:text-text-primary"
+              className="ml-1 rounded-sm border border-border-primary bg-bg-secondary px-1.5 py-0.5 text-[10px] text-text-muted transition-colors hover:border-text-muted hover:text-text-primary"
             >
-              × Back
+              Back to NIFTY
             </button>
           </div>
         )}
         {chartPrice ? (
-          <span className="mr-3 text-[11px] text-text-secondary">
-            {chartQuote ? 'LTP' : 'Spot'} {chartPrice.toFixed(2)}
+          <span className="mr-3 text-[11px] tabular-nums text-text-secondary">
+            {chartQuote ? 'LTP' : 'Spot'} ₹{chartPrice.toFixed(2)}
           </span>
         ) : null}
         <div className="flex items-center gap-0.5">

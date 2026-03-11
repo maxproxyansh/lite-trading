@@ -48,8 +48,8 @@ export default function History() {
                   <td className="px-3 py-1.5 text-text-primary">{order.symbol}</td>
                   <td className={`px-3 py-1.5 font-medium ${order.side === 'BUY' ? 'text-profit' : 'text-loss'}`}>{order.side}</td>
                   <td className="px-3 py-1.5 text-right tabular-nums text-text-primary">{order.quantity}</td>
-                  <td className="px-3 py-1.5 text-right tabular-nums text-text-primary">{order.average_price?.toFixed(2) ?? '--'}</td>
-                  <td className="px-3 py-1.5 text-right tabular-nums text-text-secondary">{order.charges.toFixed(2)}</td>
+                  <td className="px-3 py-1.5 text-right tabular-nums text-text-primary">{order.average_price != null ? `₹${order.average_price.toFixed(2)}` : '--'}</td>
+                  <td className="px-3 py-1.5 text-right tabular-nums text-text-secondary">₹{order.charges.toFixed(2)}</td>
                 </tr>
               ))}
             </tbody>

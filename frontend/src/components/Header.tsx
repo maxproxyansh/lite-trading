@@ -47,11 +47,11 @@ export default function Header() {
           <span className={`text-[15px] font-semibold tabular-nums ${snapshot && snapshot.spot > 0 && snapshot.change >= 0 ? 'text-profit' : snapshot && snapshot.spot > 0 ? 'text-loss' : 'text-text-primary'}`}>
             {snapshot && snapshot.spot > 0 ? snapshot.spot.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '--'}
           </span>
-          <span className={`hidden md:inline text-[12px] tabular-nums ${snapshot && snapshot.spot > 0 && snapshot.change >= 0 ? 'text-profit' : snapshot && snapshot.spot > 0 ? 'text-loss' : 'text-text-muted'}`}>
-            {snapshot && snapshot.spot > 0
-              ? `${snapshot.change >= 0 ? '+' : ''}${snapshot.change.toFixed(2)} (${snapshot.change_pct.toFixed(2)}%)`
-              : ''}
-          </span>
+          {snapshot && snapshot.spot > 0 && (snapshot.change !== 0 || snapshot.change_pct !== 0) && (
+            <span className={`hidden md:inline text-[12px] tabular-nums ${snapshot.change >= 0 ? 'text-profit' : 'text-loss'}`}>
+              {snapshot.change >= 0 ? '+' : ''}{snapshot.change.toFixed(2)} ({snapshot.change_pct.toFixed(2)}%)
+            </span>
+          )}
         </div>
       </div>
 
@@ -103,7 +103,7 @@ export default function Header() {
           className="hidden md:block cursor-pointer border-none bg-transparent text-[11px] text-text-secondary outline-none"
         >
           {portfolios.map((p) => (
-            <option key={p.id} value={p.id} className="bg-bg-primary">{p.name.length > 14 ? p.name.slice(0, 12) + '…' : p.name}</option>
+            <option key={p.id} value={p.id} className="bg-bg-primary">{p.kind === 'manual' ? 'Manual' : p.kind === 'agent' ? 'Agent' : p.name}</option>
           ))}
         </select>
 

@@ -52,12 +52,12 @@ export default function Positions() {
                 <tr key={pos.id} className="border-b border-border-secondary/40 hover:bg-bg-hover transition-colors">
                   <td className="px-3 py-1.5 text-text-primary">{pos.symbol}</td>
                   <td className="px-3 py-1.5 text-right tabular-nums text-text-primary">{pos.net_quantity}</td>
-                  <td className="px-3 py-1.5 text-right tabular-nums text-text-primary">{pos.average_open_price.toFixed(2)}</td>
-                  <td className="px-3 py-1.5 text-right tabular-nums text-text-primary">{pos.last_price.toFixed(2)}</td>
+                  <td className="px-3 py-1.5 text-right tabular-nums text-text-primary">₹{pos.average_open_price.toFixed(2)}</td>
+                  <td className="px-3 py-1.5 text-right tabular-nums text-text-primary">₹{pos.last_price.toFixed(2)}</td>
                   <td className={`px-3 py-1.5 text-right tabular-nums font-medium ${pos.unrealized_pnl >= 0 ? 'text-profit' : 'text-loss'}`}>
-                    {pos.unrealized_pnl >= 0 ? '+' : ''}{pos.unrealized_pnl.toFixed(2)}
+                    {pos.unrealized_pnl >= 0 ? '+' : ''}₹{Math.abs(pos.unrealized_pnl).toFixed(2)}
                   </td>
-                  <td className="px-3 py-1.5 text-right tabular-nums text-text-secondary">{pos.blocked_margin.toFixed(2)}</td>
+                  <td className="px-3 py-1.5 text-right tabular-nums text-text-secondary">₹{pos.blocked_margin.toFixed(2)}</td>
                   <td className="px-3 py-1.5 text-right">
                     <button
                       onClick={async () => {
