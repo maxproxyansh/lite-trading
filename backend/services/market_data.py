@@ -4,6 +4,7 @@ import asyncio
 import math
 import re
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
@@ -21,6 +22,8 @@ NIFTY_INDEX_SECURITY_ID = "13"
 VIX_INDEX_SECURITY_ID = "21"
 INDEX_EXCHANGE_SEGMENT = "IDX_I"
 INDEX_INSTRUMENT_TYPE = "INDEX"
+OPTION_EXCHANGE_SEGMENT = "NSE_FNO"
+OPTION_INSTRUMENT_TYPE = "OPTIDX"
 OLDEST_DAILY_HISTORY = date(1990, 1, 1)
 MAX_INTRADAY_HISTORY_DAYS = 365 * 5
 INITIAL_HISTORY_WINDOWS = {
@@ -31,9 +34,26 @@ INITIAL_HISTORY_WINDOWS = {
     "D": 365,
 }
 INTRADAY_INTERVALS = {"1m": 1, "5m": 5, "15m": 15, "1h": 60}
+INDEX_SYMBOL_ALIASES = {"NIFTY", "NIFTY 50", "NIFTY50"}
+OPTION_SYMBOL_PATTERN = re.compile(r"^(?P<root>[A-Z0-9]+)_(?P<expiry>\d{4}-\d{2}-\d{2})_(?P<strike>\d+)_(?P<option_type>CE|PE)$")
 
 BroadcastFn = Callable[[str, dict[str, Any]], Awaitable[None]]
 ProcessOrdersFn = Callable[[set[str]], Awaitable[None]]
+
+
+@dataclass(frozen=True)
+class CandleInstrument:
+    symbol: str
+    security_id: str
+    exchange_segment: str
+    instrument_type: str
+
+
+class CandleQueryError(Exception):
+    def __init__(self, status_code: int, detail: str) -> None:
+        super().__init__(detail)
+        self.status_code = status_code
+        self.detail = detail
 
 
 def _parse_datetime(value: Any) -> datetime:
@@ -352,6 +372,98 @@ class MarketDataService:
 
     def get_depth(self, symbol: str) -> dict[str, Any] | None:
         return self.quotes.get(symbol)
+
+    @staticmethod
+    def _normalize_symbol(symbol: str | None) -> str | None:
+        candidate = (symbol or "").strip().upper()
+        return candidate or None
+
+    @staticmethod
+    def _index_history_target() -> CandleInstrument:
+        return CandleInstrument(
+            symbol="NIFTY 50",
+            security_id=NIFTY_INDEX_SECURITY_ID,
+            exchange_segment=INDEX_EXCHANGE_SEGMENT,
+            instrument_type=INDEX_INSTRUMENT_TYPE,
+        )
+
+    def _lookup_quote_by_security_id(self, security_id: str) -> dict[str, Any] | None:
+        security_id_str = str(security_id)
+        symbol = self._security_id_to_symbol.get(security_id_str)
+        if symbol:
+            return self.quotes.get(symbol)
+        for quote in self.quotes.values():
+            if str(quote.get("security_id") or "") == security_id_str:
+                return quote
+        return None
+
+    @staticmethod
+    def _parse_option_symbol(symbol: str) -> tuple[str, int, str] | None:
+        match = OPTION_SYMBOL_PATTERN.fullmatch(symbol)
+        if not match or match.group("root") != "NIFTY":
+            return None
+        return match.group("expiry"), int(match.group("strike")), match.group("option_type")
+
+    def _history_target_from_quote(self, quote: dict[str, Any]) -> CandleInstrument:
+        security_id = self._extract_security_id(quote)
+        symbol = str(quote.get("symbol") or "")
+        if not security_id or not symbol:
+            raise CandleQueryError(status_code=503, detail="QUOTE_METADATA_INCOMPLETE")
+        return CandleInstrument(
+            symbol=symbol,
+            security_id=str(security_id),
+            exchange_segment=OPTION_EXCHANGE_SEGMENT,
+            instrument_type=OPTION_INSTRUMENT_TYPE,
+        )
+
+    def _lookup_quote_by_symbol(self, symbol: str) -> dict[str, Any] | None:
+        quote = self.quotes.get(symbol)
+        if quote:
+            return quote
+
+        parsed = self._parse_option_symbol(symbol)
+        if not parsed:
+            return None
+
+        expiry, _strike, _option_type = parsed
+        # Fall back to a fresh option-chain lookup so chart loads are not limited to the currently visible expiry.
+        chain = self._fetch_option_chain(expiry)
+        if not chain:
+            raise CandleQueryError(status_code=503, detail="OPTION_METADATA_UNAVAILABLE")
+        return chain.get("quotes", {}).get(symbol)
+
+    def _resolve_candle_target(
+        self,
+        *,
+        symbol: str | None = None,
+        security_id: str | None = None,
+    ) -> CandleInstrument:
+        normalized_symbol = self._normalize_symbol(symbol)
+        normalized_security_id = str(security_id).strip() if security_id else None
+
+        if normalized_security_id == NIFTY_INDEX_SECURITY_ID:
+            return self._index_history_target()
+
+        if normalized_security_id:
+            quote = self._lookup_quote_by_security_id(normalized_security_id)
+            if quote:
+                return self._history_target_from_quote(quote)
+            if not normalized_symbol:
+                raise CandleQueryError(status_code=404, detail="SECURITY_ID_NOT_AVAILABLE")
+
+        if not normalized_symbol or normalized_symbol in INDEX_SYMBOL_ALIASES:
+            return self._index_history_target()
+
+        quote = self._lookup_quote_by_symbol(normalized_symbol)
+        if quote:
+            return self._history_target_from_quote(quote)
+
+        if self._parse_option_symbol(normalized_symbol) is None:
+            raise CandleQueryError(
+                status_code=400,
+                detail="Unsupported symbol format. Expected NIFTY 50 or NIFTY_YYYY-MM-DD_STRIKE_CE|PE",
+            )
+        raise CandleQueryError(status_code=404, detail="SYMBOL_NOT_AVAILABLE")
 
     def _fetch_expiries(self) -> list[str]:
         try:
@@ -701,7 +813,14 @@ class MarketDataService:
                 return str(payload[key])
         return None
 
-    async def get_candles(self, timeframe: str, *, before: int | None = None) -> dict[str, Any]:
+    async def get_candles(
+        self,
+        timeframe: str,
+        *,
+        before: int | None = None,
+        symbol: str | None = None,
+        security_id: str | None = None,
+    ) -> dict[str, Any]:
         if not self._has_dhan():
             return {
                 "timeframe": timeframe,
@@ -713,7 +832,15 @@ class MarketDataService:
             }
 
         try:
-            return await asyncio.to_thread(self._fetch_candles, timeframe, before)
+            return await asyncio.to_thread(
+                self._fetch_candles,
+                timeframe,
+                before,
+                symbol=symbol,
+                security_id=security_id,
+            )
+        except CandleQueryError:
+            raise
         except Exception:  # noqa: BLE001
             return {
                 "timeframe": timeframe,
@@ -724,18 +851,26 @@ class MarketDataService:
                 "next_before": None,
             }
 
-    def _fetch_candles(self, timeframe: str, before: int | None = None) -> dict[str, Any]:
+    def _fetch_candles(
+        self,
+        timeframe: str,
+        before: int | None = None,
+        *,
+        symbol: str | None = None,
+        security_id: str | None = None,
+    ) -> dict[str, Any]:
+        target = self._resolve_candle_target(symbol=symbol, security_id=security_id)
         client = self._client()
         lower_date, upper_date, oldest_date = self._history_window(timeframe, before)
         if timeframe == "D":
             result = client.historical_daily_data(
-                security_id=NIFTY_INDEX_SECURITY_ID,
-                exchange_segment=INDEX_EXCHANGE_SEGMENT,
-                instrument_type=INDEX_INSTRUMENT_TYPE,
+                security_id=target.security_id,
+                exchange_segment=target.exchange_segment,
+                instrument_type=target.instrument_type,
                 from_date=lower_date.strftime("%Y-%m-%d"),
                 to_date=upper_date.strftime("%Y-%m-%d"),
             )
-            payload = result.get("data", {}) if isinstance(result, dict) else {}
+            payload = result.get("data", {}) if isinstance(result, dict) and isinstance(result.get("data"), dict) else {}
             candles = self._filter_history_before(self._map_candles(payload), before)
             has_more = lower_date > oldest_date
             return {
@@ -754,14 +889,14 @@ class MarketDataService:
 
         interval = INTRADAY_INTERVALS.get(timeframe, INTRADAY_INTERVALS["15m"])
         result = client.intraday_minute_data(
-            security_id=NIFTY_INDEX_SECURITY_ID,
-            exchange_segment=INDEX_EXCHANGE_SEGMENT,
-            instrument_type=INDEX_INSTRUMENT_TYPE,
+            security_id=target.security_id,
+            exchange_segment=target.exchange_segment,
+            instrument_type=target.instrument_type,
             from_date=lower_date.strftime("%Y-%m-%d"),
             to_date=upper_date.strftime("%Y-%m-%d"),
             interval=interval,
         )
-        payload = result.get("data", {}) if isinstance(result, dict) else {}
+        payload = result.get("data", {}) if isinstance(result, dict) and isinstance(result.get("data"), dict) else {}
         candles = self._filter_history_before(self._map_candles(payload), before)
         has_more = lower_date > oldest_date
         return {
@@ -778,7 +913,9 @@ class MarketDataService:
             ),
         }
 
-    def _map_candles(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
+    def _map_candles(self, payload: dict[str, Any] | Any) -> list[dict[str, Any]]:
+        if not isinstance(payload, dict):
+            return []
         timestamps = payload.get("timestamp") or payload.get("start_Time") or payload.get("start_time") or []
         opens = payload.get("open") or []
         highs = payload.get("high") or []

@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from config import get_settings
 from models import Fill, Order, Portfolio, Position
-from schemas import FundsResponse, OrderRequest
+from schemas import FundsResponse, OrderModifyRequest, OrderRequest
 from services.audit import log_audit
 from services.market_data import market_data_service
 
@@ -118,6 +118,10 @@ def _quote_context(order: OrderRequest) -> QuoteContext:
         strike=order.strike,
         option_type=order.option_type,
     )
+    return _quote_context_for_symbol(symbol)
+
+
+def _quote_context_for_symbol(symbol: str) -> QuoteContext:
     quote = market_data_service.get_quote(symbol)
     if not quote:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="MARKET_DATA_UNAVAILABLE")
@@ -128,6 +132,27 @@ def _quote_context(order: OrderRequest) -> QuoteContext:
         bid=quote.get("bid"),
         ask=quote.get("ask"),
     )
+
+
+def _validate_order_modification(order: Order, *, price: float | None, trigger_price: float | None, quantity: int) -> None:
+    if quantity <= 0 or quantity % LOT_SIZE != 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Quantity must be a positive multiple of {LOT_SIZE}")
+
+    if order.order_type == "LIMIT":
+        if price is None or price <= 0:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="LIMIT orders require price")
+        if trigger_price is not None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="LIMIT orders do not support trigger_price")
+    elif order.order_type == "SL":
+        if price is None or price <= 0:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="SL orders require price")
+        if trigger_price is None or trigger_price <= 0:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="SL orders require trigger_price")
+    elif order.order_type == "SL-M":
+        if trigger_price is None or trigger_price <= 0:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="SL-M orders require trigger_price")
+        if price is not None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="SL-M orders do not support price")
 
 
 def _price_for_market(quote: QuoteContext, side: str) -> float:
@@ -572,6 +597,132 @@ def cancel_order(
     return order
 
 
+def modify_order(
+    db: Session,
+    order_id: str,
+    payload: OrderModifyRequest,
+    *,
+    portfolio_id: str | None = None,
+    actor_type: str,
+    actor_id: str | None,
+) -> Order:
+    order = _lock_query(db.query(Order).filter(Order.id == order_id), db).first()
+    if not order or (portfolio_id and order.portfolio_id != portfolio_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+    if order.status not in {"OPEN", "TRIGGER_PENDING"}:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="ORDER_NOT_MODIFIABLE")
+
+    portfolio = _lock_query(db.query(Portfolio).filter(Portfolio.id == order.portfolio_id), db).first()
+    if not portfolio:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio not found")
+
+    quantity = payload.quantity or order.quantity
+    price = payload.price if payload.price is not None else (float(order.price) if order.price is not None else None)
+    trigger_price = (
+        payload.trigger_price
+        if payload.trigger_price is not None
+        else (float(order.trigger_price) if order.trigger_price is not None else None)
+    )
+    _validate_order_modification(order, price=price, trigger_price=trigger_price, quantity=quantity)
+
+    quote = _quote_context_for_symbol(order.symbol)
+    existing_position = _lock_query(
+        db.query(Position).filter(
+            Position.portfolio_id == order.portfolio_id,
+            Position.symbol == order.symbol,
+            Position.product == order.product,
+        ),
+        db,
+    ).first()
+    existing_qty = existing_position.net_quantity if existing_position else 0
+    reference_price = price if order.order_type in {"LIMIT", "SL"} and price is not None else _price_for_market(quote, order.side)
+    charges = _estimate_charges(reference_price, quantity, order.side)
+    premium_required = _to_float(_money(reference_price) * Decimal(quantity)) if order.side == "BUY" else 0.0
+    opening_short_quantity = 0
+    if order.side == "SELL":
+        if existing_qty > 0:
+            opening_short_quantity = max(quantity - existing_qty, 0)
+        else:
+            opening_short_quantity = quantity
+    margin_required = 0.0
+    if opening_short_quantity > 0:
+        margin_required = _margin_from_dhan(quote.security_id, order.side, opening_short_quantity, reference_price, order.product)
+        if margin_required is None:
+            margin_required = _fallback_short_margin(reference_price, opening_short_quantity)
+
+    available_after_release = _money(_available_funds(portfolio))
+    if order.side == "BUY":
+        available_after_release += _money(order.premium_required)
+    else:
+        available_after_release += _money(order.margin_required)
+
+    required_funds = _money(premium_required) + _money(margin_required) + _money(charges)
+    if available_after_release < required_funds:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="INSUFFICIENT_FUNDS")
+
+    should_fill, next_status = _should_fill(order.order_type, order.side, quote, price, trigger_price)
+
+    if order.side == "BUY":
+        portfolio.blocked_premium = _to_float(
+            max(
+                _money(portfolio.blocked_premium) - _money(order.premium_required) + _money(premium_required),
+                Decimal("0.00"),
+            )
+        )
+    else:
+        portfolio.blocked_margin = _to_float(
+            max(
+                _money(portfolio.blocked_margin) - _money(order.margin_required) + _money(margin_required),
+                Decimal("0.00"),
+            )
+        )
+
+    old_state = {
+        "price": float(order.price) if order.price is not None else None,
+        "trigger_price": float(order.trigger_price) if order.trigger_price is not None else None,
+        "quantity": order.quantity,
+    }
+    order.price = price
+    order.trigger_price = trigger_price
+    order.quantity = quantity
+    order.lots = max(quantity // LOT_SIZE, 1)
+    order.last_price = quote.ltp
+    order.charges = charges
+    order.premium_required = premium_required
+    order.margin_required = margin_required or 0.0
+    order.updated_at = _utcnow()
+    order.message = None
+
+    log_audit(
+        db,
+        actor_type=actor_type,
+        actor_id=actor_id,
+        action="order.modified",
+        entity_type="order",
+        entity_id=order.id,
+        details={
+            "symbol": order.symbol,
+            "previous": old_state,
+            "current": {"price": price, "trigger_price": trigger_price, "quantity": quantity},
+        },
+    )
+
+    if should_fill:
+        _fill_order(
+            db,
+            order,
+            fill_price=_price_for_market(quote, order.side) if order.order_type in {"MARKET", "SL-M"} else reference_price,
+            actor_type=actor_type,
+            actor_id=actor_id,
+        )
+    else:
+        order.status = next_status
+
+    db.commit()
+    db.refresh(order)
+    return order
+
+
 def list_positions(db: Session, portfolio_id: str | None = None) -> list[Position]:
     query = db.query(Position).filter(Position.net_quantity != 0)
     if portfolio_id:
@@ -583,13 +734,32 @@ def list_positions(db: Session, portfolio_id: str | None = None) -> list[Positio
     return positions
 
 
-def close_position(db: Session, position_id: str, *, actor_type: str, actor_id: str | None) -> Order:
+def close_position(
+    db: Session,
+    position_id: str,
+    *,
+    actor_type: str,
+    actor_id: str | None,
+    quantity: int | None = None,
+) -> Order:
     position = _lock_query(
         db.query(Position).filter(Position.id == position_id, Position.net_quantity != 0),
         db,
     ).first()
     if not position:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Position not found")
+    close_quantity = abs(position.net_quantity)
+    if quantity is not None:
+        if quantity <= 0:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Quantity must be positive")
+        if quantity > close_quantity:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Quantity exceeds open position")
+        if quantity % position.lot_size != 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Quantity must be a multiple of {position.lot_size}",
+            )
+        close_quantity = quantity
     payload = OrderRequest(
         portfolio_id=position.portfolio_id,
         expiry=position.expiry,
@@ -598,7 +768,7 @@ def close_position(db: Session, position_id: str, *, actor_type: str, actor_id: 
         side="SELL" if position.net_quantity > 0 else "BUY",
         order_type="MARKET",
         product=position.product,
-        lots=max((abs(position.net_quantity) + LOT_SIZE - 1) // LOT_SIZE, 1),
+        lots=max((close_quantity + LOT_SIZE - 1) // LOT_SIZE, 1),
     )
     return place_order(
         db,
@@ -606,7 +776,7 @@ def close_position(db: Session, position_id: str, *, actor_type: str, actor_id: 
         actor_type=actor_type,
         actor_id=actor_id,
         source="close",
-        quantity_override=abs(position.net_quantity),
+        quantity_override=close_quantity,
     )
 
 
