@@ -33,6 +33,7 @@ export default function NiftyChart() {
   const [alerts, setAlerts] = useState<AlertSummary[]>([])
   const [pendingAlert, setPendingAlert] = useState<{ price: number; x: number; y: number } | null>(null)
   const [submittingAlert, setSubmittingAlert] = useState(false)
+  const [alertsPanelOpen, setAlertsPanelOpen] = useState(true)
 
   useEffect(() => {
     const container = containerRef.current
@@ -301,13 +302,21 @@ export default function NiftyChart() {
           </div>
         ) : null}
 
-        <div className="absolute right-3 top-3 z-10 w-64 rounded-md border border-border-primary bg-bg-secondary/90 p-3 shadow-lg backdrop-blur">
+        {alertsPanelOpen ? <div className="absolute right-3 top-3 z-10 w-64 rounded-md border border-border-primary bg-bg-secondary/90 p-3 shadow-lg backdrop-blur">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Bell size={14} className="text-signal" />
               <span className="text-[11px] font-medium text-text-primary">Chart alerts</span>
             </div>
-            <span className="text-[10px] text-text-muted">Spot</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-text-muted">Spot</span>
+              <button
+                onClick={() => setAlertsPanelOpen(false)}
+                className="text-text-muted hover:text-text-primary transition-colors"
+              >
+                <X size={12} />
+              </button>
+            </div>
           </div>
           <div className="mt-2 space-y-2">
             {alerts.length === 0 ? (
@@ -357,7 +366,15 @@ export default function NiftyChart() {
               ))
             )}
           </div>
-        </div>
+        </div> : (
+          <button
+            onClick={() => setAlertsPanelOpen(true)}
+            className="absolute right-3 top-3 z-10 flex h-7 w-7 items-center justify-center rounded-md border border-border-primary bg-bg-secondary/90 text-text-muted hover:text-text-primary shadow-lg backdrop-blur transition-colors"
+            title="Show alerts"
+          >
+            <Bell size={14} />
+          </button>
+        )}
       </div>
     </div>
   )

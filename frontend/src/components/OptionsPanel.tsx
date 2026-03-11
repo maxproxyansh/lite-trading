@@ -90,7 +90,7 @@ export default function OptionsPanel() {
 
       {/* Expiry tabs */}
       <div className="border-b border-border-secondary">
-        <ExpiryTabs />
+        <ExpiryTabs maxVisible={isExpanded ? 6 : 4} />
       </div>
 
       {/* Filter tabs */}

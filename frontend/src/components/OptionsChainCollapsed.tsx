@@ -25,10 +25,10 @@ export default function OptionsChainCollapsed({ rows, maxOI }: Props) {
     <div className="flex-1 overflow-hidden flex flex-col">
       {/* Sticky header */}
       <div className="sticky top-0 z-10 bg-bg-secondary border-b border-[#222]">
-        <div className="grid px-[6px]" style={{ gridTemplateColumns: '1fr 52px 1fr' }}>
-          <div className="py-[5px] px-3 text-right text-[9px] font-semibold text-[#555] uppercase tracking-[0.5px]">CE</div>
-          <div className="py-[5px] px-3 text-center text-[9px] font-semibold text-[#555] uppercase tracking-[0.5px]">Strike</div>
-          <div className="py-[5px] px-3 text-left text-[9px] font-semibold text-[#555] uppercase tracking-[0.5px]">PE</div>
+        <div className="grid px-2" style={{ gridTemplateColumns: '1fr 56px 1fr' }}>
+          <div className="py-[6px] px-2 text-right text-[9px] font-semibold text-[#555] uppercase tracking-[0.5px]">CE</div>
+          <div className="py-[6px] px-2 text-center text-[9px] font-semibold text-[#555] uppercase tracking-[0.5px]">Strike</div>
+          <div className="py-[6px] px-2 text-left text-[9px] font-semibold text-[#555] uppercase tracking-[0.5px]">PE</div>
         </div>
       </div>
 
@@ -54,12 +54,12 @@ export default function OptionsChainCollapsed({ rows, maxOI }: Props) {
             >
               {/* Data row */}
               <div
-                className={`group grid border-b border-[#222] px-[6px] transition-colors ${
+                className={`group grid border-b border-[#222] px-2 transition-colors ${
                   isATM
                     ? 'bg-[rgba(229,83,75,0.05)] border-l-2 border-l-[rgba(229,83,75,0.4)]'
                     : 'hover:bg-bg-hover'
                 }`}
-                style={{ gridTemplateColumns: '1fr 52px 1fr', height: '24px' }}
+                style={{ gridTemplateColumns: '1fr 56px 1fr', height: '26px' }}
               >
                 {/* CE LTP + B/S */}
                 <div
@@ -138,7 +138,7 @@ export default function OptionsChainCollapsed({ rows, maxOI }: Props) {
               {/* OI bar row */}
               <div
                 className="grid mb-[1px]"
-                style={{ gridTemplateColumns: '1fr 52px 1fr', height: '3px' }}
+                style={{ gridTemplateColumns: '1fr 56px 1fr', height: '3px' }}
               >
                 {/* CE bar: grows from right */}
                 <div className="relative overflow-hidden">

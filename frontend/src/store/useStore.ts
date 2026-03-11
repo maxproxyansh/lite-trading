@@ -95,7 +95,7 @@ export const useStore = create<AppState>((set) => ({
   latestSignal: null,
   toasts: [],
   chainView: 'collapsed',
-  chainFilter: 'ALL',
+  chainFilter: 'ATM',
   chainPanelOpen: true,
   optionChartSymbol: null,
   setChainView: (chainView) => set({ chainView }),
