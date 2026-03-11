@@ -64,7 +64,7 @@
 
 ### Backend
 1. **2 test failures** — `test_agent_alerts_are_portfolio_scoped` and `test_agent_can_modify_open_order_and_partially_close_position` fail because the agent alerts CRUD route and order modify route don't exist yet. These are being built by Codex in the agent UX branch (PR #8).
-2. **Railway not auto-deploying** — needs Git Integration configured for `main` branch + `backend/` root.
+2. ~~**Railway not auto-deploying**~~ — **FIXED**: Git Integration configured for `main` branch + `/backend` root. Auto-deploys on push.
 
 ### Frontend
 3. **Ticker bar broken** — S&P, NASDAQ, BTC, Gold, Oil all show "--". NIFTY works. Consider removing or fixing.
