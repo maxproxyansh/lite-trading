@@ -206,6 +206,11 @@ def handle_orders_get(args: argparse.Namespace) -> Any:
     return client.dhan_order_detail(args.order_id) if args.dhan else client.order_detail(args.order_id)
 
 
+def handle_orders_linked(args: argparse.Namespace) -> Any:
+    client, _, _ = make_client(args)
+    return client.linked_orders(args.order_id)
+
+
 def handle_orders_place(args: argparse.Namespace) -> Any:
     client, _, _ = make_client(args)
     payload = {
@@ -224,6 +229,28 @@ def handle_orders_place(args: argparse.Namespace) -> Any:
         "correlationId": args.correlation_id,
     }
     return client.dhan_order(payload)
+
+
+def handle_orders_bracket(args: argparse.Namespace) -> Any:
+    client, _, _ = make_client(args)
+    payload = {
+        "portfolio_id": args.portfolio_id,
+        "symbol": args.symbol,
+        "expiry": args.expiry,
+        "strike": args.strike,
+        "option_type": args.option_type,
+        "side": args.side,
+        "product": args.product_type,
+        "validity": args.validity,
+        "lots": args.lots,
+        "entry_order_type": args.entry_order_type,
+        "entry_price": args.entry_price,
+        "stop_loss_price": args.stop_loss_price,
+        "stop_loss_trigger_price": args.stop_loss_trigger_price,
+        "target_price": args.target_price,
+        "idempotency_key": args.idempotency_key,
+    }
+    return client.bracket_order(payload)
 
 
 def handle_orders_cancel(args: argparse.Namespace) -> Any:
@@ -265,6 +292,28 @@ def handle_webhooks_delete(args: argparse.Namespace) -> Any:
     client, _, _ = make_client(args)
     client.delete_webhook(args.webhook_id)
     return {"deleted": True, "webhook_id": args.webhook_id}
+
+
+def handle_webhooks_list(args: argparse.Namespace) -> Any:
+    client, _, _ = make_client(args)
+    return client.webhooks()
+
+
+def handle_webhooks_create(args: argparse.Namespace) -> Any:
+    client, _, _ = make_client(args)
+    events = [event.strip() for event in args.events.split(",") if event.strip()]
+    return client.create_webhook(args.url, events)
+
+
+def handle_webhooks_delete(args: argparse.Namespace) -> Any:
+    client, _, _ = make_client(args)
+    client.delete_webhook(args.webhook_id)
+    return {"deleted": True, "webhook_id": args.webhook_id}
+
+
+def handle_analytics_detailed(args: argparse.Namespace) -> Any:
+    client, _, _ = make_client(args)
+    return client.detailed_analytics(date_from=args.date_from, date_to=args.date_to)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -365,6 +414,14 @@ def build_parser() -> argparse.ArgumentParser:
     webhooks_delete.add_argument("webhook_id")
     webhooks_delete.set_defaults(handler=handle_webhooks_delete)
 
+    analytics = subparsers.add_parser("analytics", help="Inspect portfolio analytics")
+    analytics_subparsers = analytics.add_subparsers(dest="analytics_command", required=True)
+
+    analytics_detailed = analytics_subparsers.add_parser("detailed", help="Show detailed analytics")
+    analytics_detailed.add_argument("--from", dest="date_from", default=None, help="Inclusive start date (YYYY-MM-DD)")
+    analytics_detailed.add_argument("--to", dest="date_to", default=None, help="Inclusive end date (YYYY-MM-DD)")
+    analytics_detailed.set_defaults(handler=handle_analytics_detailed)
+
     orders = subparsers.add_parser("orders", help="List, place, inspect, or cancel orders")
     order_subparsers = orders.add_subparsers(dest="orders_command", required=True)
 
@@ -384,6 +441,10 @@ def build_parser() -> argparse.ArgumentParser:
     orders_get.add_argument("--dhan", action="store_true", help="Use the Dhan-compatible response shape")
     orders_get.set_defaults(handler=handle_orders_get)
 
+    orders_linked = order_subparsers.add_parser("linked", help="List linked orders for a bracket")
+    orders_linked.add_argument("order_id")
+    orders_linked.set_defaults(handler=handle_orders_linked)
+
     orders_place = order_subparsers.add_parser("place", help="Place a Dhan-compatible order")
     orders_place.add_argument("--side", required=True, choices=("BUY", "SELL"))
     orders_place.add_argument("--quantity", required=True, type=int)
@@ -399,6 +460,24 @@ def build_parser() -> argparse.ArgumentParser:
     orders_place.add_argument("--trigger-price", type=float, default=None)
     orders_place.add_argument("--correlation-id", required=True)
     orders_place.set_defaults(handler=handle_orders_place)
+
+    orders_bracket = order_subparsers.add_parser("bracket", help="Place a native bracket order")
+    orders_bracket.add_argument("--portfolio-id", required=True)
+    orders_bracket.add_argument("--symbol", default=None)
+    orders_bracket.add_argument("--expiry", required=True)
+    orders_bracket.add_argument("--strike", required=True, type=int)
+    orders_bracket.add_argument("--option-type", required=True, choices=("CE", "PE"))
+    orders_bracket.add_argument("--side", required=True, choices=("BUY", "SELL"))
+    orders_bracket.add_argument("--product-type", choices=("NRML", "MIS"), default="NRML")
+    orders_bracket.add_argument("--validity", choices=("DAY",), default="DAY")
+    orders_bracket.add_argument("--lots", type=int, default=1)
+    orders_bracket.add_argument("--entry-order-type", required=True, choices=("MARKET", "LIMIT"))
+    orders_bracket.add_argument("--entry-price", type=float, default=None)
+    orders_bracket.add_argument("--stop-loss-price", required=True, type=float)
+    orders_bracket.add_argument("--stop-loss-trigger-price", required=True, type=float)
+    orders_bracket.add_argument("--target-price", required=True, type=float)
+    orders_bracket.add_argument("--idempotency-key", required=True)
+    orders_bracket.set_defaults(handler=handle_orders_bracket)
 
     orders_cancel = order_subparsers.add_parser("cancel", help="Cancel an order")
     orders_cancel.add_argument("order_id")

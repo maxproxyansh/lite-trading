@@ -14,6 +14,9 @@ from schemas import (
     AgentBootstrapRequest,
     AgentBootstrapResponse,
     AgentProfileResponse,
+    BracketOrderRequest,
+    BracketOrderResponse,
+    DetailedAnalyticsResponse,
     AgentWebhookCreateRequest,
     AgentWebhookCreateResponse,
     AgentWebhookSummary,
@@ -51,18 +54,21 @@ from services.trading_service import (
     close_position,
     funds_summary,
     get_order,
+    list_linked_orders,
     list_orders,
     list_positions,
     modify_order,
+    place_bracket_order,
     place_order,
     search_orders,
 )
+from services.analytics_service import detailed_analytics_summary
 from services.webhook_service import create_webhook, delete_webhook, list_webhooks
 
 
 settings = get_settings()
 router = APIRouter(prefix=f"{settings.api_prefix}/agent", tags=["agent"])
-ORDER_STATUS_FILTERS = frozenset({"OPEN", "FILLED", "CANCELLED", "REJECTED", "TRIGGER_PENDING"})
+ORDER_STATUS_FILTERS = frozenset({"OPEN", "FILLED", "CANCELLED", "REJECTED", "TRIGGER_PENDING", "PARKED"})
 
 
 def _prepare_secret_response(response: Response) -> None:
@@ -151,6 +157,27 @@ def agent_order(
     return OrderSummary.model_validate(order)
 
 
+@router.post("/orders/bracket", response_model=BracketOrderResponse)
+def agent_bracket_order(
+    payload: BracketOrderRequest,
+    db: Session = Depends(get_db),
+    key=Depends(require_agent_scope("orders:write")),
+    _: None = Depends(rate_limit("agent:bracket-orders", 60, 60)),
+):
+    _ensure_agent_portfolio(key, payload.portfolio_id)
+    parent, stop_order, target_order = place_bracket_order(
+        db,
+        payload,
+        actor_type="agent",
+        actor_id=key.id,
+    )
+    return BracketOrderResponse(
+        parent=OrderSummary.model_validate(parent),
+        stop_loss=OrderSummary.model_validate(stop_order),
+        target=OrderSummary.model_validate(target_order),
+    )
+
+
 @router.get("/orders", response_model=OrderListResponse)
 def agent_orders(
     order_status: str | None = Query(default=None, alias="status"),
@@ -203,6 +230,15 @@ def agent_order_detail(
     key=Depends(require_agent_scope("orders:read")),
 ):
     return OrderSummary.model_validate(get_order(db, order_id, portfolio_id=key.portfolio_id))
+
+
+@router.get("/orders/{order_id}/linked", response_model=list[OrderSummary])
+def agent_linked_orders(
+    order_id: str,
+    db: Session = Depends(get_db),
+    key=Depends(require_agent_scope("orders:read")),
+):
+    return [OrderSummary.model_validate(order) for order in list_linked_orders(db, order_id, portfolio_id=key.portfolio_id)]
 
 
 @router.post("/orders/{order_id}/cancel", response_model=OrderSummary)
@@ -362,6 +398,19 @@ def agent_delete_webhook(
 def agent_funds(portfolio_id: str, db: Session = Depends(get_db), key=Depends(require_agent_scope("funds:read"))):
     _ensure_agent_portfolio(key, portfolio_id)
     return funds_summary(db, portfolio_id)
+
+
+@router.get("/analytics/detailed", response_model=DetailedAnalyticsResponse)
+def agent_detailed_analytics(
+    from_date: date | None = Query(default=None, alias="from"),
+    to_date: date | None = Query(default=None, alias="to"),
+    db: Session = Depends(get_db),
+    key=Depends(require_agent_scope("funds:read")),
+):
+    try:
+        return detailed_analytics_summary(db, key.portfolio_id, from_date=from_date, to_date=to_date)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
 
 @router.get("/signals/latest", response_model=SignalResponse | None)

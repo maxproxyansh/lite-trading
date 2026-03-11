@@ -102,6 +102,8 @@ class Order(Base, BaseModelMixin):
     margin_required = Column(Numeric(14, 2), nullable=False, default=0.0)
     charges = Column(Numeric(14, 2), nullable=False, default=0.0)
     message = Column(Text)
+    parent_order_id = Column(String(64), ForeignKey("orders.id"), index=True)
+    link_type = Column(String(24))
     signal_id = Column(String(64), ForeignKey("signals.id"))
     source = Column(String(24), nullable=False, default="human")
     idempotency_key = Column(String(128), nullable=True, unique=True, index=True)

@@ -80,6 +80,7 @@ def _run_migrations(eng) -> None:
                 logger.info("Migration: added agent_api_keys.revoked_at column")
 
     if "orders" in inspector.get_table_names():
+        order_columns = [c["name"] for c in inspector.get_columns("orders")]
         with eng.begin() as conn:
             conn.execute(
                 text(
@@ -89,6 +90,11 @@ def _run_migrations(eng) -> None:
             )
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_orders_portfolio_status ON orders (portfolio_id, status)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_orders_portfolio_created_at ON orders (portfolio_id, created_at)"))
+            if "parent_order_id" not in order_columns:
+                conn.execute(text("ALTER TABLE orders ADD COLUMN parent_order_id VARCHAR(64)"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_orders_parent_order_id ON orders (parent_order_id)"))
+            if "link_type" not in order_columns:
+                conn.execute(text("ALTER TABLE orders ADD COLUMN link_type VARCHAR(24)"))
             logger.info("Migration: ensured unique order idempotency index")
 
     if "alerts" in inspector.get_table_names():
