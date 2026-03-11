@@ -517,6 +517,17 @@ def test_agent_can_modify_open_order_and_partially_close_position(client: TestCl
     assert after_partial.status_code == 200, after_partial.text
     assert after_partial.json()[0]["net_quantity"] == 130
 
+    final_close = client.post(
+        f"/api/v1/agent/positions/{position_id}/close",
+        headers={"X-API-Key": api_key},
+    )
+    assert final_close.status_code == 200, final_close.text
+    assert final_close.json()["quantity"] == 130
+
+    after_full_close = client.get("/api/v1/agent/positions", headers={"X-API-Key": api_key})
+    assert after_full_close.status_code == 200, after_full_close.text
+    assert after_full_close.json() == []
+
 
 def test_unauthenticated_market_access_rejected(client: TestClient) -> None:
     for path in ["/api/v1/market/snapshot", "/api/v1/market/expiries", "/api/v1/market/chain", "/api/v1/market/candles", "/api/v1/market/depth/NIFTY"]:

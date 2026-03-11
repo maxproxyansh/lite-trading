@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from models import Alert, User
+from models import Alert
 from schemas import AlertCreateRequest
 from services.audit import log_audit
 from services.market_data import market_data_service
@@ -43,21 +43,38 @@ def _market_price(symbol: str) -> float | None:
     return float(quote["ltp"])
 
 
-def list_alerts(db: Session, user: User, *, include_cancelled: bool = False) -> list[Alert]:
-    query = db.query(Alert).filter(Alert.user_id == user.id)
+def list_alerts(
+    db: Session,
+    *,
+    user_id: str,
+    portfolio_id: str | None = None,
+    include_cancelled: bool = False,
+) -> list[Alert]:
+    query = db.query(Alert).filter(Alert.user_id == user_id)
+    if portfolio_id is not None:
+        query = query.filter(Alert.portfolio_id == portfolio_id)
     if not include_cancelled:
         query = query.filter(Alert.status != "CANCELLED")
     return query.order_by(Alert.status.asc(), Alert.created_at.asc()).all()
 
 
-def create_alert(db: Session, user: User, payload: AlertCreateRequest) -> Alert:
+def create_alert(
+    db: Session,
+    *,
+    user_id: str,
+    payload: AlertCreateRequest,
+    portfolio_id: str | None = None,
+    actor_type: str = "user",
+    actor_id: str | None = None,
+) -> Alert:
     current_price = _market_price(payload.symbol)
     if current_price is None or current_price <= 0:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="MARKET_DATA_UNAVAILABLE")
 
     direction = payload.direction or ("ABOVE" if payload.target_price >= current_price else "BELOW")
     alert = Alert(
-        user_id=user.id,
+        user_id=user_id,
+        portfolio_id=portfolio_id,
         symbol=payload.symbol,
         target_price=_money(payload.target_price),
         direction=direction,
@@ -68,33 +85,51 @@ def create_alert(db: Session, user: User, payload: AlertCreateRequest) -> Alert:
     db.flush()
     log_audit(
         db,
-        actor_type="user",
-        actor_id=user.id,
+        actor_type=actor_type,
+        actor_id=actor_id or user_id,
         action="alert.create",
         entity_type="alert",
         entity_id=alert.id,
-        details={"symbol": alert.symbol, "target_price": float(alert.target_price), "direction": alert.direction},
+        details={
+            "symbol": alert.symbol,
+            "target_price": float(alert.target_price),
+            "direction": alert.direction,
+            "portfolio_id": alert.portfolio_id,
+        },
     )
     db.commit()
     db.refresh(alert)
     return alert
 
 
-def cancel_alert(db: Session, user: User, alert_id: str) -> None:
-    alert = db.query(Alert).filter(Alert.id == alert_id, Alert.user_id == user.id).first()
+def cancel_alert(
+    db: Session,
+    *,
+    user_id: str,
+    alert_id: str,
+    portfolio_id: str | None = None,
+    actor_type: str = "user",
+    actor_id: str | None = None,
+) -> Alert:
+    query = db.query(Alert).filter(Alert.id == alert_id, Alert.user_id == user_id)
+    if portfolio_id is not None:
+        query = query.filter(Alert.portfolio_id == portfolio_id)
+    alert = query.first()
     if not alert:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alert not found")
     alert.status = "CANCELLED"
     log_audit(
         db,
-        actor_type="user",
-        actor_id=user.id,
+        actor_type=actor_type,
+        actor_id=actor_id or user_id,
         action="alert.cancel",
         entity_type="alert",
         entity_id=alert.id,
-        details={"symbol": alert.symbol},
+        details={"symbol": alert.symbol, "portfolio_id": alert.portfolio_id},
     )
     db.commit()
+    db.refresh(alert)
+    return alert
 
 
 def sync_alerts(db: Session) -> int:

@@ -153,6 +153,9 @@ def _validate_order_modification(order: Order, *, price: float | None, trigger_p
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="SL-M orders require trigger_price")
         if price is not None:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="SL-M orders do not support price")
+    elif order.order_type == "MARKET":
+        if price is not None or trigger_price is not None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="MARKET orders do not support price updates")
 
 
 def _price_for_market(quote: QuoteContext, side: str) -> float:
@@ -768,7 +771,7 @@ def close_position(
         side="SELL" if position.net_quantity > 0 else "BUY",
         order_type="MARKET",
         product=position.product,
-        lots=max((close_quantity + LOT_SIZE - 1) // LOT_SIZE, 1),
+        lots=max((close_quantity + position.lot_size - 1) // position.lot_size, 1),
     )
     return place_order(
         db,
