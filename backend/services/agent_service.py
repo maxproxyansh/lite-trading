@@ -34,6 +34,7 @@ def agent_links() -> dict[str, str]:
         "profile": f"{prefix}/agent/me",
         "orders": f"{prefix}/agent/orders",
         "positions": f"{prefix}/agent/positions",
+        "alerts": f"{prefix}/agent/alerts",
         "funds": f"{prefix}/agent/funds",
         "signals": f"{prefix}/agent/signals",
         "bootstrap": f"{prefix}/agent/bootstrap",

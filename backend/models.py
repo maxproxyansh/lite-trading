@@ -170,6 +170,7 @@ class Alert(Base, BaseModelMixin):
     __tablename__ = "alerts"
 
     user_id = Column(String(64), ForeignKey("users.id"), nullable=False, index=True)
+    portfolio_id = Column(String(64), ForeignKey("portfolios.id"), index=True)
     symbol = Column(String(128), nullable=False, index=True, default="NIFTY 50")
     target_price = Column(Numeric(14, 2), nullable=False)
     direction = Column(String(16), nullable=False)

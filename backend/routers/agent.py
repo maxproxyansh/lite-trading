@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from config import get_settings
@@ -12,11 +12,14 @@ from schemas import (
     AgentBootstrapRequest,
     AgentBootstrapResponse,
     AgentProfileResponse,
+    AlertCreateRequest,
+    AlertSummary,
     DhanFundResponse,
     DhanOrderRequest,
     DhanOrderResponse,
     DhanPositionResponse,
     FundsResponse,
+    OrderModifyRequest,
     OrderRequest,
     OrderSummary,
     PositionSummary,
@@ -33,6 +36,7 @@ from services.agent_service import (
     serialize_dhan_position,
 )
 from services.auth_service import bootstrap_agent_key, signup_agent_key
+from services.alert_service import cancel_alert, create_alert, list_alerts
 from services.signal_adapter import signal_adapter
 from services.trading_service import (
     _position_unrealized,
@@ -43,6 +47,7 @@ from services.trading_service import (
     get_order,
     list_orders,
     list_positions,
+    modify_order,
     place_order,
 )
 
@@ -162,6 +167,18 @@ def agent_cancel_order(
     return OrderSummary.model_validate(order)
 
 
+@router.patch("/orders/{order_id}", response_model=OrderSummary)
+def agent_modify_order(
+    order_id: str,
+    payload: OrderModifyRequest,
+    db: Session = Depends(get_db),
+    key=Depends(require_agent_scope("orders:write")),
+    _: None = Depends(rate_limit("agent:modify-order", 120, 60)),
+):
+    order = modify_order(db, order_id, payload, portfolio_id=key.portfolio_id, actor_type="agent", actor_id=key.id)
+    return OrderSummary.model_validate(order)
+
+
 @router.get("/positions", response_model=list[PositionSummary])
 def agent_positions(db: Session = Depends(get_db), key=Depends(require_agent_scope("positions:read"))):
     return [_serialize_position(position) for position in list_positions(db, key.portfolio_id)]
@@ -182,6 +199,7 @@ def agent_square_off_all(
 @router.post("/positions/{position_id}/close", response_model=OrderSummary)
 def agent_close(
     position_id: str,
+    quantity: int | None = Query(default=None, ge=1),
     db: Session = Depends(get_db),
     key=Depends(require_agent_scope("positions:write")),
     _: None = Depends(rate_limit("agent:close", 120, 60)),
@@ -189,13 +207,14 @@ def agent_close(
     position = db.query(Position).filter(Position.id == position_id).first()
     if not position or position.portfolio_id != key.portfolio_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Position not found")
-    order = close_position(db, position_id, actor_type="agent", actor_id=key.id)
+    order = close_position(db, position_id, actor_type="agent", actor_id=key.id, quantity=quantity)
     return OrderSummary.model_validate(order)
 
 
 @router.post("/positions/{position_id}/square-off", response_model=OrderSummary)
 def agent_square_off_position(
     position_id: str,
+    quantity: int | None = Query(default=None, ge=1),
     db: Session = Depends(get_db),
     key=Depends(require_agent_scope("positions:write")),
     _: None = Depends(rate_limit("agent:close-alias", 120, 60)),
@@ -203,13 +222,60 @@ def agent_square_off_position(
     position = db.query(Position).filter(Position.id == position_id).first()
     if not position or position.portfolio_id != key.portfolio_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Position not found")
-    order = close_position(db, position_id, actor_type="agent", actor_id=key.id)
+    order = close_position(db, position_id, actor_type="agent", actor_id=key.id, quantity=quantity)
     return OrderSummary.model_validate(order)
 
 
 @router.get("/funds", response_model=FundsResponse)
 def agent_funds_self(db: Session = Depends(get_db), key=Depends(require_agent_scope("funds:read"))):
     return funds_summary(db, key.portfolio_id)
+
+
+@router.get("/alerts", response_model=list[AlertSummary])
+def agent_alerts(
+    db: Session = Depends(get_db),
+    key=Depends(require_agent_scope("alerts:read")),
+):
+    return [
+        AlertSummary.model_validate(alert)
+        for alert in list_alerts(db, user_id=key.user_id, portfolio_id=key.portfolio_id)
+    ]
+
+
+@router.post("/alerts", response_model=AlertSummary, status_code=status.HTTP_201_CREATED)
+def agent_create_alert(
+    payload: AlertCreateRequest,
+    db: Session = Depends(get_db),
+    key=Depends(require_agent_scope("alerts:write")),
+    _: None = Depends(rate_limit("agent:alerts", 120, 60)),
+):
+    alert = create_alert(
+        db,
+        user_id=key.user_id,
+        payload=payload,
+        portfolio_id=key.portfolio_id,
+        actor_type="agent",
+        actor_id=key.id,
+    )
+    return AlertSummary.model_validate(alert)
+
+
+@router.delete("/alerts/{alert_id}", status_code=status.HTTP_204_NO_CONTENT)
+def agent_delete_alert(
+    alert_id: str,
+    db: Session = Depends(get_db),
+    key=Depends(require_agent_scope("alerts:write")),
+    _: None = Depends(rate_limit("agent:alerts-delete", 120, 60)),
+):
+    cancel_alert(
+        db,
+        user_id=key.user_id,
+        alert_id=alert_id,
+        portfolio_id=key.portfolio_id,
+        actor_type="agent",
+        actor_id=key.id,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/funds/{portfolio_id}", response_model=FundsResponse)

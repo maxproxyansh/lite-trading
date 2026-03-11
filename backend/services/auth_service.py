@@ -28,6 +28,8 @@ DEFAULT_AGENT_SCOPES = [
     "orders:write",
     "positions:read",
     "positions:write",
+    "alerts:read",
+    "alerts:write",
     "signals:read",
     "signals:write",
     "alerts:read",

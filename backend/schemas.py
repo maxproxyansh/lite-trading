@@ -23,6 +23,8 @@ def default_agent_scopes() -> list[str]:
         "orders:write",
         "positions:read",
         "positions:write",
+        "alerts:read",
+        "alerts:write",
         "signals:read",
         "signals:write",
         "funds:read",
@@ -207,6 +209,7 @@ class AlertCreateRequest(BaseModel):
 
 class AlertSummary(BaseModel):
     id: str
+    portfolio_id: str | None = None
     symbol: str
     target_price: float
     direction: AlertDirection
@@ -327,6 +330,18 @@ class OrderSummary(BaseModel):
     filled_at: datetime | None = None
 
     model_config = {"from_attributes": True}
+
+
+class OrderModifyRequest(BaseModel):
+    price: float | None = Field(default=None, gt=0)
+    trigger_price: float | None = Field(default=None, gt=0)
+    quantity: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def validate_any_field(self):
+        if self.price is None and self.trigger_price is None and self.quantity is None:
+            raise ValueError("At least one of price, trigger_price, or quantity is required")
+        return self
 
 
 class PositionSummary(BaseModel):
