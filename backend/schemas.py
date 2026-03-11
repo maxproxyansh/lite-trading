@@ -366,11 +366,7 @@ class DhanOrderRequest(BaseModel):
     option_type: Literal["CE", "PE"] | None = None
     price: float | None = None
     trigger_price: float | None = None
-    correlation_id: str | None = Field(
-        default=None,
-        validation_alias="correlationId",
-        serialization_alias="correlationId",
-    )
+    correlationId: str | None = None
 
     model_config = {"populate_by_name": True}
 
@@ -380,7 +376,7 @@ class DhanOrderRequest(BaseModel):
         has_parts = self.expiry is not None and self.strike is not None and self.option_type is not None
         if not has_symbol and not has_parts:
             raise ValueError("Provide trading_symbol, security_id, or expiry/strike/option_type")
-        if not self.correlation_id:
+        if not self.correlationId:
             raise ValueError("correlationId is required for agent orders")
         return self
 

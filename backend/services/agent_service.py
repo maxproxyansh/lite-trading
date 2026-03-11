@@ -157,7 +157,7 @@ def dhan_order_to_native(payload: DhanOrderRequest, portfolio_id: str) -> OrderR
         lots=max(payload.quantity // LOT_SIZE, 1),
         price=payload.price,
         trigger_price=payload.trigger_price,
-        idempotency_key=payload.correlation_id,
+        idempotency_key=payload.correlationId,
     )
 
 

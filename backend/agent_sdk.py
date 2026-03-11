@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -82,6 +83,22 @@ class LiteAgentClient:
     def profile(self) -> dict[str, Any]:
         return self._request("GET", "/api/v1/agent/me")
 
+    def snapshot(self) -> dict[str, Any]:
+        return self._request("GET", "/api/v1/market/snapshot")
+
+    def expiries(self) -> dict[str, Any]:
+        return self._request("GET", "/api/v1/market/expiries")
+
+    def chain(self, expiry: str | None = None) -> dict[str, Any]:
+        params = {"expiry": expiry} if expiry else None
+        return self._request("GET", "/api/v1/market/chain", params=params)
+
+    def candles(self, timeframe: str = "15m") -> dict[str, Any]:
+        return self._request("GET", "/api/v1/market/candles", params={"timeframe": timeframe})
+
+    def depth(self, symbol: str) -> dict[str, Any]:
+        return self._request("GET", f"/api/v1/market/depth/{quote(symbol, safe='')}")
+
     def funds(self) -> dict[str, Any]:
         return self._request("GET", "/api/v1/agent/funds")
 
@@ -130,6 +147,7 @@ class LiteAgentClient:
         path: str,
         *,
         json_data: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
         require_api_key: bool = True,
     ) -> Any:
         headers = {"Accept": "application/json", "User-Agent": self.user_agent}
@@ -142,6 +160,7 @@ class LiteAgentClient:
                 method,
                 f"{self.base_url}{path}",
                 json=json_data,
+                params=params,
                 headers=headers,
                 timeout=self.timeout,
             )

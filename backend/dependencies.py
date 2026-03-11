@@ -109,6 +109,27 @@ def get_agent_key(
     return key
 
 
+def get_current_user_or_agent(
+    request: Request,
+    authorization: str | None = Header(default=None),
+    access_cookie: str | None = Cookie(default=None, alias=settings.access_cookie_name),
+    csrf_cookie: str | None = Cookie(default=None, alias=settings.csrf_cookie_name),
+    csrf_header: str | None = Header(default=None, alias=settings.csrf_header_name),
+    api_key: str | None = Header(default=None, alias="X-API-Key"),
+    db: Session = Depends(get_db),
+) -> User | AgentApiKey:
+    if api_key:
+        return get_agent_key(api_key=api_key, db=db)
+    return get_current_user(
+        request=request,
+        authorization=authorization,
+        access_cookie=access_cookie,
+        csrf_cookie=csrf_cookie,
+        csrf_header=csrf_header,
+        db=db,
+    )
+
+
 def require_agent_scope(*required: str) -> Callable:
     def dependency(key: AgentApiKey = Depends(get_agent_key)) -> AgentApiKey:
         scopes = set(key.scopes or [])
