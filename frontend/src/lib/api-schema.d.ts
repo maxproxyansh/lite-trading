@@ -693,6 +693,13 @@ export interface components {
              * @default false
              */
             degraded: boolean;
+            /**
+             * Has More
+             * @default false
+             */
+            has_more: boolean;
+            /** Next Before */
+            next_before: number | null;
         };
         /** CreateAgentKeyRequest */
         CreateAgentKeyRequest: {
