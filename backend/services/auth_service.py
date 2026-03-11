@@ -30,6 +30,8 @@ DEFAULT_AGENT_SCOPES = [
     "positions:write",
     "signals:read",
     "signals:write",
+    "alerts:read",
+    "alerts:write",
     "funds:read",
 ]
 ALLOWED_AGENT_SCOPES = frozenset(DEFAULT_AGENT_SCOPES)

@@ -294,6 +294,12 @@ class OrderRequest(BaseModel):
         return self
 
 
+class OrderModifyRequest(BaseModel):
+    quantity: int | None = None
+    price: float | None = None
+    trigger_price: float | None = None
+
+
 class OrderSummary(BaseModel):
     id: str
     portfolio_id: str
