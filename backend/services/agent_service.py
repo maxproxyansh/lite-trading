@@ -28,9 +28,24 @@ LOT_SIZE = settings.nifty_lot_size
 OPTION_SYMBOL_PATTERN = re.compile(r"^(?P<root>[A-Z0-9]+)_(?P<expiry>\d{4}-\d{2}-\d{2})_(?P<strike>\d+)_(?P<option_type>CE|PE)$")
 
 
+def websocket_event_catalog() -> list[tuple[str, str]]:
+    return [
+        ("market.snapshot", "Top-level NIFTY market snapshot updates."),
+        ("option.chain", "Option chain refresh for the active expiry."),
+        ("option.quotes", "Incremental quote updates for changed option contracts."),
+        ("portfolio.refresh", "Portfolio-linked signal that orders or positions changed and should be reloaded."),
+        ("signal.updated", "Signal adapter output was updated."),
+    ]
+
+
 def agent_links() -> dict[str, str]:
     prefix = settings.api_prefix
     return {
+        "meta": f"{prefix}/meta",
+        "docs": f"{prefix}/docs",
+        "openapi": f"{prefix}/openapi.json",
+        "redoc": f"{prefix}/redoc",
+        "websocket": f"{prefix}/ws",
         "profile": f"{prefix}/agent/me",
         "orders": f"{prefix}/agent/orders",
         "positions": f"{prefix}/agent/positions",
@@ -45,6 +60,10 @@ def agent_links() -> dict[str, str]:
         "dhan_orders": f"{prefix}/agent/dhan/orders",
         "dhan_positions": f"{prefix}/agent/dhan/positions",
         "dhan_funds": f"{prefix}/agent/dhan/fundlimit",
+        "market_snapshot": f"{prefix}/market/snapshot",
+        "market_chain": f"{prefix}/market/chain",
+        "market_expiries": f"{prefix}/market/expiries",
+        "market_candles": f"{prefix}/market/candles",
     }
 
 

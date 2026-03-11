@@ -24,6 +24,7 @@ INDEX_EXCHANGE_SEGMENT = "IDX_I"
 INDEX_INSTRUMENT_TYPE = "INDEX"
 OPTION_EXCHANGE_SEGMENT = "NSE_FNO"
 OPTION_INSTRUMENT_TYPE = "OPTIDX"
+PCR_SCOPE = "all_loaded_strikes_for_active_expiry"
 OLDEST_DAILY_HISTORY = date(1990, 1, 1)
 MAX_INTRADAY_HISTORY_DAYS = 365 * 5
 INITIAL_HISTORY_WINDOWS = {
@@ -87,6 +88,9 @@ class MarketDataService:
             "change_pct": 0.0,
             "vix": None,
             "pcr": None,
+            "pcr_scope": PCR_SCOPE,
+            "call_oi_total": 0.0,
+            "put_oi_total": 0.0,
             "market_status": market_status(),
             "expiries": [],
             "active_expiry": None,
@@ -198,7 +202,11 @@ class MarketDataService:
         while True:
             await asyncio.sleep(interval)
             if self._pcr_dirty:
-                self.snapshot["pcr"] = self._compute_pcr()
+                pcr, call_oi_total, put_oi_total = self._pcr_metrics()
+                self.snapshot["pcr"] = pcr
+                self.snapshot["pcr_scope"] = PCR_SCOPE
+                self.snapshot["call_oi_total"] = call_oi_total
+                self.snapshot["put_oi_total"] = put_oi_total
                 self.snapshot["updated_at"] = datetime.now(timezone.utc)
                 self._pcr_dirty = False
                 self._snapshot_dirty = True
@@ -724,6 +732,9 @@ class MarketDataService:
                 "change_pct": change_pct,
                 "vix": self.snapshot.get("vix"),
                 "pcr": pcr,
+                "pcr_scope": PCR_SCOPE,
+                "call_oi_total": round(total_call_oi, 2),
+                "put_oi_total": round(total_put_oi, 2),
                 "market_status": market_status(),
                 "expiries": self.expiries,
                 "active_expiry": expiry,
@@ -894,13 +905,14 @@ class MarketDataService:
         if changed:
             self._dirty_quote_symbols.add(symbol)
 
-    def _compute_pcr(self) -> float | None:
+    def _pcr_metrics(self) -> tuple[float | None, float, float]:
         total_call_oi = 0.0
         total_put_oi = 0.0
         for row in self.option_rows:
             total_call_oi += float(row["call"].get("oi") or 0.0)
             total_put_oi += float(row["put"].get("oi") or 0.0)
-        return round(total_put_oi / total_call_oi, 2) if total_call_oi else None
+        pcr = round(total_put_oi / total_call_oi, 2) if total_call_oi else None
+        return pcr, round(total_call_oi, 2), round(total_put_oi, 2)
 
     @staticmethod
     def _sorted_instruments(instruments: set[tuple[int, str, int]]) -> list[tuple[int, str, int]]:
