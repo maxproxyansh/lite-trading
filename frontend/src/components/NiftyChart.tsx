@@ -60,6 +60,70 @@ function mergeCandles(existing: CandlestickData<Time>[], incoming: CandlestickDa
   return [...merged.values()].sort((left, right) => Number(left.time) - Number(right.time))
 }
 
+type HoveredCandleStats = {
+  time: number
+  open: number
+  high: number
+  low: number
+  close: number
+  change: number | null
+  changePct: number | null
+}
+
+function findCandleIndexByTime(candles: CandlestickData<Time>[], time: number) {
+  let left = 0
+  let right = candles.length - 1
+  while (left <= right) {
+    const middle = Math.floor((left + right) / 2)
+    const value = Number(candles[middle].time)
+    if (value === time) {
+      return middle
+    }
+    if (value < time) {
+      left = middle + 1
+    } else {
+      right = middle - 1
+    }
+  }
+  return -1
+}
+
+function toHoveredCandleStats(candles: CandlestickData<Time>[], index: number): HoveredCandleStats | null {
+  const candle = candles[index]
+  if (!candle) {
+    return null
+  }
+
+  const previousClose = index > 0 ? candles[index - 1]?.close ?? null : null
+  const change = previousClose === null ? null : candle.close - previousClose
+  const changePct = previousClose && previousClose !== 0 ? (change! / previousClose) * 100 : null
+
+  return {
+    time: Number(candle.time),
+    open: candle.open,
+    high: candle.high,
+    low: candle.low,
+    close: candle.close,
+    change,
+    changePct,
+  }
+}
+
+function formatPrice(value: number) {
+  return value.toLocaleString('en-IN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+}
+
+function formatSignedPrice(value: number) {
+  return `${value >= 0 ? '+' : '-'}${formatPrice(Math.abs(value))}`
+}
+
+function formatSignedPercent(value: number) {
+  return `${value >= 0 ? '+' : '-'}${Math.abs(value).toFixed(2)}%`
+}
+
 export default function NiftyChart() {
   const { addToast, chain, chainIndex, optionChartSymbol, setOptionChartSymbol, spot } = useStore(useShallow((state) => ({
     addToast: state.addToast,
@@ -96,6 +160,7 @@ export default function NiftyChart() {
   const loadingMoreHistoryRef = useRef(false)
   const historySessionRef = useRef(0)
   const alertsEnabledRef = useRef(alertsEnabled)
+  const hoveredCandleTimeRef = useRef<number | null>(null)
   const [timeframe, setTimeframe] = useState<(typeof TIMEFRAMES)[number]>('D')
   const [loading, setLoading] = useState(true)
   const [loadingMoreHistory, setLoadingMoreHistory] = useState(false)
@@ -104,6 +169,30 @@ export default function NiftyChart() {
   const [pendingAlert, setPendingAlert] = useState<{ price: number; x: number; y: number } | null>(null)
   const [submittingAlert, setSubmittingAlert] = useState(false)
   const [alertsPanelOpen, setAlertsPanelOpen] = useState(false)
+  const [hoveredCandleStats, setHoveredCandleStats] = useState<HoveredCandleStats | null>(null)
+
+  const syncHoveredCandleStats = useEffectEvent((time: number | null = hoveredCandleTimeRef.current) => {
+    const candles = candlesRef.current
+    if (candles.length === 0) {
+      setHoveredCandleStats(null)
+      return
+    }
+
+    const fallback = toHoveredCandleStats(candles, candles.length - 1)
+    if (time === null) {
+      setHoveredCandleStats(fallback)
+      return
+    }
+
+    const index = findCandleIndexByTime(candles, time)
+    if (index === -1) {
+      hoveredCandleTimeRef.current = null
+      setHoveredCandleStats(fallback)
+      return
+    }
+
+    setHoveredCandleStats(toHoveredCandleStats(candles, index))
+  })
 
   const syncLiveChartPrice = useEffectEvent(() => {
     const price = chartQuote?.ltp ?? spot
@@ -127,6 +216,7 @@ export default function NiftyChart() {
       candlesRef.current = [...candlesRef.current, nextBar]
       setCandleCount(candlesRef.current.length)
       seriesRef.current.update(nextBar)
+      syncHoveredCandleStats()
       return
     }
 
@@ -150,6 +240,7 @@ export default function NiftyChart() {
       index === source.length - 1 ? nextBar : bar
     ))
     seriesRef.current.update(nextBar)
+    syncHoveredCandleStats()
   })
 
   useEffect(() => {
@@ -201,6 +292,19 @@ export default function NiftyChart() {
     }
     chart.subscribeClick(handleClick)
 
+    const handleCrosshairMove = (param: MouseEventParams<Time>) => {
+      const candle = param.seriesData.get(series) as CandlestickData<Time> | undefined
+      if (!param.point || !param.time || !candle) {
+        hoveredCandleTimeRef.current = null
+        syncHoveredCandleStats(null)
+        return
+      }
+
+      hoveredCandleTimeRef.current = Number(param.time)
+      syncHoveredCandleStats(Number(param.time))
+    }
+    chart.subscribeCrosshairMove(handleCrosshairMove)
+
     const observer = new ResizeObserver(() => {
       chart.applyOptions({ width: container.clientWidth, height: container.clientHeight })
     })
@@ -209,6 +313,7 @@ export default function NiftyChart() {
 
     return () => {
       chart.unsubscribeClick(handleClick)
+      chart.unsubscribeCrosshairMove(handleCrosshairMove)
       observer.disconnect()
       for (const line of priceLines.values()) {
         series.removePriceLine(line)
@@ -263,6 +368,8 @@ export default function NiftyChart() {
     historySessionRef.current += 1
     const session = historySessionRef.current
     setLoading(true)
+    hoveredCandleTimeRef.current = null
+    setHoveredCandleStats(null)
     candlesRef.current = []
     lastBarRef.current = null
     nextBeforeRef.current = null
@@ -287,6 +394,7 @@ export default function NiftyChart() {
         seriesRef.current?.setData(candles)
         chartRef.current?.timeScale().fitContent()
         setCandleCount(candles.length)
+        syncHoveredCandleStats(null)
         syncLiveChartPrice()
       })
       .catch((error) => {
@@ -299,6 +407,7 @@ export default function NiftyChart() {
         hasMoreHistoryRef.current = false
         seriesRef.current?.setData([])
         setCandleCount(0)
+        setHoveredCandleStats(null)
         if (optionChartSymbol && error instanceof ApiError && [400, 404, 503].includes(error.status)) {
           setOptionChartSymbol(null)
           addToast('error', 'Option chart unavailable. Switched back to NIFTY 50.')
@@ -366,6 +475,7 @@ export default function NiftyChart() {
         hasMoreHistoryRef.current = response.has_more
         series.setData(merged)
         setCandleCount(merged.length)
+        syncHoveredCandleStats()
 
         if (previousRange && addedCount > 0) {
           chart.timeScale().setVisibleLogicalRange({
@@ -444,6 +554,11 @@ export default function NiftyChart() {
 
   const activeAlerts = alerts.filter((alert) => alert.status === 'ACTIVE')
   const triggeredAlerts = alerts.filter((alert) => alert.status === 'TRIGGERED')
+  const hoverChangeTone = hoveredCandleStats?.change == null
+    ? 'text-text-secondary'
+    : hoveredCandleStats.change >= 0
+      ? 'text-profit'
+      : 'text-loss'
   const alertPopupStyle = pendingAlert && containerRef.current
     ? {
         left: Math.min(Math.max(pendingAlert.x + 12, 12), Math.max(containerRef.current.clientWidth - 220, 12)),
@@ -453,7 +568,7 @@ export default function NiftyChart() {
 
   return (
     <div className="relative flex h-full flex-col bg-bg-primary">
-      <div className={`flex items-center gap-1 border-b px-3 py-1 ${chartQuote ? 'border-brand/30 bg-brand/5' : 'border-border-secondary'}`}>
+      <div className={`flex flex-wrap items-center gap-x-2 gap-y-1 border-b px-3 py-1 ${chartQuote ? 'border-brand/30 bg-brand/5' : 'border-border-secondary'}`}>
         <span className={`mr-2 text-[11px] ${chartQuote ? 'font-medium text-brand' : 'text-text-muted'}`}>{chartLabel}</span>
         {chartQuote && (
           <div className="mr-2 flex items-center gap-1">
@@ -466,7 +581,19 @@ export default function NiftyChart() {
             </button>
           </div>
         )}
-        {chartPrice ? (
+        {hoveredCandleStats ? (
+          <div className="mr-3 flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-[11px] tabular-nums text-text-secondary">
+            <span>O {formatPrice(hoveredCandleStats.open)}</span>
+            <span>H {formatPrice(hoveredCandleStats.high)}</span>
+            <span>L {formatPrice(hoveredCandleStats.low)}</span>
+            <span>C {formatPrice(hoveredCandleStats.close)}</span>
+            {hoveredCandleStats.change != null && hoveredCandleStats.changePct != null ? (
+              <span className={hoverChangeTone}>
+                {formatSignedPrice(hoveredCandleStats.change)} ({formatSignedPercent(hoveredCandleStats.changePct)})
+              </span>
+            ) : null}
+          </div>
+        ) : chartPrice ? (
           <span className="mr-3 text-[11px] tabular-nums text-text-secondary">
             {chartQuote ? 'LTP' : 'Spot'} ₹{chartPrice.toFixed(2)}
           </span>
