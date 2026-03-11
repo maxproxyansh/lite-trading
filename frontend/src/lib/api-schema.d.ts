@@ -96,11 +96,29 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** List Self Agent Keys Route */
+        get: operations["list_self_agent_keys_route_api_v1_auth_api_keys_get"];
         put?: never;
         /** Create Self Agent Key Route */
         post: operations["create_self_agent_key_route_api_v1_auth_api_keys_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/api-keys/{key_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke Self Agent Key Route */
+        delete: operations["revoke_self_agent_key_route_api_v1_auth_api_keys__key_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -414,6 +432,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent/bootstrap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Agent Bootstrap */
+        post: operations["agent_bootstrap_api_v1_agent_bootstrap_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/signup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Agent Signup */
+        post: operations["agent_signup_api_v1_agent_signup_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Agent Me */
+        get: operations["agent_me_api_v1_agent_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agent/orders": {
         parameters: {
             query?: never;
@@ -432,6 +501,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent/orders/{order_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Agent Order Detail */
+        get: operations["agent_order_detail_api_v1_agent_orders__order_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/orders/{order_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Agent Cancel Order */
+        post: operations["agent_cancel_order_api_v1_agent_orders__order_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agent/positions": {
         parameters: {
             query?: never;
@@ -441,6 +544,74 @@ export interface paths {
         };
         /** Agent Positions */
         get: operations["agent_positions_api_v1_agent_positions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/positions/square-off": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Agent Square Off All */
+        post: operations["agent_square_off_all_api_v1_agent_positions_square_off_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/positions/{position_id}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Agent Close */
+        post: operations["agent_close_api_v1_agent_positions__position_id__close_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/positions/{position_id}/square-off": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Agent Square Off Position */
+        post: operations["agent_square_off_position_api_v1_agent_positions__position_id__square_off_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/funds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Agent Funds Self */
+        get: operations["agent_funds_self_api_v1_agent_funds_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -500,7 +671,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/agent/positions/{position_id}/close": {
+    "/api/v1/agent/dhan/fundlimit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Agent Dhan Funds */
+        get: operations["agent_dhan_funds_api_v1_agent_dhan_fundlimit_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/dhan/positions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Agent Dhan Positions */
+        get: operations["agent_dhan_positions_api_v1_agent_dhan_positions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/dhan/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Agent Dhan Orders */
+        get: operations["agent_dhan_orders_api_v1_agent_dhan_orders_get"];
+        put?: never;
+        /** Agent Dhan Order */
+        post: operations["agent_dhan_order_api_v1_agent_dhan_orders_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/dhan/orders/{order_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Agent Dhan Order Detail */
+        get: operations["agent_dhan_order_detail_api_v1_agent_dhan_orders__order_id__get"];
+        put?: never;
+        post?: never;
+        /** Agent Dhan Cancel Order */
+        delete: operations["agent_dhan_cancel_order_api_v1_agent_dhan_orders__order_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/dhan/positions/{position_id}/exit": {
         parameters: {
             query?: never;
             header?: never;
@@ -509,8 +750,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Agent Close */
-        post: operations["agent_close_api_v1_agent_positions__position_id__close_post"];
+        /** Agent Dhan Exit Position */
+        post: operations["agent_dhan_exit_position_api_v1_agent_dhan_positions__position_id__exit_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -572,6 +813,45 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AgentBootstrapRequest */
+        AgentBootstrapRequest: {
+            /**
+             * Email
+             * Format: email
+             */
+            email: string;
+            /** Password */
+            password: string;
+            /** Agent Name */
+            agent_name: string;
+            /**
+             * Portfolio Kind
+             * @default agent
+             * @enum {string}
+             */
+            portfolio_kind: "manual" | "agent";
+            /** Scopes */
+            scopes?: string[];
+            /** Expires In Days */
+            expires_in_days?: number | null;
+            /**
+             * Rotate Existing
+             * @default true
+             */
+            rotate_existing: boolean;
+        };
+        /** AgentBootstrapResponse */
+        AgentBootstrapResponse: {
+            owner: components["schemas"]["UserSummary"];
+            portfolio: components["schemas"]["PortfolioSummary"];
+            agent: components["schemas"]["AgentKeyResponse"];
+            /** Api Key */
+            api_key: string;
+            /** Links */
+            links: {
+                [key: string]: string;
+            };
+        };
         /** AgentKeyResponse */
         AgentKeyResponse: {
             /** Id */
@@ -586,8 +866,55 @@ export interface components {
             key_prefix: string;
             /** Scopes */
             scopes: string[];
+            /** Created At */
+            created_at?: string | null;
+            /** Last Used At */
+            last_used_at?: string | null;
+            /** Expires At */
+            expires_at?: string | null;
+            /** Revoked At */
+            revoked_at?: string | null;
             /** Secret */
             secret?: string | null;
+        };
+        /** AgentProfileResponse */
+        AgentProfileResponse: {
+            owner: components["schemas"]["UserSummary"];
+            portfolio: components["schemas"]["PortfolioSummary"];
+            agent: components["schemas"]["AgentKeyResponse"];
+            /** Links */
+            links: {
+                [key: string]: string;
+            };
+        };
+        /** AgentSignupRequest */
+        AgentSignupRequest: {
+            /**
+             * Email
+             * Format: email
+             */
+            email: string;
+            /** Display Name */
+            display_name: string;
+            /** Password */
+            password: string;
+            /** Agent Name */
+            agent_name: string;
+            /**
+             * Portfolio Kind
+             * @default agent
+             * @enum {string}
+             */
+            portfolio_kind: "manual" | "agent";
+            /** Scopes */
+            scopes?: string[];
+            /** Expires In Days */
+            expires_in_days?: number | null;
+            /**
+             * Rotate Existing
+             * @default true
+             */
+            rotate_existing: boolean;
         };
         /** AlertCreateRequest */
         AlertCreateRequest: {
@@ -699,7 +1026,7 @@ export interface components {
              */
             has_more: boolean;
             /** Next Before */
-            next_before: number | null;
+            next_before?: number | null;
         };
         /** CreateAgentKeyRequest */
         CreateAgentKeyRequest: {
@@ -709,6 +1036,13 @@ export interface components {
             portfolio_id: string;
             /** Scopes */
             scopes?: string[];
+            /** Expires In Days */
+            expires_in_days?: number | null;
+            /**
+             * Rotate Existing
+             * @default true
+             */
+            rotate_existing: boolean;
         };
         /** CreateUserRequest */
         CreateUserRequest: {
@@ -727,6 +1061,172 @@ export interface components {
              * @enum {string}
              */
             role: "admin" | "trader" | "viewer";
+        };
+        /** DhanFundResponse */
+        DhanFundResponse: {
+            /** Accountid */
+            accountId: string;
+            /** Availablebalance */
+            availableBalance: number;
+            /** Cashbalance */
+            cashBalance: number;
+            /** Utilizedmargin */
+            utilizedMargin: number;
+            /** Blockedpremium */
+            blockedPremium: number;
+            /** Realizedpnl */
+            realizedPnl: number;
+            /** Unrealizedpnl */
+            unrealizedPnl: number;
+            /** Totalequity */
+            totalEquity: number;
+        };
+        /** DhanOrderRequest */
+        DhanOrderRequest: {
+            /**
+             * Transaction Type
+             * @enum {string}
+             */
+            transaction_type: "BUY" | "SELL";
+            /** Quantity */
+            quantity: number;
+            /**
+             * Exchange Segment
+             * @default NSE_FNO
+             * @constant
+             */
+            exchange_segment: "NSE_FNO";
+            /**
+             * Product Type
+             * @default NRML
+             * @enum {string}
+             */
+            product_type: "NRML" | "MIS";
+            /**
+             * Order Type
+             * @enum {string}
+             */
+            order_type: "MARKET" | "LIMIT" | "SL" | "SL-M";
+            /**
+             * Validity
+             * @default DAY
+             * @constant
+             */
+            validity: "DAY";
+            /** Trading Symbol */
+            trading_symbol?: string | null;
+            /** Security Id */
+            security_id?: string | null;
+            /** Expiry */
+            expiry?: string | null;
+            /** Strike */
+            strike?: number | null;
+            /** Option Type */
+            option_type?: ("CE" | "PE") | null;
+            /** Price */
+            price?: number | null;
+            /** Trigger Price */
+            trigger_price?: number | null;
+            /** Correlationid */
+            correlationId?: string | null;
+        };
+        /** DhanOrderResponse */
+        DhanOrderResponse: {
+            /** Orderid */
+            orderId: string;
+            /** Orderstatus */
+            orderStatus: string;
+            /**
+             * Transactiontype
+             * @enum {string}
+             */
+            transactionType: "BUY" | "SELL";
+            /**
+             * Exchangesegment
+             * @default NSE_FNO
+             * @constant
+             */
+            exchangeSegment: "NSE_FNO";
+            /** Tradingsymbol */
+            tradingSymbol: string;
+            /** Securityid */
+            securityId?: string | null;
+            /** Quantity */
+            quantity: number;
+            /** Filledqty */
+            filledQty: number;
+            /** Price */
+            price?: number | null;
+            /** Triggerprice */
+            triggerPrice?: number | null;
+            /** Averagetradedprice */
+            averageTradedPrice?: number | null;
+            /**
+             * Producttype
+             * @enum {string}
+             */
+            productType: "NRML" | "MIS";
+            /**
+             * Ordertype
+             * @enum {string}
+             */
+            orderType: "MARKET" | "LIMIT" | "SL" | "SL-M";
+            /**
+             * Validity
+             * @constant
+             */
+            validity: "DAY";
+            /** Correlationid */
+            correlationId?: string | null;
+            /** Message */
+            message?: string | null;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /**
+             * Updatedat
+             * Format: date-time
+             */
+            updatedAt: string;
+        };
+        /** DhanPositionResponse */
+        DhanPositionResponse: {
+            /** Positionid */
+            positionId: string;
+            /** Tradingsymbol */
+            tradingSymbol: string;
+            /** Securityid */
+            securityId?: string | null;
+            /**
+             * Producttype
+             * @enum {string}
+             */
+            productType: "NRML" | "MIS";
+            /** Quantity */
+            quantity: number;
+            /** Buyavg */
+            buyAvg: number;
+            /** Sellavg */
+            sellAvg: number;
+            /** Lastprice */
+            lastPrice: number;
+            /** Realizedprofit */
+            realizedProfit: number;
+            /** Unrealizedprofit */
+            unrealizedProfit: number;
+            /** Blockedmargin */
+            blockedMargin: number;
+            /** Expiry */
+            expiry: string;
+            /** Strike */
+            strike: number;
+            /**
+             * Optiontype
+             * @enum {string}
+             */
+            optionType: "CE" | "PE";
         };
         /** FundsResponse */
         FundsResponse: {
@@ -1330,6 +1830,41 @@ export interface operations {
             };
         };
     };
+    list_self_agent_keys_route_api_v1_auth_api_keys_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "X-CSRF-Token"?: string | null;
+            };
+            path?: never;
+            cookie?: {
+                lite_access?: string | null;
+                lite_csrf?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentKeyResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_self_agent_key_route_api_v1_auth_api_keys_post: {
         parameters: {
             query?: never;
@@ -1348,6 +1883,43 @@ export interface operations {
                 "application/json": components["schemas"]["CreateAgentKeyRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentKeyResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_self_agent_key_route_api_v1_auth_api_keys__key_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "X-CSRF-Token"?: string | null;
+            };
+            path: {
+                key_id: string;
+            };
+            cookie?: {
+                lite_access?: string | null;
+                lite_csrf?: string | null;
+            };
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -1558,6 +2130,7 @@ export interface operations {
         parameters: {
             query?: {
                 timeframe?: string;
+                before?: number | null;
             };
             header?: {
                 authorization?: string | null;
@@ -2105,6 +2678,103 @@ export interface operations {
             };
         };
     };
+    agent_bootstrap_api_v1_agent_bootstrap_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentBootstrapRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentBootstrapResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_signup_api_v1_agent_signup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentSignupRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentBootstrapResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_me_api_v1_agent_me_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentProfileResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     agent_orders_api_v1_agent_orders_get: {
         parameters: {
             query?: never;
@@ -2171,6 +2841,72 @@ export interface operations {
             };
         };
     };
+    agent_order_detail_api_v1_agent_orders__order_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                order_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_cancel_order_api_v1_agent_orders__order_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                order_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     agent_positions_api_v1_agent_positions_get: {
         parameters: {
             query?: never;
@@ -2189,6 +2925,134 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PositionSummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_square_off_all_api_v1_agent_positions_square_off_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderSummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_close_api_v1_agent_positions__position_id__close_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                position_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_square_off_position_api_v1_agent_positions__position_id__square_off_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                position_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_funds_self_api_v1_agent_funds_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FundsResponse"];
                 };
             };
             /** @description Validation Error */
@@ -2301,7 +3165,201 @@ export interface operations {
             };
         };
     };
-    agent_close_api_v1_agent_positions__position_id__close_post: {
+    agent_dhan_funds_api_v1_agent_dhan_fundlimit_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DhanFundResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_dhan_positions_api_v1_agent_dhan_positions_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DhanPositionResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_dhan_orders_api_v1_agent_dhan_orders_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DhanOrderResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_dhan_order_api_v1_agent_dhan_orders_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DhanOrderRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DhanOrderResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_dhan_order_detail_api_v1_agent_dhan_orders__order_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                order_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DhanOrderResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_dhan_cancel_order_api_v1_agent_dhan_orders__order_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                order_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DhanOrderResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_dhan_exit_position_api_v1_agent_dhan_positions__position_id__exit_post: {
         parameters: {
             query?: never;
             header?: {
@@ -2320,7 +3378,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["OrderSummary"];
+                    "application/json": components["schemas"]["DhanOrderResponse"];
                 };
             };
             /** @description Validation Error */
