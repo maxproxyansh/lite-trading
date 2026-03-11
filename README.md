@@ -130,3 +130,4 @@ python3 /Users/proxy/trading/lite/backend/scripts/lite_agent.py \
 ## Review notes
 
 - Detailed hardening notes live in [docs/hardening-review.md](/Users/proxy/trading/lite/docs/hardening-review.md)
+- Final repository audit for March 11, 2026 lives in [docs/final-audit-2026-03-11.md](/Users/proxy/trading/lite/docs/final-audit-2026-03-11.md)

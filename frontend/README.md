@@ -1,73 +1,58 @@
-# React + TypeScript + Vite
+# Lite Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React 19 + Vite terminal UI for the Lite paper-trading platform.
 
-Currently, two official plugins are available:
+## Responsibilities
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- Authenticate operators with cookie-backed sessions plus an in-memory access token.
+- Render the NIFTY dashboard, option chain, orders, positions, funds, analytics, and settings views.
+- Merge REST snapshots with live WebSocket updates without forcing full-page refreshes.
+- Keep manual and agent portfolio views isolated per signed-in user.
 
-## React Compiler
+## Local Development
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+From `/Users/proxy/trading/lite/frontend`:
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+npm run sync:api
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+The frontend expects the backend at `http://127.0.0.1:8000` unless `VITE_API_BASE_URL` is set.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Environment
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+- `VITE_API_BASE_URL`: Optional HTTP base URL for the FastAPI backend.
+- `VITE_WS_BASE_URL`: Optional explicit WebSocket URL. When unset, the app derives it from `VITE_API_BASE_URL` or the current browser origin.
+
+## Scripts
+
+- `npm run dev`: Start the Vite development server.
+- `npm run build`: Type-check and produce a production bundle.
+- `npm run lint`: Run ESLint across the frontend.
+- `npm run sync:api`: Export backend OpenAPI and regenerate `src/lib/api-schema.d.ts`.
+
+## Architecture Notes
+
+- `src/lib/api.ts`: Shared fetch client, auth token handling, CSRF header injection, and typed API wrappers.
+- `src/store/useStore.ts`: Central Zustand store for session state, portfolio data, option-chain data, live quote patches, and toasts.
+- `src/hooks/useWebSocket.ts`: Cookie-authenticated WebSocket lifecycle with heartbeats, stale-socket detection, and bounded reconnect backoff.
+- `src/App.tsx`: Bootstraps session recovery, shared market loading, and per-portfolio polling.
+
+## Session Model
+
+- The backend issues `httpOnly` access and refresh cookies plus a readable CSRF cookie.
+- The frontend also stores the short-lived access token in memory so authenticated REST calls can use bearer auth immediately after login or refresh.
+- Clearing the session now resets all user-scoped market, portfolio, and order state so one operator cannot inherit another operator's in-memory data after logout or account switching.
+
+## Verification
+
+Run these before shipping UI changes:
+
+```bash
+npm run lint
+npm run build
 ```
+
+For full-stack verification, also run the backend checks listed in the root [README](/Users/proxy/trading/lite/README.md).

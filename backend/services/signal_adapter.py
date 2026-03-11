@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,7 @@ from services.audit import log_audit
 
 
 settings = get_settings()
+logger = logging.getLogger("lite.signals")
 
 
 def _parse_datetime(value: Any) -> datetime:
@@ -157,7 +159,7 @@ class SignalAdapter:
             try:
                 await self.ingest_once()
             except Exception:  # noqa: BLE001
-                pass
+                logger.exception("Signal ingestion cycle failed")
             await asyncio.sleep(settings.signal_poll_seconds)
 
     async def ingest_once(self) -> None:

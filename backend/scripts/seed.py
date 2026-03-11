@@ -15,10 +15,13 @@ def main() -> None:
     init_db()
     db = SessionLocal()
     try:
-        ensure_bootstrap_state(db)
+        user = ensure_bootstrap_state(db)
     finally:
         db.close()
-    print("Seed complete: admin user, portfolios, and default agent key ensured.")
+    if user:
+        print(f"Seed complete: bootstrap operator ensured for {user.email}.")
+    else:
+        print("Seed skipped: bootstrap credentials are not configured in backend/.env.")
 
 
 if __name__ == "__main__":

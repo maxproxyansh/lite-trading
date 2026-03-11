@@ -23,7 +23,6 @@ export default function Header() {
     selectedPortfolioId,
     setSelectedPortfolioId,
     user,
-    setSession,
   } = useStore(useShallow((state) => ({
     snapshot: state.snapshot,
     wsStatus: state.wsStatus,
@@ -31,7 +30,6 @@ export default function Header() {
     selectedPortfolioId: state.selectedPortfolioId,
     setSelectedPortfolioId: state.setSelectedPortfolioId,
     user: state.user,
-    setSession: state.setSession,
   })))
 
   return (
@@ -120,8 +118,11 @@ export default function Header() {
         {/* Logout */}
         <button
           onClick={async () => {
-            await logout()
-            setSession(null, null)
+            try {
+              await logout()
+            } catch {
+              // logout() clears local session state even when the network call fails.
+            }
             navigate('/login')
           }}
           className="text-text-muted transition-colors duration-150 hover:text-loss"

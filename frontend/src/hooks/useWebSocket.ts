@@ -28,6 +28,7 @@ export function useWebSocket() {
   const heartbeatRef = useRef<number | null>(null)
   const staleRef = useRef<number | null>(null)
   const attemptRef = useRef(0)
+  const shouldReconnectRef = useRef(false)
   const wsRef = useRef<WebSocket | null>(null)
   const handlersRef = useRef({
     setSnapshot: useStore.getState().setSnapshot,
@@ -56,11 +57,36 @@ export function useWebSocket() {
   }, [applyChainEvent, applyQuoteBatch, requestPortfolioRefresh, setSnapshot, upsertSignal])
 
   useEffect(() => {
+    const clearTimers = () => {
+      if (reconnectRef.current !== null) {
+        window.clearTimeout(reconnectRef.current)
+        reconnectRef.current = null
+      }
+      if (heartbeatRef.current !== null) {
+        window.clearInterval(heartbeatRef.current)
+        heartbeatRef.current = null
+      }
+      if (staleRef.current !== null) {
+        window.clearTimeout(staleRef.current)
+        staleRef.current = null
+      }
+    }
+
     if (!accessToken) {
+      shouldReconnectRef.current = false
+      attemptRef.current = 0
+      clearTimers()
       setWsStatus('disconnected')
-      wsRef.current?.close()
+      if (wsRef.current) {
+        const socket = wsRef.current
+        wsRef.current = null
+        socket.close()
+      }
       return undefined
     }
+
+    shouldReconnectRef.current = true
+    let disposed = false
 
     const handleMessage = (raw: string) => {
       try {
@@ -90,6 +116,9 @@ export function useWebSocket() {
     }
 
     const connect = () => {
+      if (disposed || !shouldReconnectRef.current) {
+        return
+      }
       setWsStatus('connecting')
       const socket = new WebSocket(buildWsUrl())
       wsRef.current = socket
@@ -104,9 +133,16 @@ export function useWebSocket() {
       }
 
       socket.onopen = () => {
+        if (disposed || !shouldReconnectRef.current) {
+          socket.close()
+          return
+        }
         attemptRef.current = 0
         setWsStatus('connected')
         armStaleTimer()
+        if (heartbeatRef.current !== null) {
+          window.clearInterval(heartbeatRef.current)
+        }
         heartbeatRef.current = window.setInterval(() => {
           if (socket.readyState === WebSocket.OPEN) {
             socket.send('ping')
@@ -120,12 +156,13 @@ export function useWebSocket() {
       }
 
       socket.onclose = () => {
-        setWsStatus('disconnected')
-        if (heartbeatRef.current) {
-          window.clearInterval(heartbeatRef.current)
+        if (wsRef.current === socket) {
+          wsRef.current = null
         }
-        if (staleRef.current) {
-          window.clearTimeout(staleRef.current)
+        setWsStatus('disconnected')
+        clearTimers()
+        if (disposed || !shouldReconnectRef.current) {
+          return
         }
         attemptRef.current += 1
         const delay = Math.min(1000 * 2 ** Math.min(attemptRef.current, 4), 15000)
@@ -133,23 +170,23 @@ export function useWebSocket() {
       }
 
       socket.onerror = () => {
-        socket.close()
+        if (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN) {
+          socket.close()
+        }
       }
     }
 
     connect()
 
     return () => {
-      if (reconnectRef.current) {
-        window.clearTimeout(reconnectRef.current)
+      disposed = true
+      shouldReconnectRef.current = false
+      clearTimers()
+      if (wsRef.current) {
+        const socket = wsRef.current
+        wsRef.current = null
+        socket.close()
       }
-      if (heartbeatRef.current) {
-        window.clearInterval(heartbeatRef.current)
-      }
-      if (staleRef.current) {
-        window.clearTimeout(staleRef.current)
-      }
-      wsRef.current?.close()
     }
   }, [accessToken, setWsStatus])
 }

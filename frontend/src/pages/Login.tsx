@@ -21,7 +21,6 @@ export default function Login() {
     try {
       if (mode === 'signup') {
         await signup(email, displayName, password)
-        await login(email, password)
         addToast('success', 'Account created')
       } else {
         await login(email, password)

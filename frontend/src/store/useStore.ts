@@ -103,6 +103,57 @@ interface AppState {
   removeToast: (id: string) => void
 }
 
+function initialUserScopedState(): Pick<
+  AppState,
+  | 'accessToken'
+  | 'user'
+  | 'sharedLoading'
+  | 'portfolioLoading'
+  | 'chainLoading'
+  | 'wsStatus'
+  | 'snapshot'
+  | 'chain'
+  | 'chainIndex'
+  | 'portfolios'
+  | 'portfoliosLoaded'
+  | 'selectedPortfolioId'
+  | 'selectedExpiry'
+  | 'selectedQuote'
+  | 'orders'
+  | 'positions'
+  | 'funds'
+  | 'analytics'
+  | 'latestSignal'
+  | 'optionChartSymbol'
+  | 'portfolioRefreshNonce'
+  | 'orderModal'
+> {
+  return {
+    accessToken: null,
+    user: null,
+    sharedLoading: false,
+    portfolioLoading: false,
+    chainLoading: false,
+    wsStatus: 'disconnected',
+    snapshot: null,
+    chain: null,
+    chainIndex: {},
+    portfolios: [],
+    portfoliosLoaded: false,
+    selectedPortfolioId: '',
+    selectedExpiry: null,
+    selectedQuote: null,
+    orders: [],
+    positions: [],
+    funds: null,
+    analytics: null,
+    latestSignal: null,
+    optionChartSymbol: null,
+    portfolioRefreshNonce: 0,
+    orderModal: null,
+  }
+}
+
 function roundMoney(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100
 }
@@ -288,39 +339,26 @@ function syncSelectedQuote(
 }
 
 export const useStore = create<AppState>((set) => ({
-  accessToken: null,
-  user: null,
-  sharedLoading: false,
-  portfolioLoading: false,
-  chainLoading: false,
-  wsStatus: 'disconnected',
-  snapshot: null,
-  chain: null,
-  chainIndex: {},
-  portfolios: [],
-  portfoliosLoaded: false,
-  selectedPortfolioId: '',
-  selectedExpiry: null,
-  selectedQuote: null,
-  orders: [],
-  positions: [],
-  funds: null,
-  analytics: null,
-  latestSignal: null,
+  ...initialUserScopedState(),
   chainView: 'collapsed',
   chainFilter: 'ATM',
   chainPanelOpen: true,
-  optionChartSymbol: null,
-  portfolioRefreshNonce: 0,
   toasts: [],
   setChainView: (chainView) => set({ chainView }),
   setChainFilter: (chainFilter) => set({ chainFilter }),
   setChainPanelOpen: (chainPanelOpen) => set({ chainPanelOpen }),
   setOptionChartSymbol: (optionChartSymbol) => set({ optionChartSymbol }),
-  orderModal: null,
   openOrderModal: (quote, side) => set({ orderModal: { isOpen: true, quote, side } }),
   closeOrderModal: () => set({ orderModal: null }),
-  setSession: (token, user) => set({ accessToken: token, user }),
+  setSession: (token, user) => set((state) => {
+    if (!token || !user) {
+      return initialUserScopedState()
+    }
+    if (state.user?.id && state.user.id !== user.id) {
+      return { ...initialUserScopedState(), accessToken: token, user }
+    }
+    return { accessToken: token, user }
+  }),
   setSharedLoading: (sharedLoading) => set({ sharedLoading }),
   setPortfolioLoading: (portfolioLoading) => set({ portfolioLoading }),
   setChainLoading: (chainLoading) => set({ chainLoading }),

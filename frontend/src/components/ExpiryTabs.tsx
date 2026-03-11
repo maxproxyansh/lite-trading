@@ -6,6 +6,8 @@ interface Props {
   maxVisible?: number
 }
 
+const EMPTY_EXPIRIES: string[] = []
+
 function formatExpiry(dateStr: string): string {
   const date = new Date(`${dateStr}T00:00:00`)
   return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
@@ -13,7 +15,7 @@ function formatExpiry(dateStr: string): string {
 
 export default function ExpiryTabs({ maxVisible = 5 }: Props) {
   const { expiries, selectedExpiry, activeExpiry, setSelectedExpiry } = useStore(useShallow((state) => ({
-    expiries: state.snapshot?.expiries ?? [],
+    expiries: state.snapshot?.expiries ?? EMPTY_EXPIRIES,
     selectedExpiry: state.selectedExpiry,
     activeExpiry: state.snapshot?.active_expiry ?? null,
     setSelectedExpiry: state.setSelectedExpiry,
