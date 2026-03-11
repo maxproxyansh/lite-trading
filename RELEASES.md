@@ -1,5 +1,21 @@
 # Release Log
 
+## 2026-03-11 — `1b2e7e3`
+
+**Latest:** feat: redesign toasts to match chart alerts glass-morphism style
+**Author:** codex
+**Stats:**  22 files changed, 3844 insertions(+), 414 deletions(-)
+
+### Features
+- feat: redesign toasts to match chart alerts glass-morphism style (1b2e7e3)
+- feat: add autonomous agent trading platform (c118a77)
+
+### Other
+- docs: update release log for 5a49a5d (daa380c)
+- ci: add auto-deploy and release notes workflows (5a49a5d)
+
+---
+
 ## 2026-03-11 — `5a49a5d`
 
 **Latest:** ci: add auto-deploy and release notes workflows
@@ -10,4 +26,3 @@
 - ci: add auto-deploy and release notes workflows (5a49a5d)
 
 ---
-
