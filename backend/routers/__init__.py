@@ -1,3 +1,4 @@
+from .alerts import router as alerts
 from .analytics import router as analytics
 from .agent import router as agent
 from .auth import admin_router as admin
@@ -13,6 +14,7 @@ from .websocket import router as websocket
 __all__ = [
     "admin",
     "agent",
+    "alerts",
     "analytics",
     "auth",
     "funds",

@@ -164,6 +164,18 @@ class Signal(Base):
     imported_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
 
 
+class Alert(Base, BaseModelMixin):
+    __tablename__ = "alerts"
+
+    user_id = Column(String(64), ForeignKey("users.id"), nullable=False, index=True)
+    symbol = Column(String(128), nullable=False, index=True, default="NIFTY 50")
+    target_price = Column(Numeric(14, 2), nullable=False)
+    direction = Column(String(16), nullable=False)
+    status = Column(String(16), nullable=False, default="ACTIVE")
+    last_price = Column(Numeric(14, 2))
+    triggered_at = Column(DateTime(timezone=True))
+
+
 class DailyStat(Base):
     __tablename__ = "daily_stats"
     __table_args__ = (

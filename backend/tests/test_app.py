@@ -33,7 +33,9 @@ os.environ["BOOTSTRAP_AGENT_NAME"] = "bootstrap-agent"
 
 from database import Base, SessionLocal, engine  # noqa: E402
 from main import app  # noqa: E402
+from rate_limit import _rate_buckets  # noqa: E402
 from routers.websocket import broadcast_message  # noqa: E402
+from services.alert_service import sync_alerts  # noqa: E402
 from services.auth_service import ensure_bootstrap_state  # noqa: E402
 from services.market_data import market_data_service  # noqa: E402
 from services.signal_adapter import signal_adapter  # noqa: E402
@@ -92,6 +94,7 @@ def _portfolio_map(client: TestClient, headers: dict[str, str]) -> dict[str, dic
 def client():
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
+    _rate_buckets.clear()
     db = SessionLocal()
     try:
         ensure_bootstrap_state(db)
@@ -308,6 +311,48 @@ def test_order_request_validation_rejects_missing_limit_price(client: TestClient
         },
     )
     assert response.status_code == 422
+
+
+def test_alerts_are_user_isolated_and_trigger_against_spot(client: TestClient) -> None:
+    admin_headers = _login(client, "admin@lite.trade", "lite-admin-123")
+    created = client.post(
+        "/api/v1/alerts",
+        headers=admin_headers,
+        json={"symbol": "NIFTY 50", "target_price": 22500},
+    )
+    assert created.status_code == 201, created.text
+    alert_id = created.json()["id"]
+    assert created.json()["direction"] == "ABOVE"
+    assert created.json()["status"] == "ACTIVE"
+
+    signup = client.post(
+        "/api/v1/auth/signup",
+        json={"email": "alerts@example.com", "display_name": "Alert User", "password": "alert-pass-1"},
+    )
+    assert signup.status_code == 200, signup.text
+    user_headers = _login(client, "alerts@example.com", "alert-pass-1")
+    other_user_alerts = client.get("/api/v1/alerts", headers=user_headers)
+    assert other_user_alerts.status_code == 200, other_user_alerts.text
+    assert other_user_alerts.json() == []
+
+    market_data_service.snapshot["spot"] = 22510.0
+    db = SessionLocal()
+    try:
+        assert sync_alerts(db) == 1
+    finally:
+        db.close()
+
+    admin_alerts = client.get("/api/v1/alerts", headers=admin_headers)
+    assert admin_alerts.status_code == 200, admin_alerts.text
+    payload = admin_alerts.json()
+    assert len(payload) == 1
+    assert payload[0]["status"] == "TRIGGERED"
+
+    deleted = client.delete(f"/api/v1/alerts/{alert_id}", headers=admin_headers)
+    assert deleted.status_code == 204, deleted.text
+    after_delete = client.get("/api/v1/alerts", headers=admin_headers)
+    assert after_delete.status_code == 200, after_delete.text
+    assert after_delete.json() == []
 
 
 def test_signal_adapter_keeps_actionable_signal_when_targets_are_advisory(client: TestClient) -> None:

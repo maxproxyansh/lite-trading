@@ -10,8 +10,9 @@ from fastapi.responses import Response
 
 from config import get_settings
 from database import SessionLocal, init_db
-from routers import admin, agent, analytics, auth, funds, market, orders, portfolios, positions, signals, websocket
+from routers import admin, agent, alerts, analytics, auth, funds, market, orders, portfolios, positions, signals, websocket
 from schemas import HealthResponse
+from services.alert_service import sync_alerts
 from services.market_data import market_data_service
 from services.auth_service import ensure_bootstrap_state
 from services.signal_adapter import signal_adapter
@@ -24,9 +25,10 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("lite.backend")
 
 
-async def _process_open_orders() -> None:
+async def _process_market_side_effects() -> None:
     db = SessionLocal()
     try:
+        sync_alerts(db)
         process_open_orders_sync(db)
     finally:
         db.close()
@@ -43,7 +45,7 @@ async def lifespan(app: FastAPI):
     logger.info("Database initialized")
 
     market_data_service.set_broadcast(broadcast_message)
-    market_data_service.set_open_order_processor(_process_open_orders)
+    market_data_service.set_open_order_processor(_process_market_side_effects)
     signal_adapter.set_broadcast(broadcast_message)
 
     await market_data_service.start()
@@ -75,7 +77,7 @@ async def security_headers(request: Request, call_next):
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     return response
 
-for router in (auth, admin, market, portfolios, orders, positions, funds, analytics, signals, agent, websocket):
+for router in (auth, admin, market, alerts, portfolios, orders, positions, funds, analytics, signals, agent, websocket):
     app.include_router(router)
 
 

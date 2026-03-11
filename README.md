@@ -45,6 +45,7 @@ Lite is a private, options-only paper-trading terminal built to feel broker-grad
 - Human auth: `/api/v1/auth/*`
 - Trading: `/api/v1/orders`, `/api/v1/positions`, `/api/v1/funds`, `/api/v1/analytics`
 - Market data: `/api/v1/market/*`
+- Alerts: `/api/v1/alerts`
 - Signals: `/api/v1/signals`
 - Agent API: `/api/v1/agent/*`
 - WebSocket: `/api/v1/ws`
@@ -90,6 +91,7 @@ Lite is a private, options-only paper-trading terminal built to feel broker-grad
 - Auth cookies are `httpOnly`; state-changing cookie-auth requests require CSRF.
 - WebSocket auth uses the session cookie for humans or `Authorization` / `X-API-Key` headers for non-browser clients. URL query secrets are intentionally rejected.
 - Open-order processing uses Postgres row locks with `SKIP LOCKED` semantics so multiple replicas do not fill the same pending order twice.
+- Chart alerts are persisted per user and currently track the NIFTY spot chart rendered in the dashboard.
 
 ### Important hosted-signal note
 

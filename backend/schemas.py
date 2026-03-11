@@ -11,6 +11,8 @@ OrderSide = Literal["BUY", "SELL"]
 OrderType = Literal["MARKET", "LIMIT", "SL", "SL-M"]
 OrderProduct = Literal["NRML", "MIS"]
 OrderValidity = Literal["DAY"]
+AlertDirection = Literal["ABOVE", "BELOW"]
+AlertStatus = Literal["ACTIVE", "TRIGGERED", "CANCELLED"]
 
 
 class HealthResponse(BaseModel):
@@ -147,6 +149,26 @@ class CandleResponse(BaseModel):
     candles: list[Candle]
     source: str
     degraded: bool = False
+
+
+class AlertCreateRequest(BaseModel):
+    symbol: str = "NIFTY 50"
+    target_price: float = Field(gt=0)
+    direction: AlertDirection | None = None
+
+
+class AlertSummary(BaseModel):
+    id: str
+    symbol: str
+    target_price: float
+    direction: AlertDirection
+    status: AlertStatus
+    last_price: float | None = None
+    created_at: datetime
+    updated_at: datetime
+    triggered_at: datetime | None = None
+
+    model_config = {"from_attributes": True}
 
 
 class SignalResponse(BaseModel):

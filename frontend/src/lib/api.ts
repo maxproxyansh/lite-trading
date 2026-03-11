@@ -9,6 +9,8 @@ export type OptionChainRow = components['schemas']['OptionChainRow']
 export type OptionChainResponse = components['schemas']['OptionChainResponse']
 export type Candle = components['schemas']['Candle']
 export type CandleResponse = components['schemas']['CandleResponse']
+export type AlertSummary = components['schemas']['AlertSummary']
+export type AlertPayload = components['schemas']['AlertCreateRequest']
 export type PortfolioSummary = components['schemas']['PortfolioSummary']
 export type OrderSummary = components['schemas']['OrderSummary']
 export type PositionSummary = components['schemas']['PositionSummary']
@@ -162,6 +164,23 @@ export async function fetchOptionChain(expiry?: string) {
 
 export async function fetchCandles(timeframe: string) {
   return rawFetch<CandleResponse>(`/api/v1/market/candles?timeframe=${encodeURIComponent(timeframe)}`)
+}
+
+export async function fetchAlerts() {
+  return rawFetch<AlertSummary[]>('/api/v1/alerts')
+}
+
+export async function createAlert(payload: AlertPayload) {
+  return rawFetch<AlertSummary>('/api/v1/alerts', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function deleteAlert(alertId: string) {
+  return rawFetch<void>(`/api/v1/alerts/${encodeURIComponent(alertId)}`, {
+    method: 'DELETE',
+  })
 }
 
 export async function fetchOrders(portfolioId?: string) {
