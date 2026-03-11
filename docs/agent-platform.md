@@ -185,9 +185,15 @@ curl https://lite-options-api-production.up.railway.app/api/v1/market/expiries \
 ### `GET /api/v1/market/candles`
 
 Returns OHLC candle data. Supported timeframes are broker-data dependent; common values include `1m`, `5m`, `15m`, `1h`, and `D`.
+By default this returns the NIFTY spot chart. Pass `symbol` or `security_id` to fetch a specific option contract instead.
 
 ```bash
 curl "https://lite-options-api-production.up.railway.app/api/v1/market/candles?timeframe=15m" \
+  -H "X-API-Key: $LITE_AGENT_API_KEY"
+```
+
+```bash
+curl "https://lite-options-api-production.up.railway.app/api/v1/market/candles?timeframe=5m&symbol=NIFTY_2026-03-12_22500_CE" \
   -H "X-API-Key: $LITE_AGENT_API_KEY"
 ```
 

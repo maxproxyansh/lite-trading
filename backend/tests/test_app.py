@@ -108,7 +108,15 @@ def _bootstrap_agent(
             "agent_name": agent_name,
             "portfolio_kind": "agent",
             "scopes": scopes
-            or ["orders:read", "orders:write", "positions:read", "positions:write", "funds:read"],
+            or [
+                "orders:read",
+                "orders:write",
+                "positions:read",
+                "positions:write",
+                "alerts:read",
+                "alerts:write",
+                "funds:read",
+            ],
         },
     )
     assert response.status_code == 200, response.text
@@ -371,6 +379,143 @@ def test_agent_api_key_can_access_market_routes(client: TestClient) -> None:
     depth = client.get("/api/v1/market/depth/NIFTY_2026-03-12_22500_CE", headers={"X-API-Key": api_key})
     assert depth.status_code == 200, depth.text
     assert depth.json()["symbol"] == "NIFTY_2026-03-12_22500_CE"
+
+
+def test_agent_alerts_are_portfolio_scoped(client: TestClient) -> None:
+    admin_headers = _login(client, "admin@lite.trade", "lite-admin-123")
+    portfolios = _portfolio_map(client, admin_headers)
+
+    agent_bootstrap = _bootstrap_agent(client, agent_name="alerts-agent")
+    agent_key = agent_bootstrap["api_key"]
+
+    manual_key_response = client.post(
+        "/api/v1/auth/api-keys",
+        headers=admin_headers,
+        json={
+            "name": "manual-alert-agent",
+            "portfolio_id": portfolios["manual"]["id"],
+            "scopes": ["alerts:read", "alerts:write", "funds:read"],
+        },
+    )
+    assert manual_key_response.status_code == 200, manual_key_response.text
+    manual_key = manual_key_response.json()["secret"]
+
+    agent_alert = client.post(
+        "/api/v1/agent/alerts",
+        headers={"X-API-Key": agent_key},
+        json={"symbol": "NIFTY 50", "target_price": 22500},
+    )
+    assert agent_alert.status_code == 201, agent_alert.text
+    assert agent_alert.json()["portfolio_id"] == agent_bootstrap["portfolio"]["id"]
+
+    manual_alert = client.post(
+        "/api/v1/agent/alerts",
+        headers={"X-API-Key": manual_key},
+        json={"symbol": "NIFTY 50", "target_price": 22300},
+    )
+    assert manual_alert.status_code == 201, manual_alert.text
+    assert manual_alert.json()["portfolio_id"] == portfolios["manual"]["id"]
+
+    list_agent = client.get("/api/v1/agent/alerts", headers={"X-API-Key": agent_key})
+    assert list_agent.status_code == 200, list_agent.text
+    assert len(list_agent.json()) == 1
+    assert list_agent.json()[0]["id"] == agent_alert.json()["id"]
+
+    list_manual = client.get("/api/v1/agent/alerts", headers={"X-API-Key": manual_key})
+    assert list_manual.status_code == 200, list_manual.text
+    assert len(list_manual.json()) == 1
+    assert list_manual.json()[0]["id"] == manual_alert.json()["id"]
+
+    delete_wrong = client.delete(
+        f"/api/v1/agent/alerts/{manual_alert.json()['id']}",
+        headers={"X-API-Key": agent_key},
+    )
+    assert delete_wrong.status_code == 404
+
+    delete_right = client.delete(
+        f"/api/v1/agent/alerts/{agent_alert.json()['id']}",
+        headers={"X-API-Key": agent_key},
+    )
+    assert delete_right.status_code == 204
+
+
+def test_agent_can_modify_open_order_and_partially_close_position(client: TestClient) -> None:
+    bootstrap = _bootstrap_agent(client, agent_name="modify-agent")
+    api_key = bootstrap["api_key"]
+    portfolio_id = bootstrap["portfolio"]["id"]
+
+    open_order = client.post(
+        "/api/v1/agent/orders",
+        headers={"X-API-Key": api_key},
+        json={
+            "portfolio_id": portfolio_id,
+            "symbol": "NIFTY_2026-03-12_22500_CE",
+            "expiry": "2026-03-12",
+            "strike": 22500,
+            "option_type": "CE",
+            "side": "BUY",
+            "order_type": "LIMIT",
+            "product": "NRML",
+            "validity": "DAY",
+            "lots": 1,
+            "price": 100.0,
+            "idempotency_key": "modifiable-open-order",
+        },
+    )
+    assert open_order.status_code == 200, open_order.text
+    assert open_order.json()["status"] == "OPEN"
+
+    modified = client.patch(
+        f"/api/v1/agent/orders/{open_order.json()['id']}",
+        headers={"X-API-Key": api_key},
+        json={"price": 111.0, "quantity": 130},
+    )
+    assert modified.status_code == 200, modified.text
+    assert modified.json()["status"] == "OPEN"
+    assert modified.json()["price"] == 111.0
+    assert modified.json()["quantity"] == 130
+    assert modified.json()["lots"] == 2
+
+    filled = client.patch(
+        f"/api/v1/agent/orders/{open_order.json()['id']}",
+        headers={"X-API-Key": api_key},
+        json={"price": 113.0},
+    )
+    assert filled.status_code == 200, filled.text
+    assert filled.json()["status"] == "FILLED"
+    assert filled.json()["quantity"] == 130
+
+    top_up = client.post(
+        "/api/v1/agent/dhan/orders",
+        headers={"X-API-Key": api_key},
+        json={
+            "transaction_type": "BUY",
+            "trading_symbol": "NIFTY_2026-03-12_22500_CE",
+            "quantity": 65,
+            "order_type": "MARKET",
+            "product_type": "NRML",
+            "correlationId": "partial-close-top-up",
+        },
+    )
+    assert top_up.status_code == 200, top_up.text
+
+    positions = client.get("/api/v1/agent/positions", headers={"X-API-Key": api_key})
+    assert positions.status_code == 200, positions.text
+    assert len(positions.json()) == 1
+    position_id = positions.json()[0]["id"]
+    assert positions.json()[0]["net_quantity"] == 195
+
+    partial_close = client.post(
+        f"/api/v1/agent/positions/{position_id}/close?quantity=65",
+        headers={"X-API-Key": api_key},
+    )
+    assert partial_close.status_code == 200, partial_close.text
+    assert partial_close.json()["side"] == "SELL"
+    assert partial_close.json()["quantity"] == 65
+
+    after_partial = client.get("/api/v1/agent/positions", headers={"X-API-Key": api_key})
+    assert after_partial.status_code == 200, after_partial.text
+    assert after_partial.json()[0]["net_quantity"] == 130
 
 
 def test_unauthenticated_market_access_rejected(client: TestClient) -> None:
@@ -722,3 +867,104 @@ def test_market_candles_route_supports_before_cursor(client: TestClient, monkeyp
     assert [candle["time"] for candle in payload["candles"]] == [timestamps[0]]
     assert payload["has_more"] is True
     assert payload["next_before"] == timestamps[0]
+
+
+def test_fetch_candles_resolves_option_symbol_via_option_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
+    symbol = "NIFTY_2026-03-19_22450_PE"
+    timestamps = [
+        int(datetime(2026, 3, 10, 3, 45, tzinfo=timezone.utc).timestamp()),
+        int(datetime(2026, 3, 10, 4, 0, tzinfo=timezone.utc).timestamp()),
+    ]
+
+    class FakeDhanClient:
+        def intraday_minute_data(self, **kwargs):
+            self.last_kwargs = kwargs
+            return {
+                "data": {
+                    "timestamp": timestamps,
+                    "open": [85.0, 86.0],
+                    "high": [86.0, 87.0],
+                    "low": [84.5, 85.5],
+                    "close": [85.5, 86.5],
+                    "volume": [1000, 1100],
+                }
+            }
+
+    fake_client = FakeDhanClient()
+    monkeypatch.setattr(market_data_service, "_has_dhan", lambda: True)
+    monkeypatch.setattr(market_data_service, "_client", lambda: fake_client)
+    monkeypatch.setattr(
+        market_data_service,
+        "_fetch_option_chain",
+        lambda expiry: {
+            "quotes": {
+                symbol: {
+                    "symbol": symbol,
+                    "security_id": "778899",
+                    "strike": 22450,
+                    "option_type": "PE",
+                    "expiry": expiry,
+                    "ltp": 86.5,
+                }
+            }
+        },
+    )
+
+    response = market_data_service._fetch_candles("15m", symbol=symbol)
+
+    assert [candle["time"] for candle in response["candles"]] == timestamps
+    assert fake_client.last_kwargs["security_id"] == "778899"
+    assert fake_client.last_kwargs["exchange_segment"] == "NSE_FNO"
+    assert fake_client.last_kwargs["instrument_type"] == "OPTIDX"
+
+
+def test_market_candles_route_supports_option_symbol(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    headers = _login(client, "admin@lite.trade", "lite-admin-123")
+    symbol = "NIFTY_2026-03-12_22500_CE"
+    timestamps = [
+        int(datetime(2026, 3, 10, 3, 45, tzinfo=timezone.utc).timestamp()),
+        int(datetime(2026, 3, 10, 4, 0, tzinfo=timezone.utc).timestamp()),
+    ]
+
+    class FakeDhanClient:
+        def intraday_minute_data(self, **kwargs):
+            self.last_kwargs = kwargs
+            return {
+                "data": {
+                    "timestamp": timestamps,
+                    "open": [110.0, 111.0],
+                    "high": [111.0, 112.0],
+                    "low": [109.5, 110.5],
+                    "close": [110.5, 111.5],
+                    "volume": [2000, 2100],
+                }
+            }
+
+    fake_client = FakeDhanClient()
+    monkeypatch.setattr(market_data_service, "_has_dhan", lambda: True)
+    monkeypatch.setattr(market_data_service, "_client", lambda: fake_client)
+    market_data_service._security_id_to_symbol = {"12345": symbol}
+
+    response = client.get(
+        f"/api/v1/market/candles?timeframe=15m&symbol={symbol}",
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+
+    payload = response.json()
+    assert [candle["time"] for candle in payload["candles"]] == timestamps
+    assert fake_client.last_kwargs["security_id"] == "12345"
+    assert fake_client.last_kwargs["exchange_segment"] == "NSE_FNO"
+    assert fake_client.last_kwargs["instrument_type"] == "OPTIDX"
+
+
+def test_market_candles_route_rejects_unsupported_symbol_format(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    headers = _login(client, "admin@lite.trade", "lite-admin-123")
+    monkeypatch.setattr(market_data_service, "_has_dhan", lambda: True)
+
+    response = client.get(
+        "/api/v1/market/candles?timeframe=15m&symbol=BAD_SYMBOL",
+        headers=headers,
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Unsupported symbol format. Expected NIFTY 50 or NIFTY_YYYY-MM-DD_STRIKE_CE|PE"

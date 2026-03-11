@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from config import get_settings
 from dependencies import get_current_user_or_agent
 from schemas import CandleResponse, OptionChainResponse
-from services.market_data import market_data_service
+from services.market_data import CandleQueryError, market_data_service
 
 
 settings = get_settings()
@@ -31,8 +31,17 @@ async def chain(expiry: str | None = None, _actor=Depends(get_current_user_or_ag
 
 
 @router.get("/candles", response_model=CandleResponse)
-async def candles(timeframe: str = "15m", before: int | None = None, _actor=Depends(get_current_user_or_agent)):
-    data = await market_data_service.get_candles(timeframe, before=before)
+async def candles(
+    timeframe: str = "15m",
+    before: int | None = None,
+    symbol: str | None = None,
+    security_id: str | None = None,
+    _actor=Depends(get_current_user_or_agent),
+):
+    try:
+        data = await market_data_service.get_candles(timeframe, before=before, symbol=symbol, security_id=security_id)
+    except CandleQueryError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     return CandleResponse(**data)
 
 

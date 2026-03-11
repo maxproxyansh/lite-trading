@@ -145,7 +145,12 @@ def handle_market_chain(args: argparse.Namespace) -> Any:
 
 def handle_market_candles(args: argparse.Namespace) -> Any:
     client, _, _ = make_client(args)
-    return client.candles(timeframe=args.timeframe, before=args.before)
+    return client.candles(
+        timeframe=args.timeframe,
+        before=args.before,
+        symbol=args.symbol,
+        security_id=args.security_id,
+    )
 
 
 def handle_market_depth(args: argparse.Namespace) -> Any:
@@ -156,6 +161,22 @@ def handle_market_depth(args: argparse.Namespace) -> Any:
 def handle_funds(args: argparse.Namespace) -> Any:
     client, _, _ = make_client(args)
     return client.dhan_funds() if args.dhan else client.funds()
+
+
+def handle_alerts_list(args: argparse.Namespace) -> Any:
+    client, _, _ = make_client(args)
+    return client.alerts()
+
+
+def handle_alerts_create(args: argparse.Namespace) -> Any:
+    client, _, _ = make_client(args)
+    return client.create_alert(args.symbol, args.price, direction=args.direction)
+
+
+def handle_alerts_delete(args: argparse.Namespace) -> Any:
+    client, _, _ = make_client(args)
+    client.delete_alert(args.alert_id)
+    return {"deleted": True, "alert_id": args.alert_id}
 
 
 def handle_positions(args: argparse.Namespace) -> Any:
@@ -198,11 +219,23 @@ def handle_orders_cancel(args: argparse.Namespace) -> Any:
     return client.dhan_cancel_order(args.order_id) if args.dhan else client.cancel_order(args.order_id)
 
 
+def handle_orders_modify(args: argparse.Namespace) -> Any:
+    client, _, _ = make_client(args)
+    return client.modify_order(
+        args.order_id,
+        price=args.price,
+        trigger_price=args.trigger_price,
+        quantity=args.quantity,
+    )
+
+
 def handle_square_off(args: argparse.Namespace) -> Any:
     client, _, _ = make_client(args)
+    if args.all and args.quantity is not None:
+        raise LiteAgentError("Cannot combine --all with --quantity")
     if args.all:
         return client.square_off_all()
-    return client.square_off(args.position_id)
+    return client.close_position(args.position_id, quantity=args.quantity)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -256,11 +289,29 @@ def build_parser() -> argparse.ArgumentParser:
     market_candles = market_subparsers.add_parser("candles", help="Show OHLC candle data")
     market_candles.add_argument("--timeframe", default="15m")
     market_candles.add_argument("--before", type=int, default=None, help="Unix timestamp for pagination")
+    market_candles.add_argument("--symbol", default=None, help="Trading symbol like NIFTY_2026-03-12_22500_CE")
+    market_candles.add_argument("--security-id", default=None, help="Broker security ID for the instrument")
     market_candles.set_defaults(handler=handle_market_candles)
 
     market_depth = market_subparsers.add_parser("depth", help="Show bid/ask depth for a symbol")
     market_depth.add_argument("symbol")
     market_depth.set_defaults(handler=handle_market_depth)
+
+    alerts = subparsers.add_parser("alerts", help="Manage price alerts for the bound portfolio")
+    alerts_subparsers = alerts.add_subparsers(dest="alerts_command", required=True)
+
+    alerts_list = alerts_subparsers.add_parser("list", help="List active alerts")
+    alerts_list.set_defaults(handler=handle_alerts_list)
+
+    alerts_create = alerts_subparsers.add_parser("create", help="Create a price alert")
+    alerts_create.add_argument("--symbol", required=True)
+    alerts_create.add_argument("--price", required=True, type=float)
+    alerts_create.add_argument("--direction", choices=("ABOVE", "BELOW"), default=None)
+    alerts_create.set_defaults(handler=handle_alerts_create)
+
+    alerts_delete = alerts_subparsers.add_parser("delete", help="Delete an alert")
+    alerts_delete.add_argument("alert_id")
+    alerts_delete.set_defaults(handler=handle_alerts_delete)
 
     funds = subparsers.add_parser("funds", help="Show available funds for the bound portfolio")
     funds.add_argument("--dhan", action="store_true", help="Use the Dhan-compatible response shape")
@@ -303,9 +354,17 @@ def build_parser() -> argparse.ArgumentParser:
     orders_cancel.add_argument("--dhan", action="store_true", help="Use the Dhan-compatible response shape")
     orders_cancel.set_defaults(handler=handle_orders_cancel)
 
+    orders_modify = order_subparsers.add_parser("modify", help="Modify an open native Lite order")
+    orders_modify.add_argument("order_id")
+    orders_modify.add_argument("--price", type=float, default=None)
+    orders_modify.add_argument("--trigger-price", type=float, default=None)
+    orders_modify.add_argument("--quantity", type=int, default=None)
+    orders_modify.set_defaults(handler=handle_orders_modify)
+
     square_off = subparsers.add_parser("square-off", help="Square off one position or all positions")
     square_off.add_argument("position_id", nargs="?")
     square_off.add_argument("--all", action="store_true")
+    square_off.add_argument("--quantity", type=int, default=None)
     square_off.set_defaults(handler=handle_square_off)
 
     clear_auth = subparsers.add_parser("clear-auth", help="Remove locally stored CLI credentials")
@@ -319,6 +378,9 @@ def main() -> int:
     args = parser.parse_args()
     if getattr(args, "command", None) == "square-off" and not args.all and not args.position_id:
         parser.error("square-off requires POSITION_ID or --all")
+    if getattr(args, "command", None) == "orders" and getattr(args, "orders_command", None) == "modify":
+        if args.price is None and args.trigger_price is None and args.quantity is None:
+            parser.error("orders modify requires --price, --trigger-price, or --quantity")
     try:
         payload = args.handler(args)
     except LiteAgentError as exc:

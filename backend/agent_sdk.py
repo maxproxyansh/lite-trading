@@ -93,10 +93,20 @@ class LiteAgentClient:
         params = {"expiry": expiry} if expiry else None
         return self._request("GET", "/api/v1/market/chain", params=params)
 
-    def candles(self, timeframe: str = "15m", before: int | None = None) -> dict[str, Any]:
+    def candles(
+        self,
+        timeframe: str = "15m",
+        before: int | None = None,
+        symbol: str | None = None,
+        security_id: str | None = None,
+    ) -> dict[str, Any]:
         params: dict[str, Any] = {"timeframe": timeframe}
         if before is not None:
             params["before"] = before
+        if symbol:
+            params["symbol"] = symbol
+        if security_id:
+            params["security_id"] = security_id
         return self._request("GET", "/api/v1/market/candles", params=params)
 
     def depth(self, symbol: str) -> dict[str, Any]:
@@ -104,6 +114,23 @@ class LiteAgentClient:
 
     def funds(self) -> dict[str, Any]:
         return self._request("GET", "/api/v1/agent/funds")
+
+    def alerts(self) -> list[dict[str, Any]]:
+        return self._request("GET", "/api/v1/agent/alerts")
+
+    def create_alert(
+        self,
+        symbol: str,
+        target_price: float,
+        direction: str | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {"symbol": symbol, "target_price": target_price}
+        if direction is not None:
+            payload["direction"] = direction
+        return self._request("POST", "/api/v1/agent/alerts", json_data=payload)
+
+    def delete_alert(self, alert_id: str) -> None:
+        return self._request("DELETE", f"/api/v1/agent/alerts/{alert_id}")
 
     def positions(self) -> list[dict[str, Any]]:
         return self._request("GET", "/api/v1/agent/positions")
@@ -120,8 +147,30 @@ class LiteAgentClient:
     def cancel_order(self, order_id: str) -> dict[str, Any]:
         return self._request("POST", f"/api/v1/agent/orders/{order_id}/cancel")
 
-    def square_off(self, position_id: str) -> dict[str, Any]:
-        return self._request("POST", f"/api/v1/agent/positions/{position_id}/square-off")
+    def modify_order(
+        self,
+        order_id: str,
+        *,
+        price: float | None = None,
+        trigger_price: float | None = None,
+        quantity: int | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {}
+        if price is not None:
+            payload["price"] = price
+        if trigger_price is not None:
+            payload["trigger_price"] = trigger_price
+        if quantity is not None:
+            payload["quantity"] = quantity
+        return self._request("PATCH", f"/api/v1/agent/orders/{order_id}", json_data=payload)
+
+    def close_position(self, position_id: str, quantity: int | None = None) -> dict[str, Any]:
+        params = {"quantity": quantity} if quantity is not None else None
+        return self._request("POST", f"/api/v1/agent/positions/{position_id}/close", params=params)
+
+    def square_off(self, position_id: str, quantity: int | None = None) -> dict[str, Any]:
+        params = {"quantity": quantity} if quantity is not None else None
+        return self._request("POST", f"/api/v1/agent/positions/{position_id}/square-off", params=params)
 
     def square_off_all(self) -> list[dict[str, Any]]:
         return self._request("POST", "/api/v1/agent/positions/square-off")

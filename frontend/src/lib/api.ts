@@ -23,6 +23,12 @@ export type CreateAgentKeyPayload = components['schemas']['CreateAgentKeyRequest
 export type AgentKeyResponse = components['schemas']['AgentKeyResponse']
 export type CreateUserPayload = components['schemas']['CreateUserRequest']
 export type QuotePatch = Partial<OptionQuote> & Pick<OptionQuote, 'symbol'> & { oi_lakhs?: number | null }
+export type FetchCandlesParams = {
+  timeframe: string
+  before?: number | null
+  symbol?: string | null
+  securityId?: string | null
+}
 export type QuoteBatchEvent = {
   active_expiry: string | null
   updated_at: string
@@ -172,10 +178,16 @@ export async function fetchOptionChain(expiry?: string) {
   return rawFetch<OptionChainResponse>(`/api/v1/market/chain${qs}`)
 }
 
-export async function fetchCandles(timeframe: string, before?: number | null) {
+export async function fetchCandles({ timeframe, before, symbol, securityId }: FetchCandlesParams) {
   const params = new URLSearchParams({ timeframe })
   if (before !== undefined && before !== null) {
     params.set('before', String(before))
+  }
+  if (symbol) {
+    params.set('symbol', symbol)
+  }
+  if (securityId) {
+    params.set('security_id', securityId)
   }
   return rawFetch<CandleResponse>(`/api/v1/market/candles?${params.toString()}`)
 }

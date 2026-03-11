@@ -338,6 +338,9 @@ export const useStore = create<AppState>((set) => ({
     const selectedQuote = syncSelectedQuote(state.selectedQuote, chain, chainIndex)
     const derived = derivePortfolioMetrics(positions, state.funds, state.analytics)
     const snapshot = stabilizeSnapshot(state.snapshot, chain?.snapshot ?? state.snapshot)
+    const optionChartSymbol = state.optionChartSymbol && chainIndex[state.optionChartSymbol]
+      ? state.optionChartSymbol
+      : null
 
     return {
       chain,
@@ -345,6 +348,7 @@ export const useStore = create<AppState>((set) => ({
       snapshot,
       selectedExpiry: state.selectedExpiry ?? chain?.snapshot.active_expiry ?? null,
       selectedQuote,
+      optionChartSymbol,
       positions,
       funds: derived.funds,
       analytics: derived.analytics,
@@ -386,6 +390,9 @@ export const useStore = create<AppState>((set) => ({
     const selectedQuote = syncSelectedQuote(state.selectedQuote, chain, chainIndex)
     const derived = derivePortfolioMetrics(positions, state.funds, state.analytics)
     const snapshot = stabilizeSnapshot(state.snapshot, chain.snapshot)
+    const optionChartSymbol = state.optionChartSymbol && chainIndex[state.optionChartSymbol]
+      ? state.optionChartSymbol
+      : null
 
     return {
       chain,
@@ -393,6 +400,7 @@ export const useStore = create<AppState>((set) => ({
       snapshot,
       selectedExpiry: state.selectedExpiry ?? chain.snapshot.active_expiry ?? null,
       selectedQuote,
+      optionChartSymbol,
       positions,
       funds: derived.funds,
       analytics: derived.analytics,

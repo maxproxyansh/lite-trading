@@ -23,22 +23,26 @@ const OptionsChainExpandedRow = memo(function OptionsChainExpandedRow({
   row,
   maxOI,
   selectedQuoteSymbol,
+  activeChartSymbol,
   onSelectQuote,
   onOrder,
-  addToast,
+  onViewChart,
   rowRef,
 }: {
   row: OptionChainRow
   maxOI: number
   selectedQuoteSymbol: string | null
+  activeChartSymbol: string | null
   onSelectQuote: (quote: OptionQuote) => void
   onOrder: (quote: OptionQuote, side: 'BUY' | 'SELL') => void
-  addToast: (type: 'success' | 'error' | 'info', message: string) => void
+  onViewChart: (quote: OptionQuote) => void
   rowRef?: Ref<HTMLDivElement>
 }) {
   const isATM = row.is_atm
   const activeCall = selectedQuoteSymbol === row.call.symbol
   const activePut = selectedQuoteSymbol === row.put.symbol
+  const chartingCall = activeChartSymbol === row.call.symbol
+  const chartingPut = activeChartSymbol === row.put.symbol
   const callOI = (row.call as Record<string, unknown>).oi_lakhs as number | null ?? null
   const putOI = (row.put as Record<string, unknown>).oi_lakhs as number | null ?? null
   const callOIPct = Math.min(100, callOI != null && maxOI > 0 ? (callOI / maxOI) * 100 : 0)
@@ -90,6 +94,18 @@ const OptionsChainExpandedRow = memo(function OptionsChainExpandedRow({
           <button
             onClick={(event) => {
               event.stopPropagation()
+              onViewChart(row.call)
+            }}
+            className={`flex h-[18px] w-[18px] items-center justify-center rounded-sm ${
+              chartingCall ? 'bg-brand text-bg-primary' : 'bg-[#2b2b2b] text-[#d0d0d0]'
+            }`}
+            title="View CE chart"
+          >
+            <LineChart size={10} />
+          </button>
+          <button
+            onClick={(event) => {
+              event.stopPropagation()
               onOrder(row.call, 'BUY')
             }}
             className="h-[18px] w-[18px] rounded-sm bg-btn-buy text-[9px] font-bold text-white"
@@ -115,13 +131,6 @@ const OptionsChainExpandedRow = memo(function OptionsChainExpandedRow({
             : 'bg-[#232323] text-[10px] font-semibold text-[#666]'
         }`}
       >
-        <button
-          onClick={() => addToast('info', `Option charts coming soon — ${row.strike} CE/PE`)}
-          className="mr-[2px] hidden h-[16px] w-[16px] items-center justify-center text-[#555] hover:text-[#aaa] group-hover:inline-flex"
-          title="View option chart"
-        >
-          <LineChart size={10} />
-        </button>
         <span>{row.strike}</span>
       </div>
 
@@ -139,6 +148,18 @@ const OptionsChainExpandedRow = memo(function OptionsChainExpandedRow({
           {formatLTP(row.put.ltp)}
         </span>
         <div className="absolute inset-0 hidden items-center justify-center gap-0.5 group-hover/pe:flex">
+          <button
+            onClick={(event) => {
+              event.stopPropagation()
+              onViewChart(row.put)
+            }}
+            className={`flex h-[18px] w-[18px] items-center justify-center rounded-sm ${
+              chartingPut ? 'bg-brand text-bg-primary' : 'bg-[#2b2b2b] text-[#d0d0d0]'
+            }`}
+            title="View PE chart"
+          >
+            <LineChart size={10} />
+          </button>
           <button
             onClick={(event) => {
               event.stopPropagation()
@@ -181,11 +202,12 @@ const OptionsChainExpandedRow = memo(function OptionsChainExpandedRow({
 })
 
 export default function OptionsChainExpanded({ rows, maxOI, activeExpiry }: Props) {
-  const { selectedQuoteSymbol, setSelectedQuote, openOrderModal, addToast } = useStore(useShallow((state) => ({
+  const { selectedQuoteSymbol, optionChartSymbol, setSelectedQuote, setOptionChartSymbol, openOrderModal } = useStore(useShallow((state) => ({
     selectedQuoteSymbol: state.selectedQuote?.symbol ?? null,
+    optionChartSymbol: state.optionChartSymbol,
     setSelectedQuote: state.setSelectedQuote,
+    setOptionChartSymbol: state.setOptionChartSymbol,
     openOrderModal: state.openOrderModal,
-    addToast: state.addToast,
   })))
   const atmRef = useRef<HTMLDivElement>(null)
   const scrolledExpiryRef = useRef<string | null>(null)
@@ -219,9 +241,13 @@ export default function OptionsChainExpanded({ rows, maxOI, activeExpiry }: Prop
           row={row}
           maxOI={maxOI}
           selectedQuoteSymbol={selectedQuoteSymbol}
+          activeChartSymbol={optionChartSymbol}
           onSelectQuote={setSelectedQuote}
+          onViewChart={(quote) => {
+            setSelectedQuote(quote)
+            setOptionChartSymbol(optionChartSymbol === quote.symbol ? null : quote.symbol)
+          }}
           onOrder={openOrderModal}
-          addToast={addToast}
           rowRef={row.is_atm ? atmRef : undefined}
         />
       ))}
