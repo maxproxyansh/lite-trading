@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -41,6 +42,7 @@ from services.auth_service import ensure_bootstrap_state  # noqa: E402
 from services.market_data import market_data_service  # noqa: E402
 from services.signal_adapter import signal_adapter  # noqa: E402
 from services.trading_service import process_open_orders_sync  # noqa: E402
+from services.webhook_service import process_webhook_deliveries_once, webhook_signature  # noqa: E402
 
 
 def _seed_market() -> None:
@@ -255,7 +257,8 @@ def test_agent_keys_are_portfolio_scoped_and_agent_orders_are_idempotent(client:
 
     agent_orders = client.get("/api/v1/agent/orders", headers={"X-API-Key": secret})
     assert agent_orders.status_code == 200
-    assert len(agent_orders.json()) == 1
+    assert agent_orders.json()["total"] == 1
+    assert len(agent_orders.json()["items"]) == 1
 
     agent_positions = client.get("/api/v1/agent/positions", headers={"X-API-Key": secret})
     assert agent_positions.status_code == 200
@@ -527,6 +530,241 @@ def test_agent_can_modify_open_order_and_partially_close_position(client: TestCl
     after_full_close = client.get("/api/v1/agent/positions", headers={"X-API-Key": api_key})
     assert after_full_close.status_code == 200, after_full_close.text
     assert after_full_close.json() == []
+
+
+def test_agent_orders_support_filters_and_pagination(client: TestClient) -> None:
+    market_data_service.quotes["BANKNIFTY_2026-03-12_51000_CE"] = {
+        "symbol": "BANKNIFTY_2026-03-12_51000_CE",
+        "security_id": "98765",
+        "strike": 51000,
+        "option_type": "CE",
+        "expiry": "2026-03-12",
+        "ltp": 210.0,
+        "bid": 209.5,
+        "ask": 210.5,
+        "bid_qty": 100,
+        "ask_qty": 100,
+        "oi": 50000,
+        "volume": 12000,
+    }
+
+    bootstrap = _bootstrap_agent(client, agent_name="filter-agent")
+    api_key = bootstrap["api_key"]
+    portfolio_id = bootstrap["portfolio"]["id"]
+
+    filled = client.post(
+        "/api/v1/agent/orders",
+        headers={"X-API-Key": api_key},
+        json={
+            "portfolio_id": portfolio_id,
+            "symbol": "NIFTY_2026-03-12_22500_CE",
+            "expiry": "2026-03-12",
+            "strike": 22500,
+            "option_type": "CE",
+            "side": "BUY",
+            "order_type": "MARKET",
+            "product": "NRML",
+            "validity": "DAY",
+            "lots": 1,
+            "idempotency_key": "orders-filter-filled",
+        },
+    )
+    assert filled.status_code == 200, filled.text
+
+    open_nifty = client.post(
+        "/api/v1/agent/orders",
+        headers={"X-API-Key": api_key},
+        json={
+            "portfolio_id": portfolio_id,
+            "symbol": "NIFTY_2026-03-12_22500_CE",
+            "expiry": "2026-03-12",
+            "strike": 22500,
+            "option_type": "CE",
+            "side": "BUY",
+            "order_type": "LIMIT",
+            "product": "NRML",
+            "validity": "DAY",
+            "lots": 1,
+            "price": 100.0,
+            "idempotency_key": "orders-filter-open-nifty",
+        },
+    )
+    assert open_nifty.status_code == 200, open_nifty.text
+
+    open_banknifty = client.post(
+        "/api/v1/agent/orders",
+        headers={"X-API-Key": api_key},
+        json={
+            "portfolio_id": portfolio_id,
+            "symbol": "BANKNIFTY_2026-03-12_51000_CE",
+            "expiry": "2026-03-12",
+            "strike": 51000,
+            "option_type": "CE",
+            "side": "BUY",
+            "order_type": "LIMIT",
+            "product": "NRML",
+            "validity": "DAY",
+            "lots": 1,
+            "price": 200.0,
+            "idempotency_key": "orders-filter-open-banknifty",
+        },
+    )
+    assert open_banknifty.status_code == 200, open_banknifty.text
+
+    db = SessionLocal()
+    try:
+        from models import Order
+
+        timestamps = {
+            filled.json()["id"]: datetime(2026, 3, 1, 10, 0, tzinfo=timezone.utc),
+            open_nifty.json()["id"]: datetime(2026, 3, 4, 10, 0, tzinfo=timezone.utc),
+            open_banknifty.json()["id"]: datetime(2026, 3, 6, 10, 0, tzinfo=timezone.utc),
+        }
+        for order_id, created_at in timestamps.items():
+            order = db.query(Order).filter(Order.id == order_id).first()
+            assert order is not None
+            order.created_at = created_at
+            order.requested_at = created_at
+        db.commit()
+    finally:
+        db.close()
+
+    filtered = client.get(
+        "/api/v1/agent/orders?status=OPEN&symbol=BANKNIFTY&from=2026-03-05&to=2026-03-10&offset=0&limit=5&sort=asc",
+        headers={"X-API-Key": api_key},
+    )
+    assert filtered.status_code == 200, filtered.text
+    payload = filtered.json()
+    assert payload["total"] == 1
+    assert payload["offset"] == 0
+    assert payload["limit"] == 5
+    assert len(payload["items"]) == 1
+    assert payload["items"][0]["id"] == open_banknifty.json()["id"]
+
+    paged = client.get(
+        "/api/v1/agent/orders?offset=0&limit=1&sort=asc",
+        headers={"X-API-Key": api_key},
+    )
+    assert paged.status_code == 200, paged.text
+    assert paged.json()["total"] == 3
+    assert len(paged.json()["items"]) == 1
+    assert paged.json()["items"][0]["id"] == filled.json()["id"]
+
+
+def test_rate_limited_endpoints_emit_headers_on_success_and_429(client: TestClient) -> None:
+    success = client.post(
+        "/api/v1/agent/bootstrap",
+        json={
+            "email": "admin@lite.trade",
+            "password": "lite-admin-123",
+            "agent_name": "rate-limit-agent",
+            "portfolio_kind": "agent",
+        },
+    )
+    assert success.status_code == 200, success.text
+    for header in ("X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"):
+        assert header in success.headers
+
+    _rate_buckets["agent:bootstrap:ip:testclient"] = [time.time()] * 10
+    limited = client.post(
+        "/api/v1/agent/bootstrap",
+        json={
+            "email": "admin@lite.trade",
+            "password": "lite-admin-123",
+            "agent_name": "rate-limit-agent-2",
+            "portfolio_kind": "agent",
+        },
+    )
+    assert limited.status_code == 429, limited.text
+    assert limited.headers["X-RateLimit-Limit"] == "10"
+    assert limited.headers["X-RateLimit-Remaining"] == "0"
+    assert limited.headers["X-RateLimit-Reset"]
+
+
+def test_agent_webhooks_register_and_deliver_signed_events(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    bootstrap = _bootstrap_agent(
+        client,
+        agent_name="webhook-agent",
+        scopes=[
+            "orders:read",
+            "orders:write",
+            "positions:read",
+            "positions:write",
+            "alerts:read",
+            "alerts:write",
+            "funds:read",
+            "webhooks:read",
+            "webhooks:write",
+        ],
+    )
+    api_key = bootstrap["api_key"]
+    portfolio_id = bootstrap["portfolio"]["id"]
+
+    created = client.post(
+        "/api/v1/agent/webhooks",
+        headers={"X-API-Key": api_key},
+        json={
+            "url": "https://agent.example/webhooks",
+            "events": ["order.filled", "position.closed"],
+        },
+    )
+    assert created.status_code == 201, created.text
+    secret = created.json()["secret"]
+
+    listed = client.get("/api/v1/agent/webhooks", headers={"X-API-Key": api_key})
+    assert listed.status_code == 200, listed.text
+    assert len(listed.json()) == 1
+    assert "secret" not in listed.json()[0]
+
+    captured: list[tuple[str, bytes, dict[str, str]]] = []
+
+    async def fake_post(self, url, content=None, headers=None):  # noqa: ANN001
+        captured.append((url, content or b"", headers or {}))
+
+        class Response:
+            status_code = 200
+
+        return Response()
+
+    monkeypatch.setattr("httpx.AsyncClient.post", fake_post)
+
+    order = client.post(
+        "/api/v1/agent/orders",
+        headers={"X-API-Key": api_key},
+        json={
+            "portfolio_id": portfolio_id,
+            "symbol": "NIFTY_2026-03-12_22500_CE",
+            "expiry": "2026-03-12",
+            "strike": 22500,
+            "option_type": "CE",
+            "side": "BUY",
+            "order_type": "MARKET",
+            "product": "NRML",
+            "validity": "DAY",
+            "lots": 1,
+            "idempotency_key": "webhook-order-filled",
+        },
+    )
+    assert order.status_code == 200, order.text
+
+    delivered = asyncio.run(process_webhook_deliveries_once())
+    assert delivered >= 1
+    assert captured
+    url, body, headers = captured[0]
+    assert url == "https://agent.example/webhooks"
+    assert headers["X-Webhook-Event"] == "order.filled"
+    assert headers["X-Webhook-Signature"] == webhook_signature(body, secret)
+
+    payload = json.loads(body.decode("utf-8"))
+    assert payload["event"] == "order.filled"
+    assert payload["portfolio_id"] == portfolio_id
+    assert payload["data"]["order_id"] == order.json()["id"]
+
+    deleted = client.delete(
+        f"/api/v1/agent/webhooks/{created.json()['id']}",
+        headers={"X-API-Key": api_key},
+    )
+    assert deleted.status_code == 204, deleted.text
 
 
 def test_unauthenticated_market_access_rejected(client: TestClient) -> None:

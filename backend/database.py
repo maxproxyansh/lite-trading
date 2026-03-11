@@ -87,6 +87,8 @@ def _run_migrations(eng) -> None:
                     "ON orders (idempotency_key) WHERE idempotency_key IS NOT NULL"
                 )
             )
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_orders_portfolio_status ON orders (portfolio_id, status)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_orders_portfolio_created_at ON orders (portfolio_id, created_at)"))
             logger.info("Migration: ensured unique order idempotency index")
 
     if "alerts" in inspector.get_table_names():

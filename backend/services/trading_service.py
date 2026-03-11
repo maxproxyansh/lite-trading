@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_HALF_UP
-from datetime import datetime, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -14,6 +14,7 @@ from models import Fill, Order, Portfolio, Position
 from schemas import FundsResponse, OrderModifyRequest, OrderRequest
 from services.audit import log_audit
 from services.market_data import market_data_service
+from services.webhook_service import enqueue_webhook_event
 
 
 settings = get_settings()
@@ -306,6 +307,83 @@ def _refresh_position_mark(position: Position) -> None:
         position.last_price = float(quote["ltp"])
 
 
+def _position_payload(position: Position, *, previous_quantity: int | None = None) -> dict[str, Any]:
+    payload = {
+        "position_id": position.id,
+        "portfolio_id": position.portfolio_id,
+        "symbol": position.symbol,
+        "product": position.product,
+        "expiry": position.expiry,
+        "strike": position.strike,
+        "option_type": position.option_type,
+        "net_quantity": position.net_quantity,
+        "average_open_price": float(position.average_open_price),
+        "last_price": float(position.last_price),
+        "blocked_margin": float(position.blocked_margin),
+        "realized_pnl": float(position.realized_pnl),
+    }
+    if previous_quantity is not None:
+        payload["previous_quantity"] = previous_quantity
+    return payload
+
+
+def _queue_position_events(db: Session, *, position: Position, previous_quantity: int, occurred_at: datetime) -> None:
+    previous_sign = 0 if previous_quantity == 0 else (1 if previous_quantity > 0 else -1)
+    current_sign = 0 if position.net_quantity == 0 else (1 if position.net_quantity > 0 else -1)
+
+    if previous_sign == 0 and current_sign != 0:
+        enqueue_webhook_event(
+            db,
+            portfolio_id=position.portfolio_id,
+            event_type="position.opened",
+            payload={
+                "event": "position.opened",
+                "occurred_at": occurred_at.isoformat(),
+                "portfolio_id": position.portfolio_id,
+                "data": _position_payload(position),
+            },
+        )
+        return
+
+    if previous_sign != 0 and current_sign == 0:
+        enqueue_webhook_event(
+            db,
+            portfolio_id=position.portfolio_id,
+            event_type="position.closed",
+            payload={
+                "event": "position.closed",
+                "occurred_at": occurred_at.isoformat(),
+                "portfolio_id": position.portfolio_id,
+                "data": _position_payload(position, previous_quantity=previous_quantity),
+            },
+        )
+        return
+
+    if previous_sign != 0 and current_sign != 0 and previous_sign != current_sign:
+        enqueue_webhook_event(
+            db,
+            portfolio_id=position.portfolio_id,
+            event_type="position.closed",
+            payload={
+                "event": "position.closed",
+                "occurred_at": occurred_at.isoformat(),
+                "portfolio_id": position.portfolio_id,
+                "data": _position_payload(position, previous_quantity=previous_quantity),
+            },
+        )
+        enqueue_webhook_event(
+            db,
+            portfolio_id=position.portfolio_id,
+            event_type="position.opened",
+            payload={
+                "event": "position.opened",
+                "occurred_at": occurred_at.isoformat(),
+                "portfolio_id": position.portfolio_id,
+                "data": _position_payload(position),
+            },
+        )
+
+
 def _position_unrealized(position: Position) -> float:
     if position.net_quantity == 0:
         return 0.0
@@ -444,6 +522,7 @@ def _fill_order(db: Session, order: Order, *, fill_price: float, actor_type: str
         option_type=order.option_type,
         product=order.product,
     )
+    previous_quantity = position.net_quantity
 
     if was_pending and order.side == "BUY":
         portfolio.blocked_premium = _to_float(max(_money(portfolio.blocked_premium) - _money(order.premium_required), Decimal("0.00")))
@@ -491,6 +570,33 @@ def _fill_order(db: Session, order: Order, *, fill_price: float, actor_type: str
         entity_type="order",
         entity_id=order.id,
         details={"symbol": order.symbol, "price": fill_price, "quantity": order.quantity},
+    )
+    enqueue_webhook_event(
+        db,
+        portfolio_id=order.portfolio_id,
+        event_type="order.filled",
+        payload={
+            "event": "order.filled",
+            "occurred_at": (order.filled_at or _utcnow()).isoformat(),
+            "portfolio_id": order.portfolio_id,
+            "data": {
+                "order_id": order.id,
+                "symbol": order.symbol,
+                "side": order.side,
+                "status": order.status,
+                "quantity": order.quantity,
+                "average_price": float(order.average_price) if order.average_price is not None else None,
+                "filled_quantity": order.filled_quantity,
+                "product": order.product,
+                "source": order.source,
+            },
+        },
+    )
+    _queue_position_events(
+        db,
+        position=position,
+        previous_quantity=previous_quantity,
+        occurred_at=order.filled_at or _utcnow(),
     )
 
 
@@ -549,6 +655,36 @@ def list_orders(db: Session, portfolio_id: str | None = None) -> list[Order]:
     return query.all()
 
 
+def search_orders(
+    db: Session,
+    *,
+    portfolio_id: str,
+    statuses: list[str] | None = None,
+    symbol: str | None = None,
+    created_from: date | None = None,
+    created_to: date | None = None,
+    offset: int = 0,
+    limit: int = 50,
+    sort: str = "desc",
+) -> tuple[list[Order], int]:
+    query = db.query(Order).filter(Order.portfolio_id == portfolio_id)
+    if statuses:
+        query = query.filter(Order.status.in_(statuses))
+    if symbol:
+        query = query.filter(Order.symbol.ilike(f"%{symbol}%"))
+    if created_from is not None:
+        start = datetime.combine(created_from, time.min, tzinfo=timezone.utc)
+        query = query.filter(Order.created_at >= start)
+    if created_to is not None:
+        end = datetime.combine(created_to + timedelta(days=1), time.min, tzinfo=timezone.utc)
+        query = query.filter(Order.created_at < end)
+
+    total = query.count()
+    ordering = Order.created_at.asc() if sort == "asc" else Order.created_at.desc()
+    items = query.order_by(ordering, Order.id.asc()).offset(offset).limit(limit).all()
+    return items, total
+
+
 def get_order(db: Session, order_id: str, *, portfolio_id: str | None = None) -> Order:
     query = db.query(Order).filter(Order.id == order_id)
     if portfolio_id:
@@ -594,6 +730,25 @@ def cancel_order(
         entity_type="order",
         entity_id=order.id,
         details={"symbol": order.symbol, "portfolio_id": order.portfolio_id},
+    )
+    enqueue_webhook_event(
+        db,
+        portfolio_id=order.portfolio_id,
+        event_type="order.cancelled",
+        payload={
+            "event": "order.cancelled",
+            "occurred_at": order.updated_at.isoformat(),
+            "portfolio_id": order.portfolio_id,
+            "data": {
+                "order_id": order.id,
+                "symbol": order.symbol,
+                "status": order.status,
+                "side": order.side,
+                "quantity": order.quantity,
+                "product": order.product,
+                "source": order.source,
+            },
+        },
     )
     db.commit()
     db.refresh(order)

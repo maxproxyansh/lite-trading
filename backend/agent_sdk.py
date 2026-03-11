@@ -135,8 +135,27 @@ class LiteAgentClient:
     def positions(self) -> list[dict[str, Any]]:
         return self._request("GET", "/api/v1/agent/positions")
 
-    def orders(self) -> list[dict[str, Any]]:
-        return self._request("GET", "/api/v1/agent/orders")
+    def orders(
+        self,
+        *,
+        status: str | None = None,
+        symbol: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        offset: int = 0,
+        limit: int = 50,
+        sort: str = "desc",
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {"offset": offset, "limit": limit, "sort": sort}
+        if status:
+            params["status"] = status
+        if symbol:
+            params["symbol"] = symbol
+        if date_from:
+            params["from"] = date_from
+        if date_to:
+            params["to"] = date_to
+        return self._request("GET", "/api/v1/agent/orders", params=params)
 
     def order(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._request("POST", "/api/v1/agent/orders", json_data=payload)
@@ -174,6 +193,15 @@ class LiteAgentClient:
 
     def square_off_all(self) -> list[dict[str, Any]]:
         return self._request("POST", "/api/v1/agent/positions/square-off")
+
+    def webhooks(self) -> list[dict[str, Any]]:
+        return self._request("GET", "/api/v1/agent/webhooks")
+
+    def create_webhook(self, url: str, events: list[str]) -> dict[str, Any]:
+        return self._request("POST", "/api/v1/agent/webhooks", json_data={"url": url, "events": events})
+
+    def delete_webhook(self, webhook_id: str) -> None:
+        return self._request("DELETE", f"/api/v1/agent/webhooks/{webhook_id}")
 
     def dhan_funds(self) -> dict[str, Any]:
         return self._request("GET", "/api/v1/agent/dhan/fundlimit")

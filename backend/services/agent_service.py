@@ -35,6 +35,7 @@ def agent_links() -> dict[str, str]:
         "orders": f"{prefix}/agent/orders",
         "positions": f"{prefix}/agent/positions",
         "alerts": f"{prefix}/agent/alerts",
+        "webhooks": f"{prefix}/agent/webhooks",
         "funds": f"{prefix}/agent/funds",
         "signals": f"{prefix}/agent/signals",
         "bootstrap": f"{prefix}/agent/bootstrap",

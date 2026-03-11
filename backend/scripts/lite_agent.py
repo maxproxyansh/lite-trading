@@ -186,7 +186,19 @@ def handle_positions(args: argparse.Namespace) -> Any:
 
 def handle_orders_list(args: argparse.Namespace) -> Any:
     client, _, _ = make_client(args)
-    return client.dhan_orders() if args.dhan else client.orders()
+    if args.dhan:
+        if args.status or args.symbol or args.date_from or args.date_to or args.offset != 0 or args.limit != 50 or args.sort != "desc":
+            raise LiteAgentError("Dhan order listing does not support filters or pagination")
+        return client.dhan_orders()
+    return client.orders(
+        status=args.status,
+        symbol=args.symbol,
+        date_from=args.date_from,
+        date_to=args.date_to,
+        offset=args.offset,
+        limit=args.limit,
+        sort=args.sort,
+    )
 
 
 def handle_orders_get(args: argparse.Namespace) -> Any:
@@ -236,6 +248,23 @@ def handle_square_off(args: argparse.Namespace) -> Any:
     if args.all:
         return client.square_off_all()
     return client.close_position(args.position_id, quantity=args.quantity)
+
+
+def handle_webhooks_list(args: argparse.Namespace) -> Any:
+    client, _, _ = make_client(args)
+    return client.webhooks()
+
+
+def handle_webhooks_create(args: argparse.Namespace) -> Any:
+    client, _, _ = make_client(args)
+    events = [event.strip() for event in args.events.split(",") if event.strip()]
+    return client.create_webhook(args.url, events)
+
+
+def handle_webhooks_delete(args: argparse.Namespace) -> Any:
+    client, _, _ = make_client(args)
+    client.delete_webhook(args.webhook_id)
+    return {"deleted": True, "webhook_id": args.webhook_id}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -321,11 +350,33 @@ def build_parser() -> argparse.ArgumentParser:
     positions.add_argument("--dhan", action="store_true", help="Use the Dhan-compatible response shape")
     positions.set_defaults(handler=handle_positions)
 
+    webhooks = subparsers.add_parser("webhooks", help="Manage agent callback webhooks")
+    webhook_subparsers = webhooks.add_subparsers(dest="webhooks_command", required=True)
+
+    webhooks_list = webhook_subparsers.add_parser("list", help="List registered webhooks")
+    webhooks_list.set_defaults(handler=handle_webhooks_list)
+
+    webhooks_create = webhook_subparsers.add_parser("create", help="Register a webhook")
+    webhooks_create.add_argument("--url", required=True)
+    webhooks_create.add_argument("--events", required=True, help="Comma-separated event list")
+    webhooks_create.set_defaults(handler=handle_webhooks_create)
+
+    webhooks_delete = webhook_subparsers.add_parser("delete", help="Delete a webhook")
+    webhooks_delete.add_argument("webhook_id")
+    webhooks_delete.set_defaults(handler=handle_webhooks_delete)
+
     orders = subparsers.add_parser("orders", help="List, place, inspect, or cancel orders")
     order_subparsers = orders.add_subparsers(dest="orders_command", required=True)
 
     orders_list = order_subparsers.add_parser("list", help="List orders")
     orders_list.add_argument("--dhan", action="store_true", help="Use the Dhan-compatible response shape")
+    orders_list.add_argument("--status", default=None, help="Comma-separated statuses")
+    orders_list.add_argument("--symbol", default=None, help="Partial symbol match")
+    orders_list.add_argument("--from", dest="date_from", default=None, help="Inclusive creation date (YYYY-MM-DD)")
+    orders_list.add_argument("--to", dest="date_to", default=None, help="Inclusive creation date (YYYY-MM-DD)")
+    orders_list.add_argument("--offset", type=int, default=0)
+    orders_list.add_argument("--limit", type=int, default=50)
+    orders_list.add_argument("--sort", choices=("asc", "desc"), default="desc")
     orders_list.set_defaults(handler=handle_orders_list)
 
     orders_get = order_subparsers.add_parser("get", help="Fetch one order")
