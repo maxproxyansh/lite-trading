@@ -1,4 +1,5 @@
 import { CheckCircle2, Info, TriangleAlert, X } from 'lucide-react'
+import { useShallow } from 'zustand/react/shallow'
 
 import { useStore } from '../store/useStore'
 
@@ -9,7 +10,10 @@ const config = {
 } as const
 
 export default function Toast() {
-  const { toasts, removeToast } = useStore()
+  const { toasts, removeToast } = useStore(useShallow((state) => ({
+    toasts: state.toasts,
+    removeToast: state.removeToast,
+  })))
 
   return (
     <div className="fixed bottom-3 right-3 z-[120] space-y-2">

@@ -1,8 +1,12 @@
 import { useStore } from '../store/useStore'
 import { SkeletonTable } from '../components/Skeleton'
+import { useShallow } from 'zustand/react/shallow'
 
 export default function History() {
-  const { orders, portfolioLoading } = useStore()
+  const { orders, portfolioLoading } = useStore(useShallow((state) => ({
+    orders: state.orders,
+    portfolioLoading: state.portfolioLoading,
+  })))
   const fills = orders.filter((order) => order.status === 'FILLED')
 
   if (portfolioLoading) return <SkeletonTable rows={8} cols={6} />

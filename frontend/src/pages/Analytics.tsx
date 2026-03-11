@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { createChart } from 'lightweight-charts'
 import type { IChartApi, Time } from 'lightweight-charts'
+import { useShallow } from 'zustand/react/shallow'
 
 import LoadingState from '../components/LoadingState'
 import PnLHeatmap from '../components/PnLHeatmap'
@@ -93,7 +94,10 @@ function PnlTable({ rows }: { rows: Array<{ date: string; pnl: number }> }) {
 }
 
 export default function Analytics() {
-  const { analytics, portfolioLoading } = useStore()
+  const { analytics, portfolioLoading } = useStore(useShallow((state) => ({
+    analytics: state.analytics,
+    portfolioLoading: state.portfolioLoading,
+  })))
 
   const equityCurve: Array<{ date: string; value: number }> = Array.isArray(analytics?.equity_curve)
     ? analytics.equity_curve

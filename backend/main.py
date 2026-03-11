@@ -17,7 +17,7 @@ from services.market_data import market_data_service
 from services.auth_service import ensure_bootstrap_state
 from services.signal_adapter import signal_adapter
 from services.trading_service import process_open_orders_sync
-from routers.websocket import broadcast_message
+from routers.websocket import broadcast_message, broadcast_portfolio_message
 
 
 settings = get_settings()
@@ -25,13 +25,20 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("lite.backend")
 
 
-async def _process_market_side_effects() -> None:
+async def _process_market_side_effects(symbols: set[str]) -> None:
     db = SessionLocal()
+    changed_portfolios: set[str] = set()
     try:
         sync_alerts(db)
-        process_open_orders_sync(db)
+        changed_portfolios = process_open_orders_sync(db, symbols)
     finally:
         db.close()
+    for portfolio_id in changed_portfolios:
+        await broadcast_portfolio_message(
+            portfolio_id,
+            "portfolio.refresh",
+            {"portfolio_id": portfolio_id, "reason": "order-status"},
+        )
 
 
 @asynccontextmanager

@@ -4,7 +4,7 @@ import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useStore } from '../store/useStore'
 
 export default function DepthCard() {
-  const { selectedQuote } = useStore()
+  const selectedQuote = useStore((state) => state.selectedQuote)
   const [expanded, setExpanded] = useState(false)
 
   if (!selectedQuote) return null

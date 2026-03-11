@@ -1,10 +1,16 @@
 import { useState } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 
 import { createAgentKey, createUser } from '../lib/api'
 import { useStore } from '../store/useStore'
 
 export default function Settings() {
-  const { user, addToast, selectedPortfolioId, portfolios } = useStore()
+  const { user, addToast, selectedPortfolioId, portfolios } = useStore(useShallow((state) => ({
+    user: state.user,
+    addToast: state.addToast,
+    selectedPortfolioId: state.selectedPortfolioId,
+    portfolios: state.portfolios,
+  })))
   const [agentKeyName, setAgentKeyName] = useState('trading-agent')
   const [newUserEmail, setNewUserEmail] = useState('')
   const [newUserName, setNewUserName] = useState('')

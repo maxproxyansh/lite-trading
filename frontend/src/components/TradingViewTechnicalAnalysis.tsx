@@ -8,8 +8,9 @@ export default function TradingViewTechnicalAnalysis({ symbol = "NSE:NIFTY" }: P
   const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (!containerRef.current) return
-    containerRef.current.innerHTML = ''
+    const container = containerRef.current
+    if (!container) return
+    container.innerHTML = ''
 
     const script = document.createElement('script')
     script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-technical-analysis.js'
@@ -27,10 +28,10 @@ export default function TradingViewTechnicalAnalysis({ symbol = "NSE:NIFTY" }: P
       locale: "en"
     })
 
-    containerRef.current.appendChild(script)
+    container.appendChild(script)
 
     return () => {
-      if (containerRef.current) containerRef.current.innerHTML = ''
+      container.innerHTML = ''
     }
   }, [symbol])
 

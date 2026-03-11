@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 
 import { submitOrder } from '../lib/api'
 import { useStore } from '../store/useStore'
@@ -9,7 +10,13 @@ const ORDER_SIDES = ['BUY', 'SELL'] as const
 const NIFTY_LOT_SIZE = 65
 
 export default function OrderTicket() {
-  const { selectedQuote, selectedPortfolioId, latestSignal, addToast } = useStore()
+  const { selectedQuote, selectedPortfolioId, latestSignal, addToast, requestPortfolioRefresh } = useStore(useShallow((state) => ({
+    selectedQuote: state.selectedQuote,
+    selectedPortfolioId: state.selectedPortfolioId,
+    latestSignal: state.latestSignal,
+    addToast: state.addToast,
+    requestPortfolioRefresh: state.requestPortfolioRefresh,
+  })))
   const [side, setSide] = useState<(typeof ORDER_SIDES)[number]>('BUY')
   const [orderType, setOrderType] = useState<(typeof ORDER_TYPES)[number]>('MARKET')
   const [product, setProduct] = useState<(typeof PRODUCTS)[number]>('NRML')
@@ -178,6 +185,7 @@ export default function OrderTicket() {
               idempotency_key: crypto.randomUUID(),
             })
             addToast('success', `${order.status}: ${order.side} ${order.symbol} x ${order.quantity}`)
+            requestPortfolioRefresh(selectedPortfolioId)
             setPrice('')
             setTriggerPrice('')
           } catch (error) {

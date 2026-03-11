@@ -1,7 +1,13 @@
+import { useShallow } from 'zustand/react/shallow'
+
 import { useStore } from '../store/useStore'
 
 export default function SignalPanel() {
-  const { latestSignal, setSelectedQuote, chain } = useStore()
+  const { latestSignal, setSelectedQuote, chain } = useStore(useShallow((state) => ({
+    latestSignal: state.latestSignal,
+    setSelectedQuote: state.setSelectedQuote,
+    chain: state.chain,
+  })))
 
   if (!latestSignal) return null
 

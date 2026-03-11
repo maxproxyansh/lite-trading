@@ -1,4 +1,5 @@
 import { useLocation, useNavigate } from 'react-router-dom'
+import { useShallow } from 'zustand/react/shallow'
 
 import Logo from '../components/Logo'
 import { logout } from '../lib/api'
@@ -23,7 +24,15 @@ export default function Header() {
     setSelectedPortfolioId,
     user,
     setSession,
-  } = useStore()
+  } = useStore(useShallow((state) => ({
+    snapshot: state.snapshot,
+    wsStatus: state.wsStatus,
+    portfolios: state.portfolios,
+    selectedPortfolioId: state.selectedPortfolioId,
+    setSelectedPortfolioId: state.setSelectedPortfolioId,
+    user: state.user,
+    setSession: state.setSession,
+  })))
 
   return (
     <header className="flex h-[44px] shrink-0 items-center border-b border-border-primary bg-bg-header">

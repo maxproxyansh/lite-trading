@@ -1,12 +1,16 @@
 import LoadingState from '../components/LoadingState'
 import { useStore } from '../store/useStore'
+import { useShallow } from 'zustand/react/shallow'
 
 function formatCurrency(value: number): string {
   return `₹${value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 export default function Funds() {
-  const { funds, portfolioLoading } = useStore()
+  const { funds, portfolioLoading } = useStore(useShallow((state) => ({
+    funds: state.funds,
+    portfolioLoading: state.portfolioLoading,
+  })))
 
   const breakdownItems = [
     { label: 'Cash Balance', value: funds?.cash_balance ?? 0, isPnl: false },

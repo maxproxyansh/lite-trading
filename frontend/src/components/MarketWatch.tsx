@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Search } from 'lucide-react'
+import { useShallow } from 'zustand/react/shallow'
 
 import { useStore } from '../store/useStore'
 
@@ -9,7 +10,12 @@ export default function MarketWatch() {
   const [query, setQuery] = useState('')
   const [showSearch, setShowSearch] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
-  const { chain, selectedQuote, setSelectedQuote, snapshot } = useStore()
+  const { chain, selectedQuote, setSelectedQuote, snapshot } = useStore(useShallow((state) => ({
+    chain: state.chain,
+    selectedQuote: state.selectedQuote,
+    setSelectedQuote: state.setSelectedQuote,
+    snapshot: state.snapshot,
+  })))
 
   const quotes = useMemo(() => {
     if (!chain) return []

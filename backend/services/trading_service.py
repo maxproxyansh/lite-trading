@@ -470,16 +470,17 @@ async def process_open_orders() -> None:
     return None
 
 
-def process_open_orders_sync(db: Session) -> int:
-    changed = 0
+def process_open_orders_sync(db: Session, symbols: set[str] | None = None) -> set[str]:
+    changed_portfolios: set[str] = set()
     mutated = False
-    open_orders = _lock_query(
+    query = (
         db.query(Order)
         .filter(Order.status.in_(("OPEN", "TRIGGER_PENDING")))
-        .order_by(Order.requested_at.asc()),
-        db,
-        skip_locked=True,
-    ).all()
+        .order_by(Order.requested_at.asc())
+    )
+    if symbols:
+        query = query.filter(Order.symbol.in_(sorted(symbols)))
+    open_orders = _lock_query(query, db, skip_locked=True).all()
     for order in open_orders:
         quote_data = market_data_service.get_quote(order.symbol)
         if not quote_data:
@@ -492,9 +493,6 @@ def process_open_orders_sync(db: Session) -> int:
             ask=quote_data.get("ask"),
         )
         should_fill, next_status = _should_fill(order.order_type, order.side, quote, order.price, order.trigger_price)
-        if order.last_price != quote.ltp:
-            mutated = True
-            order.last_price = quote.ltp
         if should_fill:
             _fill_order(
                 db,
@@ -503,15 +501,17 @@ def process_open_orders_sync(db: Session) -> int:
                 actor_type="system",
                 actor_id=None,
             )
-            changed += 1
             mutated = True
+            changed_portfolios.add(order.portfolio_id)
         else:
             if order.status != next_status:
                 mutated = True
                 order.status = next_status
+                order.last_price = quote.ltp
+                changed_portfolios.add(order.portfolio_id)
     if mutated:
         db.commit()
-    return changed
+    return changed_portfolios
 
 
 def list_orders(db: Session, portfolio_id: str | None = None) -> list[Order]:

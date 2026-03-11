@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Bell, X } from 'lucide-react'
 import { createChart, LineStyle } from 'lightweight-charts'
 import type { CandlestickData, IChartApi, IPriceLine, ISeriesApi, MouseEventParams, Time } from 'lightweight-charts'
+import { useShallow } from 'zustand/react/shallow'
 
 import { createAlert, deleteAlert, fetchAlerts, fetchCandles, type AlertSummary } from '../lib/api'
 import { useStore } from '../store/useStore'
@@ -19,14 +20,30 @@ function getChartColors() {
   return { bgPrimary, bgSecondary, textMuted, borderPrimary, bullColor, bearColor }
 }
 
+function timeframeSeconds(timeframe: (typeof TIMEFRAMES)[number]) {
+  const map = {
+    '1m': 60,
+    '5m': 300,
+    '15m': 900,
+    '1h': 3600,
+    D: 86400,
+  } as const
+  return map[timeframe]
+}
+
 export default function NiftyChart() {
-  const { addToast, optionChartSymbol, setOptionChartSymbol, snapshot } = useStore()
+  const { addToast, optionChartSymbol, setOptionChartSymbol, spot } = useStore(useShallow((state) => ({
+    addToast: state.addToast,
+    optionChartSymbol: state.optionChartSymbol,
+    setOptionChartSymbol: state.setOptionChartSymbol,
+    spot: state.snapshot?.spot ?? null,
+  })))
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
   const priceLinesRef = useRef<Map<string, IPriceLine>>(new Map())
   const announcedAlertIdsRef = useRef<Set<string>>(new Set())
-  const lastCandleRef = useRef<CandlestickData | null>(null)
+  const lastBarRef = useRef<CandlestickData<Time> | null>(null)
   const [timeframe, setTimeframe] = useState<(typeof TIMEFRAMES)[number]>('D')
   const [loading, setLoading] = useState(true)
   const [candleCount, setCandleCount] = useState(0)
@@ -36,7 +53,10 @@ export default function NiftyChart() {
 
   useEffect(() => {
     const container = containerRef.current
-    if (!container) return
+    if (!container) {
+      return
+    }
+
     const colors = getChartColors()
     const chart = createChart(container, {
       width: container.clientWidth,
@@ -123,47 +143,82 @@ export default function NiftyChart() {
 
   useEffect(() => {
     let active = true
+
     fetchCandles(timeframe)
       .then((response) => {
-        if (!active) return
-        const candles: CandlestickData[] = response.candles.map((candle) => ({
+        if (!active) {
+          return
+        }
+        const candles: CandlestickData<Time>[] = response.candles.map((candle) => ({
           time: candle.time as Time,
           open: candle.open,
           high: candle.high,
           low: candle.low,
           close: candle.close,
         }))
+        lastBarRef.current = candles.at(-1) ?? null
         seriesRef.current?.setData(candles)
         chartRef.current?.timeScale().fitContent()
-        lastCandleRef.current = candles.length > 0 ? candles[candles.length - 1] : null
         setCandleCount(candles.length)
       })
-      .finally(() => active && setLoading(false))
+      .finally(() => {
+        if (active) {
+          setLoading(false)
+        }
+      })
+
     return () => {
       active = false
     }
   }, [timeframe])
 
-  // Real-time candle update: when spot price changes via WebSocket, update the last candle
   useEffect(() => {
-    const series = seriesRef.current
-    const lastCandle = lastCandleRef.current
-    if (!series || !lastCandle || !snapshot?.spot || snapshot.spot <= 0) return
-
-    const spot = snapshot.spot
-    const updated: CandlestickData = {
-      ...lastCandle,
-      close: spot,
-      high: Math.max(lastCandle.high, spot),
-      low: Math.min(lastCandle.low, spot),
+    if (!spot || spot <= 0 || !seriesRef.current || !lastBarRef.current) {
+      return
     }
-    series.update(updated)
-    lastCandleRef.current = updated
-  }, [snapshot?.spot])
+
+    const lastBar = lastBarRef.current
+    const nextBoundary = Number(lastBar.time) + timeframeSeconds(timeframe)
+    const now = Math.floor(Date.now() / 1000)
+
+    if (now >= nextBoundary) {
+      const nextBar: CandlestickData<Time> = {
+        time: nextBoundary as Time,
+        open: lastBar.close,
+        high: spot,
+        low: spot,
+        close: spot,
+      }
+      lastBarRef.current = nextBar
+      seriesRef.current.update(nextBar)
+      return
+    }
+
+    const nextBar: CandlestickData<Time> = {
+      ...lastBar,
+      high: Math.max(lastBar.high, spot),
+      low: Math.min(lastBar.low, spot),
+      close: spot,
+    }
+
+    if (
+      nextBar.close === lastBar.close
+      && nextBar.high === lastBar.high
+      && nextBar.low === lastBar.low
+    ) {
+      return
+    }
+
+    lastBarRef.current = nextBar
+    seriesRef.current.update(nextBar)
+  }, [spot, timeframe])
 
   useEffect(() => {
     const series = seriesRef.current
-    if (!series) return
+    if (!series) {
+      return
+    }
+
     for (const line of priceLinesRef.current.values()) {
       series.removePriceLine(line)
     }
@@ -207,11 +262,10 @@ export default function NiftyChart() {
 
   return (
     <div className="relative flex h-full flex-col bg-bg-primary">
-      {/* Timeframe bar */}
       <div className="flex items-center gap-1 border-b border-border-secondary px-3 py-1">
         <span className="mr-2 text-[11px] text-text-muted">NIFTY 50</span>
         {optionChartSymbol && (
-          <div className="flex items-center gap-1 mr-2">
+          <div className="mr-2 flex items-center gap-1">
             <span className="text-[11px] text-brand">Option: {optionChartSymbol}</span>
             <button
               onClick={() => setOptionChartSymbol(null)}
@@ -221,9 +275,9 @@ export default function NiftyChart() {
             </button>
           </div>
         )}
-        {snapshot?.spot ? (
+        {spot ? (
           <span className="mr-3 text-[11px] text-text-secondary">
-            Spot {snapshot.spot.toFixed(2)}
+            Spot {spot.toFixed(2)}
           </span>
         ) : null}
         <div className="flex items-center gap-0.5">
@@ -236,7 +290,7 @@ export default function NiftyChart() {
               }}
               className={`px-2 py-0.5 text-[11px] transition-colors ${
                 timeframe === tf
-                  ? 'bg-brand text-bg-primary rounded-sm'
+                  ? 'rounded-sm bg-brand text-bg-primary'
                   : 'text-text-muted hover:text-text-secondary'
               }`}
             >
@@ -251,17 +305,16 @@ export default function NiftyChart() {
         </div>
       </div>
 
-      {/* Chart */}
       <div ref={containerRef} className="relative flex-1 min-h-0">
         {loading && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-bg-primary/80">
-            <div className="h-6 w-6 rounded-full border-2 border-signal border-t-transparent animate-spin" />
+            <div className="h-6 w-6 animate-spin rounded-full border-2 border-signal border-t-transparent" />
           </div>
         )}
         {candleCount === 0 && !loading && (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-text-muted">
             <span className="text-sm">Market closed</span>
-            <span className="text-xs mt-1">NSE trading hours: 9:15 AM – 3:30 PM IST</span>
+            <span className="mt-1 text-xs">NSE trading hours: 9:15 AM – 3:30 PM IST</span>
           </div>
         )}
         {pendingAlert && alertPopupStyle ? (

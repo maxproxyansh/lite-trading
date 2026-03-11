@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 
 import { submitOrder } from '../lib/api'
 import { useStore } from '../store/useStore'
@@ -11,7 +12,21 @@ type OrderType = (typeof ORDER_TYPES)[number]
 type Product = (typeof PRODUCTS)[number]
 
 export default function OrderModal() {
-  const { orderModal, closeOrderModal, selectedPortfolioId, latestSignal, addToast } = useStore()
+  const {
+    orderModal,
+    closeOrderModal,
+    selectedPortfolioId,
+    latestSignal,
+    addToast,
+    requestPortfolioRefresh,
+  } = useStore(useShallow((state) => ({
+    orderModal: state.orderModal,
+    closeOrderModal: state.closeOrderModal,
+    selectedPortfolioId: state.selectedPortfolioId,
+    latestSignal: state.latestSignal,
+    addToast: state.addToast,
+    requestPortfolioRefresh: state.requestPortfolioRefresh,
+  })))
 
   const [orderType, setOrderType] = useState<OrderType>('MARKET')
   const [product, setProduct] = useState<Product>('NRML')
@@ -75,6 +90,7 @@ export default function OrderModal() {
         idempotency_key: crypto.randomUUID(),
       })
       addToast('success', `${order.status}: ${side} ${order.symbol} x ${order.quantity}`)
+      requestPortfolioRefresh(selectedPortfolioId)
       closeOrderModal()
     } catch (error) {
       addToast('error', error instanceof Error ? error.message : 'Order failed')
