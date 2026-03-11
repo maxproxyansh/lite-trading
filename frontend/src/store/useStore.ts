@@ -359,7 +359,7 @@ export const useStore = create<AppState>((set) => ({
     portfoliosLoaded: true,
     selectedPortfolioId: portfolios.some((item) => item.id === state.selectedPortfolioId)
       ? state.selectedPortfolioId
-      : (portfolios[0]?.id ?? ''),
+      : (portfolios.find((item) => item.kind === 'manual')?.id ?? portfolios[0]?.id ?? ''),
   })),
   setSelectedPortfolioId: (selectedPortfolioId) => set({ selectedPortfolioId }),
   setSelectedExpiry: (selectedExpiry) => set({ selectedExpiry }),
