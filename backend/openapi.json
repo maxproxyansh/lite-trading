@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Lite Options Terminal",
-    "version": "2.0.0"
+    "version": "2.2.0"
   },
   "paths": {
     "/api/v1/auth/signup": {
@@ -363,6 +363,211 @@
             }
           }
         },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentKeyResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "List Self Agent Keys Route",
+        "operationId": "list_self_agent_keys_route_api_v1_auth_api_keys_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          },
+          {
+            "name": "lite_access",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lite Access"
+            }
+          },
+          {
+            "name": "lite_csrf",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lite Csrf"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentKeyResponse"
+                  },
+                  "title": "Response List Self Agent Keys Route Api V1 Auth Api Keys Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/api-keys/{key_id}": {
+      "delete": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Revoke Self Agent Key Route",
+        "operationId": "revoke_self_agent_key_route_api_v1_auth_api_keys__key_id__delete",
+        "parameters": [
+          {
+            "name": "key_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          },
+          {
+            "name": "lite_access",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lite Access"
+            }
+          },
+          {
+            "name": "lite_csrf",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lite Csrf"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -2500,6 +2705,137 @@
         }
       }
     },
+    "/api/v1/agent/bootstrap": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Agent Bootstrap",
+        "operationId": "agent_bootstrap_api_v1_agent_bootstrap_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentBootstrapRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBootstrapResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/signup": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Agent Signup",
+        "operationId": "agent_signup_api_v1_agent_signup_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentSignupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBootstrapResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/me": {
+      "get": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Agent Me",
+        "operationId": "agent_me_api_v1_agent_me_get",
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentProfileResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/agent/orders": {
       "post": {
         "tags": [
@@ -2610,6 +2946,122 @@
         }
       }
     },
+    "/api/v1/agent/orders/{order_id}": {
+      "get": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Agent Order Detail",
+        "operationId": "agent_order_detail_api_v1_agent_orders__order_id__get",
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Order Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/orders/{order_id}/cancel": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Agent Cancel Order",
+        "operationId": "agent_cancel_order_api_v1_agent_orders__order_id__cancel_post",
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Order Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/agent/positions": {
       "get": {
         "tags": [
@@ -2646,6 +3098,224 @@
                     "$ref": "#/components/schemas/PositionSummary"
                   },
                   "title": "Response Agent Positions Api V1 Agent Positions Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/positions/square-off": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Agent Square Off All",
+        "operationId": "agent_square_off_all_api_v1_agent_positions_square_off_post",
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OrderSummary"
+                  },
+                  "title": "Response Agent Square Off All Api V1 Agent Positions Square Off Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/positions/{position_id}/close": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Agent Close",
+        "operationId": "agent_close_api_v1_agent_positions__position_id__close_post",
+        "parameters": [
+          {
+            "name": "position_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Position Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/positions/{position_id}/square-off": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Agent Square Off Position",
+        "operationId": "agent_square_off_position_api_v1_agent_positions__position_id__square_off_post",
+        "parameters": [
+          {
+            "name": "position_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Position Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/funds": {
+      "get": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Agent Funds Self",
+        "operationId": "agent_funds_self_api_v1_agent_funds_get",
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FundsResponse"
                 }
               }
             }
@@ -2845,13 +3515,339 @@
         }
       }
     },
-    "/api/v1/agent/positions/{position_id}/close": {
+    "/api/v1/agent/dhan/fundlimit": {
+      "get": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Agent Dhan Funds",
+        "operationId": "agent_dhan_funds_api_v1_agent_dhan_fundlimit_get",
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DhanFundResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/dhan/positions": {
+      "get": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Agent Dhan Positions",
+        "operationId": "agent_dhan_positions_api_v1_agent_dhan_positions_get",
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DhanPositionResponse"
+                  },
+                  "title": "Response Agent Dhan Positions Api V1 Agent Dhan Positions Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/dhan/orders": {
+      "get": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Agent Dhan Orders",
+        "operationId": "agent_dhan_orders_api_v1_agent_dhan_orders_get",
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DhanOrderResponse"
+                  },
+                  "title": "Response Agent Dhan Orders Api V1 Agent Dhan Orders Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
         "tags": [
           "agent"
         ],
-        "summary": "Agent Close",
-        "operationId": "agent_close_api_v1_agent_positions__position_id__close_post",
+        "summary": "Agent Dhan Order",
+        "operationId": "agent_dhan_order_api_v1_agent_dhan_orders_post",
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DhanOrderRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DhanOrderResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/dhan/orders/{order_id}": {
+      "get": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Agent Dhan Order Detail",
+        "operationId": "agent_dhan_order_detail_api_v1_agent_dhan_orders__order_id__get",
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Order Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DhanOrderResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Agent Dhan Cancel Order",
+        "operationId": "agent_dhan_cancel_order_api_v1_agent_dhan_orders__order_id__delete",
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Order Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DhanOrderResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent/dhan/positions/{position_id}/exit": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Agent Dhan Exit Position",
+        "operationId": "agent_dhan_exit_position_api_v1_agent_dhan_positions__position_id__exit_post",
         "parameters": [
           {
             "name": "position_id",
@@ -2885,7 +3881,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OrderSummary"
+                  "$ref": "#/components/schemas/DhanOrderResponse"
                 }
               }
             }
@@ -2956,6 +3952,100 @@
   },
   "components": {
     "schemas": {
+      "AgentBootstrapRequest": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 8,
+            "title": "Password"
+          },
+          "agent_name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Agent Name"
+          },
+          "portfolio_kind": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "agent"
+            ],
+            "title": "Portfolio Kind",
+            "default": "agent"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Scopes"
+          },
+          "expires_in_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 365.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires In Days"
+          },
+          "rotate_existing": {
+            "type": "boolean",
+            "title": "Rotate Existing",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "password",
+          "agent_name"
+        ],
+        "title": "AgentBootstrapRequest"
+      },
+      "AgentBootstrapResponse": {
+        "properties": {
+          "owner": {
+            "$ref": "#/components/schemas/UserSummary"
+          },
+          "portfolio": {
+            "$ref": "#/components/schemas/PortfolioSummary"
+          },
+          "agent": {
+            "$ref": "#/components/schemas/AgentKeyResponse"
+          },
+          "api_key": {
+            "type": "string",
+            "title": "Api Key"
+          },
+          "links": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Links"
+          }
+        },
+        "type": "object",
+        "required": [
+          "owner",
+          "portfolio",
+          "agent",
+          "api_key",
+          "links"
+        ],
+        "title": "AgentBootstrapResponse"
+      },
       "AgentKeyResponse": {
         "properties": {
           "id": {
@@ -2985,6 +4075,54 @@
             "type": "array",
             "title": "Scopes"
           },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
           "secret": {
             "anyOf": [
               {
@@ -3007,6 +4145,102 @@
           "scopes"
         ],
         "title": "AgentKeyResponse"
+      },
+      "AgentProfileResponse": {
+        "properties": {
+          "owner": {
+            "$ref": "#/components/schemas/UserSummary"
+          },
+          "portfolio": {
+            "$ref": "#/components/schemas/PortfolioSummary"
+          },
+          "agent": {
+            "$ref": "#/components/schemas/AgentKeyResponse"
+          },
+          "links": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Links"
+          }
+        },
+        "type": "object",
+        "required": [
+          "owner",
+          "portfolio",
+          "agent",
+          "links"
+        ],
+        "title": "AgentProfileResponse"
+      },
+      "AgentSignupRequest": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email"
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Display Name"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 8,
+            "title": "Password"
+          },
+          "agent_name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Agent Name"
+          },
+          "portfolio_kind": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "agent"
+            ],
+            "title": "Portfolio Kind",
+            "default": "agent"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Scopes"
+          },
+          "expires_in_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 365.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires In Days"
+          },
+          "rotate_existing": {
+            "type": "boolean",
+            "title": "Rotate Existing",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "display_name",
+          "password",
+          "agent_name"
+        ],
+        "title": "AgentSignupRequest"
       },
       "AlertCreateRequest": {
         "properties": {
@@ -3269,6 +4503,8 @@
         "properties": {
           "name": {
             "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
             "title": "Name"
           },
           "portfolio_id": {
@@ -3281,6 +4517,24 @@
             },
             "type": "array",
             "title": "Scopes"
+          },
+          "expires_in_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 365.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires In Days"
+          },
+          "rotate_existing": {
+            "type": "boolean",
+            "title": "Rotate Existing",
+            "default": true
           }
         },
         "type": "object",
@@ -3324,6 +4578,445 @@
           "password"
         ],
         "title": "CreateUserRequest"
+      },
+      "DhanFundResponse": {
+        "properties": {
+          "accountId": {
+            "type": "string",
+            "title": "Accountid"
+          },
+          "availableBalance": {
+            "type": "number",
+            "title": "Availablebalance"
+          },
+          "cashBalance": {
+            "type": "number",
+            "title": "Cashbalance"
+          },
+          "utilizedMargin": {
+            "type": "number",
+            "title": "Utilizedmargin"
+          },
+          "blockedPremium": {
+            "type": "number",
+            "title": "Blockedpremium"
+          },
+          "realizedPnl": {
+            "type": "number",
+            "title": "Realizedpnl"
+          },
+          "unrealizedPnl": {
+            "type": "number",
+            "title": "Unrealizedpnl"
+          },
+          "totalEquity": {
+            "type": "number",
+            "title": "Totalequity"
+          }
+        },
+        "type": "object",
+        "required": [
+          "accountId",
+          "availableBalance",
+          "cashBalance",
+          "utilizedMargin",
+          "blockedPremium",
+          "realizedPnl",
+          "unrealizedPnl",
+          "totalEquity"
+        ],
+        "title": "DhanFundResponse"
+      },
+      "DhanOrderRequest": {
+        "properties": {
+          "transaction_type": {
+            "type": "string",
+            "enum": [
+              "BUY",
+              "SELL"
+            ],
+            "title": "Transaction Type"
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Quantity"
+          },
+          "exchange_segment": {
+            "type": "string",
+            "const": "NSE_FNO",
+            "title": "Exchange Segment",
+            "default": "NSE_FNO"
+          },
+          "product_type": {
+            "type": "string",
+            "enum": [
+              "NRML",
+              "MIS"
+            ],
+            "title": "Product Type",
+            "default": "NRML"
+          },
+          "order_type": {
+            "type": "string",
+            "enum": [
+              "MARKET",
+              "LIMIT",
+              "SL",
+              "SL-M"
+            ],
+            "title": "Order Type"
+          },
+          "validity": {
+            "type": "string",
+            "const": "DAY",
+            "title": "Validity",
+            "default": "DAY"
+          },
+          "trading_symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trading Symbol"
+          },
+          "security_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Security Id"
+          },
+          "expiry": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expiry"
+          },
+          "strike": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strike"
+          },
+          "option_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "CE",
+                  "PE"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Option Type"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price"
+          },
+          "trigger_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trigger Price"
+          },
+          "correlationId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correlationid"
+          }
+        },
+        "type": "object",
+        "required": [
+          "transaction_type",
+          "quantity",
+          "order_type"
+        ],
+        "title": "DhanOrderRequest"
+      },
+      "DhanOrderResponse": {
+        "properties": {
+          "orderId": {
+            "type": "string",
+            "title": "Orderid"
+          },
+          "orderStatus": {
+            "type": "string",
+            "title": "Orderstatus"
+          },
+          "transactionType": {
+            "type": "string",
+            "enum": [
+              "BUY",
+              "SELL"
+            ],
+            "title": "Transactiontype"
+          },
+          "exchangeSegment": {
+            "type": "string",
+            "const": "NSE_FNO",
+            "title": "Exchangesegment",
+            "default": "NSE_FNO"
+          },
+          "tradingSymbol": {
+            "type": "string",
+            "title": "Tradingsymbol"
+          },
+          "securityId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Securityid"
+          },
+          "quantity": {
+            "type": "integer",
+            "title": "Quantity"
+          },
+          "filledQty": {
+            "type": "integer",
+            "title": "Filledqty"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price"
+          },
+          "triggerPrice": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Triggerprice"
+          },
+          "averageTradedPrice": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Averagetradedprice"
+          },
+          "productType": {
+            "type": "string",
+            "enum": [
+              "NRML",
+              "MIS"
+            ],
+            "title": "Producttype"
+          },
+          "orderType": {
+            "type": "string",
+            "enum": [
+              "MARKET",
+              "LIMIT",
+              "SL",
+              "SL-M"
+            ],
+            "title": "Ordertype"
+          },
+          "validity": {
+            "type": "string",
+            "const": "DAY",
+            "title": "Validity"
+          },
+          "correlationId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correlationid"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updatedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "orderId",
+          "orderStatus",
+          "transactionType",
+          "tradingSymbol",
+          "quantity",
+          "filledQty",
+          "productType",
+          "orderType",
+          "validity",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "DhanOrderResponse"
+      },
+      "DhanPositionResponse": {
+        "properties": {
+          "positionId": {
+            "type": "string",
+            "title": "Positionid"
+          },
+          "tradingSymbol": {
+            "type": "string",
+            "title": "Tradingsymbol"
+          },
+          "securityId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Securityid"
+          },
+          "productType": {
+            "type": "string",
+            "enum": [
+              "NRML",
+              "MIS"
+            ],
+            "title": "Producttype"
+          },
+          "quantity": {
+            "type": "integer",
+            "title": "Quantity"
+          },
+          "buyAvg": {
+            "type": "number",
+            "title": "Buyavg"
+          },
+          "sellAvg": {
+            "type": "number",
+            "title": "Sellavg"
+          },
+          "lastPrice": {
+            "type": "number",
+            "title": "Lastprice"
+          },
+          "realizedProfit": {
+            "type": "number",
+            "title": "Realizedprofit"
+          },
+          "unrealizedProfit": {
+            "type": "number",
+            "title": "Unrealizedprofit"
+          },
+          "blockedMargin": {
+            "type": "number",
+            "title": "Blockedmargin"
+          },
+          "expiry": {
+            "type": "string",
+            "title": "Expiry"
+          },
+          "strike": {
+            "type": "integer",
+            "title": "Strike"
+          },
+          "optionType": {
+            "type": "string",
+            "enum": [
+              "CE",
+              "PE"
+            ],
+            "title": "Optiontype"
+          }
+        },
+        "type": "object",
+        "required": [
+          "positionId",
+          "tradingSymbol",
+          "productType",
+          "quantity",
+          "buyAvg",
+          "sellAvg",
+          "lastPrice",
+          "realizedProfit",
+          "unrealizedProfit",
+          "blockedMargin",
+          "expiry",
+          "strike",
+          "optionType"
+        ],
+        "title": "DhanPositionResponse"
       },
       "FundsResponse": {
         "properties": {

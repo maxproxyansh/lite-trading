@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from config import get_settings
@@ -53,9 +55,12 @@ async def websocket_endpoint(websocket: WebSocket):
             except Exception:  # noqa: BLE001
                 authorized = False
         elif api_key:
+            now = datetime.now(timezone.utc)
             key = db.query(AgentApiKey).filter(
                 AgentApiKey.key_hash == hash_secret(api_key),
                 AgentApiKey.is_active.is_(True),
+                AgentApiKey.revoked_at.is_(None),
+                or_(AgentApiKey.expires_at.is_(None), AgentApiKey.expires_at > now),
             ).first()
             authorized = bool(key and key.user_id and key.portfolio_id)
 

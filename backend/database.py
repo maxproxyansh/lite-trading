@@ -71,6 +71,13 @@ def _run_migrations(eng) -> None:
                 conn.execute(text("ALTER TABLE agent_api_keys ADD COLUMN portfolio_id VARCHAR(64)"))
                 conn.execute(text("CREATE INDEX IF NOT EXISTS ix_agent_api_keys_portfolio_id ON agent_api_keys (portfolio_id)"))
                 logger.info("Migration: added agent_api_keys.portfolio_id column")
+            if "expires_at" not in agent_columns:
+                conn.execute(text("ALTER TABLE agent_api_keys ADD COLUMN expires_at TIMESTAMP WITH TIME ZONE"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_agent_api_keys_expires_at ON agent_api_keys (expires_at)"))
+                logger.info("Migration: added agent_api_keys.expires_at column")
+            if "revoked_at" not in agent_columns:
+                conn.execute(text("ALTER TABLE agent_api_keys ADD COLUMN revoked_at TIMESTAMP WITH TIME ZONE"))
+                logger.info("Migration: added agent_api_keys.revoked_at column")
 
     if "orders" in inspector.get_table_names():
         with eng.begin() as conn:

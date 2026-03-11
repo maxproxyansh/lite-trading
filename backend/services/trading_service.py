@@ -521,6 +521,57 @@ def list_orders(db: Session, portfolio_id: str | None = None) -> list[Order]:
     return query.all()
 
 
+def get_order(db: Session, order_id: str, *, portfolio_id: str | None = None) -> Order:
+    query = db.query(Order).filter(Order.id == order_id)
+    if portfolio_id:
+        query = query.filter(Order.portfolio_id == portfolio_id)
+    order = query.first()
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+    return order
+
+
+def cancel_order(
+    db: Session,
+    order_id: str,
+    *,
+    portfolio_id: str | None = None,
+    actor_type: str,
+    actor_id: str | None,
+) -> Order:
+    order = _lock_query(db.query(Order).filter(Order.id == order_id), db).first()
+    if not order or (portfolio_id and order.portfolio_id != portfolio_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+    if order.status not in {"OPEN", "TRIGGER_PENDING"}:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="ORDER_NOT_CANCELLABLE")
+
+    portfolio = _lock_query(db.query(Portfolio).filter(Portfolio.id == order.portfolio_id), db).first()
+    if not portfolio:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio not found")
+
+    if order.side == "BUY" and order.premium_required:
+        portfolio.blocked_premium = _to_float(max(_money(portfolio.blocked_premium) - _money(order.premium_required), Decimal("0.00")))
+    if order.side == "SELL" and order.margin_required:
+        portfolio.blocked_margin = _to_float(max(_money(portfolio.blocked_margin) - _money(order.margin_required), Decimal("0.00")))
+
+    order.status = "CANCELLED"
+    order.message = "Order cancelled"
+    order.updated_at = _utcnow()
+
+    log_audit(
+        db,
+        actor_type=actor_type,
+        actor_id=actor_id,
+        action="order.cancelled",
+        entity_type="order",
+        entity_id=order.id,
+        details={"symbol": order.symbol, "portfolio_id": order.portfolio_id},
+    )
+    db.commit()
+    db.refresh(order)
+    return order
+
+
 def list_positions(db: Session, portfolio_id: str | None = None) -> list[Position]:
     query = db.query(Position).filter(Position.net_quantity != 0)
     if portfolio_id:
@@ -557,6 +608,16 @@ def close_position(db: Session, position_id: str, *, actor_type: str, actor_id: 
         source="close",
         quantity_override=abs(position.net_quantity),
     )
+
+
+def close_all_positions(db: Session, portfolio_id: str, *, actor_type: str, actor_id: str | None) -> list[Order]:
+    positions = (
+        db.query(Position)
+        .filter(Position.portfolio_id == portfolio_id, Position.net_quantity != 0)
+        .order_by(Position.updated_at.desc())
+        .all()
+    )
+    return [close_position(db, position.id, actor_type=actor_type, actor_id=actor_id) for position in positions]
 
 
 def funds_summary(db: Session, portfolio_id: str) -> FundsResponse:

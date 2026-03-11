@@ -52,6 +52,8 @@ class AgentApiKey(Base, BaseModelMixin):
     scopes = Column(JSON, nullable=False, default=list)
     is_active = Column(Boolean, nullable=False, default=True)
     last_used_at = Column(DateTime(timezone=True))
+    expires_at = Column(DateTime(timezone=True), index=True)
+    revoked_at = Column(DateTime(timezone=True))
 
 
 class Portfolio(Base):

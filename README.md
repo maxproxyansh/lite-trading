@@ -48,7 +48,26 @@ Lite is a private, options-only paper-trading terminal built to feel broker-grad
 - Alerts: `/api/v1/alerts`
 - Signals: `/api/v1/signals`
 - Agent API: `/api/v1/agent/*`
+- Agent bootstrap: `/api/v1/agent/bootstrap`, `/api/v1/agent/signup`
+- Dhan-compatible agent API: `/api/v1/agent/dhan/*`
 - WebSocket: `/api/v1/ws`
+
+## Agent quickstart
+
+- Agent platform guide: [docs/agent-platform.md](/Users/proxy/trading/lite/docs/agent-platform.md)
+- Python SDK: [backend/agent_sdk.py](/Users/proxy/trading/lite/backend/agent_sdk.py)
+- CLI: [backend/scripts/lite_agent.py](/Users/proxy/trading/lite/backend/scripts/lite_agent.py)
+
+Example bootstrap:
+
+```bash
+python3 /Users/proxy/trading/lite/backend/scripts/lite_agent.py \
+  --base-url http://127.0.0.1:8000 \
+  bootstrap \
+  --email admin@lite.trade \
+  --password lite-admin-123 \
+  --agent-name night-desk
+```
 
 ## Deployment
 
@@ -87,7 +106,10 @@ Lite is a private, options-only paper-trading terminal built to feel broker-grad
 - Public signup is supported, but each user is isolated to their own portfolios and account data.
 - Each user is isolated to their own `manual` and `agent` portfolios.
 - Agent API keys are scoped to a single owned portfolio and cannot trade across users.
+- Agents can self-bootstrap or self-signup to retrieve a scoped key without human key provisioning.
 - Agent write operations require `idempotency_key`.
+- Dhan-compatible agent writes require `correlationId`.
+- Agent keys support rotation, expiry, revocation, and throttled `last_used_at` writes.
 - Auth cookies are `httpOnly`; state-changing cookie-auth requests require CSRF.
 - WebSocket auth uses the session cookie for humans or `Authorization` / `X-API-Key` headers for non-browser clients. URL query secrets are intentionally rejected.
 - Open-order processing uses Postgres row locks with `SKIP LOCKED` semantics so multiple replicas do not fill the same pending order twice.

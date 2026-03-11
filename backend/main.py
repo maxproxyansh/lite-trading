@@ -55,7 +55,7 @@ async def lifespan(app: FastAPI):
     await market_data_service.stop()
 
 
-app = FastAPI(title=settings.app_name, version="2.0.0", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="2.2.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -88,7 +88,7 @@ def root():
 
 @app.get("/version")
 def version():
-    return {"version": "2.1.0", "cors_regex": settings.frontend_origin_regex, "origin": settings.frontend_origin}
+    return {"version": "2.2.0", "cors_regex": settings.frontend_origin_regex, "origin": settings.frontend_origin}
 
 
 @app.get(f"{settings.api_prefix}/config")

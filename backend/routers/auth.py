@@ -8,7 +8,18 @@ from database import get_db
 from dependencies import get_current_user, get_refresh_cookie, require_role
 from rate_limit import rate_limit
 from schemas import AgentKeyResponse, CreateAgentKeyRequest, CreateUserRequest, LoginRequest, SignupRequest, TokenEnvelope, UserSummary
-from services.auth_service import authenticate_user, create_agent_key, create_user, issue_tokens, revoke_refresh_token, rotate_refresh_token, signup_user
+from services.agent_service import serialize_agent_key
+from services.auth_service import (
+    authenticate_user,
+    create_agent_key,
+    create_user,
+    issue_tokens,
+    list_agent_keys,
+    revoke_agent_key,
+    revoke_refresh_token,
+    rotate_refresh_token,
+    signup_user,
+)
 
 
 settings = get_settings()
@@ -139,15 +150,25 @@ def create_self_agent_key_route(
     _: None = Depends(rate_limit("auth:create-agent-key", 20, 60)),
 ):
     key, secret = create_agent_key(db, payload, actor)
-    return AgentKeyResponse(
-        id=key.id,
-        user_id=key.user_id,
-        portfolio_id=key.portfolio_id,
-        name=key.name,
-        key_prefix=key.key_prefix,
-        scopes=key.scopes,
-        secret=secret,
-    )
+    return serialize_agent_key(key, secret=secret)
+
+
+@router.get("/api-keys", response_model=list[AgentKeyResponse])
+def list_self_agent_keys_route(
+    db: Session = Depends(get_db),
+    actor=Depends(require_role("admin", "trader")),
+):
+    return [serialize_agent_key(key) for key in list_agent_keys(db, actor)]
+
+
+@router.delete("/api-keys/{key_id}", response_model=AgentKeyResponse)
+def revoke_self_agent_key_route(
+    key_id: str,
+    db: Session = Depends(get_db),
+    actor=Depends(require_role("admin", "trader")),
+    _: None = Depends(rate_limit("auth:revoke-agent-key", 20, 60)),
+):
+    return serialize_agent_key(revoke_agent_key(db, key_id, actor))
 
 
 @admin_router.post("/users", response_model=UserSummary)
@@ -169,12 +190,4 @@ def create_agent_key_route(
     _: None = Depends(rate_limit("admin:create-agent-key", 20, 60)),
 ):
     key, secret = create_agent_key(db, payload, actor)
-    return AgentKeyResponse(
-        id=key.id,
-        user_id=key.user_id,
-        portfolio_id=key.portfolio_id,
-        name=key.name,
-        key_prefix=key.key_prefix,
-        scopes=key.scopes,
-        secret=secret,
-    )
+    return serialize_agent_key(key, secret=secret)
