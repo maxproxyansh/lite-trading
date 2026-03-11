@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Callable
 
 from fastapi import Cookie, Depends, Header, HTTPException, Request, status
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from config import get_settings
@@ -88,16 +89,23 @@ def get_agent_key(
 ) -> AgentApiKey:
     if not api_key:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing X-API-Key")
+    now = datetime.now(timezone.utc)
     key = db.query(AgentApiKey).filter(
         AgentApiKey.key_hash == hash_secret(api_key),
         AgentApiKey.is_active.is_(True),
+        AgentApiKey.revoked_at.is_(None),
+        or_(AgentApiKey.expires_at.is_(None), AgentApiKey.expires_at > now),
     ).first()
     if not key:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")
     if not key.user_id or not key.portfolio_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Legacy API key is no longer valid")
-    key.last_used_at = datetime.now(timezone.utc)
-    db.commit()
+    last_used_at = key.last_used_at
+    if last_used_at and last_used_at.tzinfo is None:
+        last_used_at = last_used_at.replace(tzinfo=timezone.utc)
+    if not last_used_at or (now - last_used_at).total_seconds() >= settings.agent_key_touch_interval_seconds:
+        key.last_used_at = now
+        db.commit()
     return key
 
 

@@ -47,6 +47,8 @@ class Settings(BaseSettings):
     bootstrap_admin_name: str = Field(default="Lite Admin", alias="BOOTSTRAP_ADMIN_NAME")
     bootstrap_agent_key: str | None = Field(default=None, alias="BOOTSTRAP_AGENT_KEY")
     bootstrap_agent_name: str = Field(default="default-agent", alias="BOOTSTRAP_AGENT_NAME")
+    agent_key_default_days: int = Field(default=30, alias="AGENT_KEY_DEFAULT_DAYS")
+    agent_key_touch_interval_seconds: int = Field(default=300, alias="AGENT_KEY_TOUCH_INTERVAL_SECONDS")
     nifty_lot_size: int = Field(default=65, alias="NIFTY_LOT_SIZE")
     default_frontend_slug: str = "litetrade"
     default_backend_slug: str = "litetrade-api"

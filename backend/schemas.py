@@ -13,6 +13,20 @@ OrderProduct = Literal["NRML", "MIS"]
 OrderValidity = Literal["DAY"]
 AlertDirection = Literal["ABOVE", "BELOW"]
 AlertStatus = Literal["ACTIVE", "TRIGGERED", "CANCELLED"]
+PortfolioKind = Literal["manual", "agent"]
+ExchangeSegment = Literal["NSE_FNO"]
+
+
+def default_agent_scopes() -> list[str]:
+    return [
+        "orders:read",
+        "orders:write",
+        "positions:read",
+        "positions:write",
+        "signals:read",
+        "signals:write",
+        "funds:read",
+    ]
 
 
 class HealthResponse(BaseModel):
@@ -57,19 +71,11 @@ class CreateUserRequest(BaseModel):
 
 
 class CreateAgentKeyRequest(BaseModel):
-    name: str
+    name: str = Field(min_length=1, max_length=100)
     portfolio_id: str
-    scopes: list[str] = Field(
-        default_factory=lambda: [
-            "orders:read",
-            "orders:write",
-            "positions:read",
-            "positions:write",
-            "signals:read",
-            "signals:write",
-            "funds:read",
-        ]
-    )
+    scopes: list[str] = Field(default_factory=default_agent_scopes)
+    expires_in_days: int | None = Field(default=None, ge=1, le=365)
+    rotate_existing: bool = True
 
 
 class AgentKeyResponse(BaseModel):
@@ -79,7 +85,47 @@ class AgentKeyResponse(BaseModel):
     name: str
     key_prefix: str
     scopes: list[str]
+    created_at: datetime | None = None
+    last_used_at: datetime | None = None
+    expires_at: datetime | None = None
+    revoked_at: datetime | None = None
     secret: str | None = None
+
+
+class AgentBootstrapRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8)
+    agent_name: str = Field(min_length=1, max_length=100)
+    portfolio_kind: PortfolioKind = "agent"
+    scopes: list[str] = Field(default_factory=default_agent_scopes)
+    expires_in_days: int | None = Field(default=None, ge=1, le=365)
+    rotate_existing: bool = True
+
+
+class AgentSignupRequest(BaseModel):
+    email: EmailStr
+    display_name: str = Field(min_length=1, max_length=100)
+    password: str = Field(min_length=8)
+    agent_name: str = Field(min_length=1, max_length=100)
+    portfolio_kind: PortfolioKind = "agent"
+    scopes: list[str] = Field(default_factory=default_agent_scopes)
+    expires_in_days: int | None = Field(default=None, ge=1, le=365)
+    rotate_existing: bool = True
+
+
+class AgentProfileResponse(BaseModel):
+    owner: UserSummary
+    portfolio: "PortfolioSummary"
+    agent: AgentKeyResponse
+    links: dict[str, str]
+
+
+class AgentBootstrapResponse(BaseModel):
+    owner: UserSummary
+    portfolio: "PortfolioSummary"
+    agent: AgentKeyResponse
+    api_key: str
+    links: dict[str, str]
 
 
 class MarketDepthLevel(BaseModel):
@@ -201,7 +247,7 @@ class SignalIngestRequest(BaseModel):
 
 class PortfolioSummary(BaseModel):
     id: str
-    kind: Literal["manual", "agent"]
+    kind: PortfolioKind
     name: str
     description: str | None = None
     starting_cash: float
@@ -306,6 +352,94 @@ class FundsResponse(BaseModel):
     total_equity: float
 
 
+class DhanOrderRequest(BaseModel):
+    transaction_type: OrderSide
+    quantity: int = Field(ge=1)
+    exchange_segment: ExchangeSegment = "NSE_FNO"
+    product_type: OrderProduct = "NRML"
+    order_type: OrderType
+    validity: OrderValidity = "DAY"
+    trading_symbol: str | None = None
+    security_id: str | None = None
+    expiry: str | None = None
+    strike: int | None = None
+    option_type: Literal["CE", "PE"] | None = None
+    price: float | None = None
+    trigger_price: float | None = None
+    correlation_id: str | None = Field(
+        default=None,
+        validation_alias="correlationId",
+        serialization_alias="correlationId",
+    )
+
+    model_config = {"populate_by_name": True}
+
+    @model_validator(mode="after")
+    def validate_instrument(self):
+        has_symbol = bool(self.trading_symbol or self.security_id)
+        has_parts = self.expiry is not None and self.strike is not None and self.option_type is not None
+        if not has_symbol and not has_parts:
+            raise ValueError("Provide trading_symbol, security_id, or expiry/strike/option_type")
+        if not self.correlation_id:
+            raise ValueError("correlationId is required for agent orders")
+        return self
+
+
+class DhanOrderResponse(BaseModel):
+    order_id: str = Field(alias="orderId")
+    order_status: str = Field(alias="orderStatus")
+    transaction_type: OrderSide = Field(alias="transactionType")
+    exchange_segment: ExchangeSegment = Field(default="NSE_FNO", alias="exchangeSegment")
+    trading_symbol: str = Field(alias="tradingSymbol")
+    security_id: str | None = Field(default=None, alias="securityId")
+    quantity: int
+    filled_qty: int = Field(alias="filledQty")
+    price: float | None = None
+    trigger_price: float | None = Field(default=None, alias="triggerPrice")
+    average_traded_price: float | None = Field(default=None, alias="averageTradedPrice")
+    product_type: OrderProduct = Field(alias="productType")
+    order_type: OrderType = Field(alias="orderType")
+    validity: OrderValidity
+    correlation_id: str | None = Field(default=None, alias="correlationId")
+    message: str | None = None
+    created_at: datetime = Field(alias="createdAt")
+    updated_at: datetime = Field(alias="updatedAt")
+
+    model_config = {"populate_by_name": True}
+
+
+class DhanPositionResponse(BaseModel):
+    position_id: str = Field(alias="positionId")
+    trading_symbol: str = Field(alias="tradingSymbol")
+    security_id: str | None = Field(default=None, alias="securityId")
+    product_type: OrderProduct = Field(alias="productType")
+    quantity: int
+    buy_avg: float = Field(alias="buyAvg")
+    sell_avg: float = Field(alias="sellAvg")
+    last_price: float = Field(alias="lastPrice")
+    realized_profit: float = Field(alias="realizedProfit")
+    unrealized_profit: float = Field(alias="unrealizedProfit")
+    blocked_margin: float = Field(alias="blockedMargin")
+    expiry: str
+    strike: int
+    option_type: Literal["CE", "PE"] = Field(alias="optionType")
+
+    model_config = {"populate_by_name": True}
+
+
+class DhanFundResponse(BaseModel):
+    account_id: str = Field(alias="accountId")
+    available_balance: float = Field(alias="availableBalance")
+    cash_balance: float = Field(alias="cashBalance")
+    utilized_margin: float = Field(alias="utilizedMargin")
+    blocked_premium: float = Field(alias="blockedPremium")
+    realized_pnl: float = Field(alias="realizedPnl")
+    unrealized_pnl: float = Field(alias="unrealizedPnl")
+    total_equity: float = Field(alias="totalEquity")
+
+    model_config = {"populate_by_name": True}
+
+
 class AnalyticsPoint(BaseModel):
     label: str
     value: float
@@ -326,3 +460,7 @@ class AnalyticsResponse(BaseModel):
 class WebsocketEnvelope(BaseModel):
     type: str
     payload: dict[str, Any]
+
+
+AgentProfileResponse.model_rebuild()
+AgentBootstrapResponse.model_rebuild()

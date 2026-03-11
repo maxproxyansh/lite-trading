@@ -90,6 +90,29 @@ def _portfolio_map(client: TestClient, headers: dict[str, str]) -> dict[str, dic
     return {item["kind"]: item for item in payload}
 
 
+def _bootstrap_agent(
+    client: TestClient,
+    *,
+    email: str = "admin@lite.trade",
+    password: str = "lite-admin-123",
+    agent_name: str = "sdk-agent",
+    scopes: list[str] | None = None,
+) -> dict:
+    response = client.post(
+        "/api/v1/agent/bootstrap",
+        json={
+            "email": email,
+            "password": password,
+            "agent_name": agent_name,
+            "portfolio_kind": "agent",
+            "scopes": scopes
+            or ["orders:read", "orders:write", "positions:read", "positions:write", "funds:read"],
+        },
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
 @pytest.fixture()
 def client():
     Base.metadata.drop_all(bind=engine)
@@ -244,6 +267,83 @@ def test_agent_keys_are_portfolio_scoped_and_agent_orders_are_idempotent(client:
     )
     assert close_order.status_code == 200, close_order.text
     assert close_order.json()["side"] == "SELL"
+
+
+def test_agent_bootstrap_rotates_same_name_key_and_exposes_profile(client: TestClient) -> None:
+    first = _bootstrap_agent(client, agent_name="rotation-agent")
+    second = _bootstrap_agent(client, agent_name="rotation-agent")
+
+    assert first["api_key"] != second["api_key"]
+    assert first["portfolio"]["kind"] == "agent"
+    assert second["agent"]["name"] == "rotation-agent"
+
+    stale = client.get("/api/v1/agent/me", headers={"X-API-Key": first["api_key"]})
+    assert stale.status_code == 401
+
+    profile = client.get("/api/v1/agent/me", headers={"X-API-Key": second["api_key"]})
+    assert profile.status_code == 200, profile.text
+    assert profile.json()["portfolio"]["id"] == second["portfolio"]["id"]
+    assert profile.json()["links"]["dhan_orders"] == "/api/v1/agent/dhan/orders"
+
+
+def test_agent_dhan_order_cancel_and_square_off_all(client: TestClient) -> None:
+    bootstrap = _bootstrap_agent(client, agent_name="dhan-agent")
+    api_key = bootstrap["api_key"]
+
+    pending = client.post(
+        "/api/v1/agent/dhan/orders",
+        headers={"X-API-Key": api_key},
+        json={
+            "transaction_type": "BUY",
+            "trading_symbol": "NIFTY_2026-03-12_22500_CE",
+            "quantity": 65,
+            "order_type": "LIMIT",
+            "product_type": "NRML",
+            "price": 100.0,
+            "correlationId": "dhan-pending-001",
+        },
+    )
+    assert pending.status_code == 200, pending.text
+    assert pending.json()["orderStatus"] == "OPEN"
+
+    cancelled = client.delete(
+        f"/api/v1/agent/dhan/orders/{pending.json()['orderId']}",
+        headers={"X-API-Key": api_key},
+    )
+    assert cancelled.status_code == 200, cancelled.text
+    assert cancelled.json()["orderStatus"] == "CANCELLED"
+
+    filled = client.post(
+        "/api/v1/agent/dhan/orders",
+        headers={"X-API-Key": api_key},
+        json={
+            "transaction_type": "BUY",
+            "trading_symbol": "NIFTY_2026-03-12_22500_CE",
+            "quantity": 65,
+            "order_type": "MARKET",
+            "product_type": "NRML",
+            "correlationId": "dhan-filled-001",
+        },
+    )
+    assert filled.status_code == 200, filled.text
+    assert filled.json()["orderStatus"] == "FILLED"
+
+    dhan_positions = client.get("/api/v1/agent/dhan/positions", headers={"X-API-Key": api_key})
+    assert dhan_positions.status_code == 200, dhan_positions.text
+    assert len(dhan_positions.json()) == 1
+
+    square_off = client.post("/api/v1/agent/positions/square-off", headers={"X-API-Key": api_key})
+    assert square_off.status_code == 200, square_off.text
+    assert len(square_off.json()) == 1
+    assert square_off.json()[0]["side"] == "SELL"
+
+    after = client.get("/api/v1/agent/positions", headers={"X-API-Key": api_key})
+    assert after.status_code == 200
+    assert after.json() == []
+
+    funds = client.get("/api/v1/agent/dhan/fundlimit", headers={"X-API-Key": api_key})
+    assert funds.status_code == 200
+    assert funds.json()["accountId"] == bootstrap["portfolio"]["id"]
 
 
 def test_human_sell_and_close_releases_margin(client: TestClient) -> None:
