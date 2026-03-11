@@ -10,3 +10,4 @@ venv/
 data/
 *.log
 .vercel
+CLAUDE.md
