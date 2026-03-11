@@ -1,14 +1,16 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Eye, EyeOff } from 'lucide-react'
-import { login } from '../lib/api'
+import { login, signup } from '../lib/api'
 import { useStore } from '../store/useStore'
 import Logo from '../components/Logo'
 
 export default function Login() {
   const navigate = useNavigate()
   const addToast = useStore((state) => state.addToast)
+  const [mode, setMode] = useState<'login' | 'signup'>('login')
   const [email, setEmail] = useState('')
+  const [displayName, setDisplayName] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -17,8 +19,14 @@ export default function Login() {
     e.preventDefault()
     setLoading(true)
     try {
-      await login(email, password)
-      addToast('success', 'Signed in')
+      if (mode === 'signup') {
+        await signup(email, displayName, password)
+        await login(email, password)
+        addToast('success', 'Account created')
+      } else {
+        await login(email, password)
+        addToast('success', 'Signed in')
+      }
       navigate('/')
     } catch (error) {
       addToast('error', error instanceof Error ? error.message : 'Failed')
@@ -36,10 +44,23 @@ export default function Login() {
           <div className="text-[20px] font-light tracking-[0.3em] text-text-primary">
             lite
           </div>
-          <p className="text-[13px] text-text-muted">Sign in to your account</p>
+          <p className="text-[13px] text-text-muted">
+            {mode === 'login' ? 'Sign in to your account' : 'Create your account'}
+          </p>
         </div>
 
         <form className="space-y-4" onSubmit={handleSubmit}>
+          {mode === 'signup' && (
+            <input
+              type="text"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              placeholder="Display name"
+              required
+              className="w-full rounded-sm border border-border-primary bg-bg-primary px-3 py-2.5 text-sm text-text-primary outline-none transition-colors placeholder:text-text-muted focus:border-brand"
+            />
+          )}
+
           <input
             type="email"
             value={email}
@@ -71,15 +92,25 @@ export default function Login() {
 
           <button
             type="submit"
-            disabled={loading || !email || !password}
+            disabled={loading || !email || !password || (mode === 'signup' && !displayName)}
             className="w-full rounded-sm bg-brand py-2.5 text-sm font-semibold text-bg-primary transition-opacity hover:opacity-90 disabled:opacity-40"
           >
-            {loading ? 'Signing in\u2026' : 'Login'}
+            {loading
+              ? (mode === 'login' ? 'Signing in\u2026' : 'Creating account\u2026')
+              : (mode === 'login' ? 'Login' : 'Sign up')}
           </button>
         </form>
 
-        <p className="mt-5 text-center text-[11px] text-text-muted">
-          Demo account &mdash; contact admin for access
+        <p className="mt-5 text-center text-[12px] text-text-muted">
+          <button
+            type="button"
+            onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}
+            className="text-signal hover:underline"
+          >
+            {mode === 'login'
+              ? "Don't have an account? Sign up"
+              : 'Already have an account? Sign in'}
+          </button>
         </p>
 
         <p className="mt-4 text-center text-[11px] leading-4 text-text-muted">
