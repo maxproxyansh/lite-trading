@@ -128,6 +128,31 @@ def handle_profile(args: argparse.Namespace) -> Any:
     return client.profile()
 
 
+def handle_market_snapshot(args: argparse.Namespace) -> Any:
+    client, _, _ = make_client(args)
+    return client.snapshot()
+
+
+def handle_market_expiries(args: argparse.Namespace) -> Any:
+    client, _, _ = make_client(args)
+    return client.expiries()
+
+
+def handle_market_chain(args: argparse.Namespace) -> Any:
+    client, _, _ = make_client(args)
+    return client.chain(expiry=args.expiry)
+
+
+def handle_market_candles(args: argparse.Namespace) -> Any:
+    client, _, _ = make_client(args)
+    return client.candles(timeframe=args.timeframe)
+
+
+def handle_market_depth(args: argparse.Namespace) -> Any:
+    client, _, _ = make_client(args)
+    return client.depth(args.symbol)
+
+
 def handle_funds(args: argparse.Namespace) -> Any:
     client, _, _ = make_client(args)
     return client.dhan_funds() if args.dhan else client.funds()
@@ -214,6 +239,27 @@ def build_parser() -> argparse.ArgumentParser:
 
     profile = subparsers.add_parser("profile", help="Show the current agent profile and bound portfolio")
     profile.set_defaults(handler=handle_profile)
+
+    market = subparsers.add_parser("market", help="Read market data with the current agent API key")
+    market_subparsers = market.add_subparsers(dest="market_command", required=True)
+
+    market_snapshot = market_subparsers.add_parser("snapshot", help="Show the latest market snapshot")
+    market_snapshot.set_defaults(handler=handle_market_snapshot)
+
+    market_expiries = market_subparsers.add_parser("expiries", help="List available expiries")
+    market_expiries.set_defaults(handler=handle_market_expiries)
+
+    market_chain = market_subparsers.add_parser("chain", help="Show the option chain")
+    market_chain.add_argument("--expiry", default=None)
+    market_chain.set_defaults(handler=handle_market_chain)
+
+    market_candles = market_subparsers.add_parser("candles", help="Show OHLC candle data")
+    market_candles.add_argument("--timeframe", default="15m")
+    market_candles.set_defaults(handler=handle_market_candles)
+
+    market_depth = market_subparsers.add_parser("depth", help="Show bid/ask depth for a symbol")
+    market_depth.add_argument("symbol")
+    market_depth.set_defaults(handler=handle_market_depth)
 
     funds = subparsers.add_parser("funds", help="Show available funds for the bound portfolio")
     funds.add_argument("--dhan", action="store_true", help="Use the Dhan-compatible response shape")
