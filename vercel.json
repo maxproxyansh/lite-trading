@@ -1,9 +1,15 @@
 {
   "buildCommand": "cd frontend && npm install && npm run build",
   "outputDirectory": "frontend/dist",
+  "rewrites": [
+    {
+      "source": "/:path((?!.*\\..*).*)",
+      "destination": "/index.html"
+    }
+  ],
   "headers": [
     {
-      "source": "/(icon-.*\\.png|logo.*\\.svg|manifest\\.json)",
+      "source": "/(apple-touch-icon\\.png|favicon\\.svg|favicon\\.ico|favicon-.*\\.png|icon-.*\\.png|logo.*\\.svg|manifest\\.json)",
       "headers": [
         { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
       ]
