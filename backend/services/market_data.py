@@ -32,8 +32,12 @@ INITIAL_HISTORY_WINDOWS = {
     "15m": 90,
     "1h": 90,
     "D": 365,
+    "W": 365 * 3,
+    "M": 365 * 10,
 }
 INTRADAY_INTERVALS = {"1m": 1, "5m": 5, "15m": 15, "1h": 60}
+DAILY_HISTORY_TIMEFRAMES = {"D", "W", "M"}
+AGGREGATED_DAILY_TIMEFRAMES = {"W", "M"}
 INDEX_SYMBOL_ALIASES = {"NIFTY", "NIFTY 50", "NIFTY50"}
 OPTION_SYMBOL_PATTERN = re.compile(r"^(?P<root>[A-Z0-9]+)_(?P<expiry>\d{4}-\d{2}-\d{2})_(?P<strike>\d+)_(?P<option_type>CE|PE)$")
 
@@ -130,7 +134,7 @@ class MarketDataService:
     def _history_window(self, timeframe: str, before: int | None) -> tuple[date, date, date]:
         anchor = self._history_anchor(before)
         upper_date = anchor.date()
-        oldest_date = OLDEST_DAILY_HISTORY if timeframe == "D" else upper_date - timedelta(days=MAX_INTRADAY_HISTORY_DAYS)
+        oldest_date = OLDEST_DAILY_HISTORY if timeframe in DAILY_HISTORY_TIMEFRAMES else upper_date - timedelta(days=MAX_INTRADAY_HISTORY_DAYS)
         span_days = INITIAL_HISTORY_WINDOWS.get(timeframe, INITIAL_HISTORY_WINDOWS["15m"])
         lower_date = max(oldest_date, upper_date - timedelta(days=max(span_days - 1, 0)))
         return lower_date, upper_date, oldest_date
@@ -464,6 +468,39 @@ class MarketDataService:
                 detail="Unsupported symbol format. Expected NIFTY 50 or NIFTY_YYYY-MM-DD_STRIKE_CE|PE",
             )
         raise CandleQueryError(status_code=404, detail="SYMBOL_NOT_AVAILABLE")
+
+    @staticmethod
+    def _aggregate_candles(candles: list[dict[str, Any]], timeframe: str) -> list[dict[str, Any]]:
+        if timeframe not in AGGREGATED_DAILY_TIMEFRAMES:
+            return candles
+
+        buckets: dict[int, dict[str, Any]] = {}
+        for candle in sorted(candles, key=lambda item: item["time"]):
+            dt = datetime.fromtimestamp(candle["time"], timezone.utc).astimezone(IST)
+            if timeframe == "W":
+                bucket_date = dt.date() - timedelta(days=dt.weekday())
+            else:
+                bucket_date = dt.date().replace(day=1)
+            bucket_time = int(datetime.combine(bucket_date, datetime.min.time(), tzinfo=IST).timestamp())
+
+            bucket = buckets.get(bucket_time)
+            if bucket is None:
+                buckets[bucket_time] = {
+                    "time": bucket_time,
+                    "open": float(candle["open"]),
+                    "high": float(candle["high"]),
+                    "low": float(candle["low"]),
+                    "close": float(candle["close"]),
+                    "volume": float(candle.get("volume") or 0.0),
+                }
+                continue
+
+            bucket["high"] = max(float(bucket["high"]), float(candle["high"]))
+            bucket["low"] = min(float(bucket["low"]), float(candle["low"]))
+            bucket["close"] = float(candle["close"])
+            bucket["volume"] = float(bucket["volume"]) + float(candle.get("volume") or 0.0)
+
+        return [buckets[key] for key in sorted(buckets)]
 
     def _fetch_expiries(self) -> list[str]:
         try:
@@ -862,7 +899,7 @@ class MarketDataService:
         target = self._resolve_candle_target(symbol=symbol, security_id=security_id)
         client = self._client()
         lower_date, upper_date, oldest_date = self._history_window(timeframe, before)
-        if timeframe == "D":
+        if timeframe in DAILY_HISTORY_TIMEFRAMES:
             result = client.historical_daily_data(
                 security_id=target.security_id,
                 exchange_segment=target.exchange_segment,
@@ -871,7 +908,8 @@ class MarketDataService:
                 to_date=upper_date.strftime("%Y-%m-%d"),
             )
             payload = result.get("data", {}) if isinstance(result, dict) and isinstance(result.get("data"), dict) else {}
-            candles = self._filter_history_before(self._map_candles(payload), before)
+            candles = self._aggregate_candles(self._map_candles(payload), timeframe)
+            candles = self._filter_history_before(candles, before)
             has_more = lower_date > oldest_date
             return {
                 "timeframe": timeframe,

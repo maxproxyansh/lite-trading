@@ -7,7 +7,8 @@ import { useShallow } from 'zustand/react/shallow'
 import { ApiError, createAlert, deleteAlert, fetchAlerts, fetchCandles, type AlertSummary, type Candle } from '../lib/api'
 import { useStore } from '../store/useStore'
 
-const TIMEFRAMES = ['1m', '5m', '15m', '1h', 'D'] as const
+const TIMEFRAMES = ['1m', '5m', '15m', '1h', 'D', 'W', 'M'] as const
+const IST_OFFSET_SECONDS = 5.5 * 60 * 60
 
 function getChartColors() {
   const styles = getComputedStyle(document.documentElement)
@@ -20,15 +21,22 @@ function getChartColors() {
   return { bgPrimary, bgSecondary, textMuted, borderPrimary, bullColor, bearColor }
 }
 
-function timeframeSeconds(timeframe: (typeof TIMEFRAMES)[number]) {
+function nextBarBoundary(time: number, timeframe: (typeof TIMEFRAMES)[number]) {
   const map = {
     '1m': 60,
     '5m': 300,
     '15m': 900,
     '1h': 3600,
     D: 86400,
+    W: 7 * 86400,
   } as const
-  return map[timeframe]
+  if (timeframe !== 'M') {
+    return time + map[timeframe]
+  }
+
+  const istDate = new Date((time + IST_OFFSET_SECONDS) * 1000)
+  const nextMonthStart = Date.UTC(istDate.getUTCFullYear(), istDate.getUTCMonth() + 1, 1)
+  return Math.floor(nextMonthStart / 1000) - IST_OFFSET_SECONDS
 }
 
 function toChartCandles(candles: Candle[]) {
@@ -350,7 +358,7 @@ export default function NiftyChart() {
     }
 
     const lastBar = lastBarRef.current
-    const nextBoundary = Number(lastBar.time) + timeframeSeconds(timeframe)
+    const nextBoundary = nextBarBoundary(Number(lastBar.time), timeframe)
     const now = Math.floor(Date.now() / 1000)
 
     if (now >= nextBoundary) {
