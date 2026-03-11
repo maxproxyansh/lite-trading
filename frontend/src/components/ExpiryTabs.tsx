@@ -1,32 +1,39 @@
-import { useStore } from '../store/useStore'
+import { useShallow } from 'zustand/react/shallow'
 
-function formatExpiry(dateStr: string): string {
-  const d = new Date(dateStr + 'T00:00:00')
-  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
-}
+import { useStore } from '../store/useStore'
 
 interface Props {
   maxVisible?: number
 }
 
-export default function ExpiryTabs({ maxVisible = 4 }: Props) {
-  const { snapshot, selectedExpiry, setSelectedExpiry } = useStore()
-  const expiries = snapshot?.expiries?.slice(0, maxVisible) ?? []
-  const active = selectedExpiry ?? snapshot?.active_expiry ?? ''
+function formatExpiry(dateStr: string): string {
+  const date = new Date(`${dateStr}T00:00:00`)
+  return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+}
+
+export default function ExpiryTabs({ maxVisible = 5 }: Props) {
+  const { expiries, selectedExpiry, activeExpiry, setSelectedExpiry } = useStore(useShallow((state) => ({
+    expiries: state.snapshot?.expiries ?? [],
+    selectedExpiry: state.selectedExpiry,
+    activeExpiry: state.snapshot?.active_expiry ?? null,
+    setSelectedExpiry: state.setSelectedExpiry,
+  })))
+  const visibleExpiries = expiries.slice(0, maxVisible)
+  const active = selectedExpiry ?? activeExpiry ?? ''
 
   return (
     <div className="flex items-center justify-center gap-1 overflow-x-auto px-3 py-1.5">
-      {expiries.map((exp) => (
+      {visibleExpiries.map((expiry) => (
         <button
-          key={exp}
-          onClick={() => setSelectedExpiry(exp)}
-          className={`shrink-0 px-2.5 py-0.5 text-[11px] font-medium transition-colors rounded-sm ${
-            exp === active
+          key={expiry}
+          onClick={() => setSelectedExpiry(expiry)}
+          className={`shrink-0 rounded-sm px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
+            expiry === active
               ? 'bg-brand text-bg-primary'
-              : 'text-text-muted hover:text-text-primary hover:bg-bg-hover'
+              : 'text-text-muted hover:bg-bg-hover hover:text-text-primary'
           }`}
         >
-          {formatExpiry(exp)}
+          {formatExpiry(expiry)}
         </button>
       ))}
     </div>

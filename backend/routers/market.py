@@ -31,8 +31,8 @@ async def chain(expiry: str | None = None, user=Depends(get_current_user)):
 
 
 @router.get("/candles", response_model=CandleResponse)
-async def candles(timeframe: str = "15m", user=Depends(get_current_user)):
-    data = await market_data_service.get_candles(timeframe)
+async def candles(timeframe: str = "15m", before: int | None = None, user=Depends(get_current_user)):
+    data = await market_data_service.get_candles(timeframe, before=before)
     return CandleResponse(**data)
 
 
@@ -40,5 +40,4 @@ async def candles(timeframe: str = "15m", user=Depends(get_current_user)):
 def depth(symbol: str, user=Depends(get_current_user)):
     depth_data = market_data_service.get_depth(symbol)
     return {"symbol": symbol, "depth": depth_data}
-
 

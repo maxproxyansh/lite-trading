@@ -1,9 +1,16 @@
 import { closePosition } from '../lib/api'
 import { useStore } from '../store/useStore'
 import { SkeletonTable } from '../components/Skeleton'
+import { useShallow } from 'zustand/react/shallow'
 
 export default function Positions() {
-  const { positions, portfolioLoading, addToast } = useStore()
+  const { positions, portfolioLoading, addToast, selectedPortfolioId, requestPortfolioRefresh } = useStore(useShallow((state) => ({
+    positions: state.positions,
+    portfolioLoading: state.portfolioLoading,
+    addToast: state.addToast,
+    selectedPortfolioId: state.selectedPortfolioId,
+    requestPortfolioRefresh: state.requestPortfolioRefresh,
+  })))
 
   if (portfolioLoading) return <SkeletonTable rows={8} cols={7} />
 
@@ -57,6 +64,7 @@ export default function Positions() {
                         try {
                           await closePosition(pos.id)
                           addToast('success', `Close submitted for ${pos.symbol}`)
+                          requestPortfolioRefresh(selectedPortfolioId)
                         } catch (error) {
                           addToast('error', error instanceof Error ? error.message : 'Close failed')
                         }

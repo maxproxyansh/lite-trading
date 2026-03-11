@@ -37,8 +37,11 @@ class Settings(BaseSettings):
     auto_execute_signals: bool = False
     signal_min_confidence: float = 60.0
     market_poll_seconds: int = 5
+    option_chain_refresh_seconds: int = 15
     signal_poll_seconds: int = 15
     quote_refresh_seconds: int = 5
+    market_feed_flush_ms: int = 150
+    market_feed_reconnect_seconds: int = 3
     dhan_client_id: str | None = Field(default=None, alias="DHAN_CLIENT_ID")
     dhan_access_token: str | None = Field(default=None, alias="DHAN_ACCESS_TOKEN")
     allow_public_signup: bool = Field(default=True, alias="ALLOW_PUBLIC_SIGNUP")

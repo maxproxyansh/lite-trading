@@ -1,26 +1,26 @@
 import { useEffect } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { useShallow } from 'zustand/react/shallow'
 
 import ErrorBoundary from './components/ErrorBoundary'
 import Header from './components/Header'
 import MobileNav from './components/MobileNav'
-import Sidebar from './components/Sidebar'
 import OrderModal from './components/OrderModal'
+import Sidebar from './components/Sidebar'
 import Toast from './components/Toast'
+import { useWebSocket } from './hooks/useWebSocket'
 import {
   fetchAnalytics,
+  fetchFunds,
   fetchLatestSignal,
   fetchMe,
   fetchOptionChain,
   fetchOrders,
   fetchPortfolios,
   fetchPositions,
-  fetchFunds,
   fetchSnapshot,
   refreshSession,
 } from './lib/api'
-import { useWebSocket } from './hooks/useWebSocket'
-import { useStore } from './store/useStore'
 import Analytics from './pages/Analytics'
 import Dashboard from './pages/Dashboard'
 import Funds from './pages/Funds'
@@ -29,9 +29,13 @@ import Login from './pages/Login'
 import Orders from './pages/Orders'
 import Positions from './pages/Positions'
 import Settings from './pages/Settings'
+import { useStore } from './store/useStore'
 
 function ProtectedLayout() {
-  const { user, snapshot } = useStore()
+  const { user, spot } = useStore(useShallow((state) => ({
+    user: state.user,
+    spot: state.snapshot?.spot ?? null,
+  })))
   const location = useLocation()
 
   useEffect(() => {
@@ -45,12 +49,11 @@ function ProtectedLayout() {
       '/settings': 'Settings',
     }
     const page = titles[location.pathname] ?? 'Dashboard'
-    const spotPrice = snapshot?.spot
-    const prefix = spotPrice && spotPrice > 0
-      ? `${spotPrice.toLocaleString('en-IN')} — `
+    const prefix = spot && spot > 0
+      ? `${spot.toLocaleString('en-IN')} — `
       : ''
     document.title = `${prefix}${page} — Lite`
-  }, [location.pathname, snapshot])
+  }, [location.pathname, spot])
 
   if (!user) {
     return <Navigate to="/login" replace />
@@ -91,6 +94,7 @@ export default function App() {
     portfoliosLoaded,
     selectedPortfolioId,
     selectedExpiry,
+    portfolioRefreshNonce,
     setSession,
     setSnapshot,
     setChain,
@@ -104,10 +108,31 @@ export default function App() {
     setPortfolioLoading,
     setChainLoading,
     addToast,
-  } = useStore()
+  } = useStore(useShallow((state) => ({
+    accessToken: state.accessToken,
+    user: state.user,
+    portfoliosLoaded: state.portfoliosLoaded,
+    selectedPortfolioId: state.selectedPortfolioId,
+    selectedExpiry: state.selectedExpiry,
+    portfolioRefreshNonce: state.portfolioRefreshNonce,
+    setSession: state.setSession,
+    setSnapshot: state.setSnapshot,
+    setChain: state.setChain,
+    setPortfolios: state.setPortfolios,
+    setOrders: state.setOrders,
+    setPositions: state.setPositions,
+    setFunds: state.setFunds,
+    setAnalytics: state.setAnalytics,
+    setLatestSignal: state.setLatestSignal,
+    setSharedLoading: state.setSharedLoading,
+    setPortfolioLoading: state.setPortfolioLoading,
+    setChainLoading: state.setChainLoading,
+    addToast: state.addToast,
+  })))
 
   useEffect(() => {
     let active = true
+
     async function bootstrap() {
       if (!accessToken) {
         const ok = await refreshSession()
@@ -116,6 +141,7 @@ export default function App() {
         }
         return
       }
+
       try {
         const currentUser = await fetchMe()
         if (active) {
@@ -129,6 +155,7 @@ export default function App() {
         }
       }
     }
+
     void bootstrap()
     return () => {
       active = false
@@ -136,8 +163,12 @@ export default function App() {
   }, [accessToken, navigate, setSession])
 
   useEffect(() => {
-    if (!user) return
+    if (!user) {
+      return
+    }
+
     let active = true
+
     async function loadShared() {
       setSharedLoading(true)
       try {
@@ -146,7 +177,9 @@ export default function App() {
           fetchSnapshot(),
           fetchLatestSignal(),
         ])
-        if (!active) return
+        if (!active) {
+          return
+        }
         setPortfolios(portfolios)
         setSnapshot(snapshot)
         setLatestSignal(signal)
@@ -160,6 +193,7 @@ export default function App() {
         }
       }
     }
+
     void loadShared()
     const interval = window.setInterval(loadShared, 30000)
     return () => {
@@ -169,8 +203,12 @@ export default function App() {
   }, [addToast, setLatestSignal, setPortfolios, setSharedLoading, setSnapshot, user])
 
   useEffect(() => {
-    if (!user || !portfoliosLoaded || !selectedPortfolioId) return
+    if (!user || !portfoliosLoaded || !selectedPortfolioId) {
+      return
+    }
+
     let active = true
+
     async function loadPortfolioViews() {
       setPortfolioLoading(true)
       try {
@@ -180,7 +218,9 @@ export default function App() {
           fetchFunds(selectedPortfolioId),
           fetchAnalytics(selectedPortfolioId),
         ])
-        if (!active) return
+        if (!active) {
+          return
+        }
         setOrders(orders)
         setPositions(positions)
         setFunds(funds)
@@ -195,22 +235,40 @@ export default function App() {
         }
       }
     }
+
     void loadPortfolioViews()
-    const interval = window.setInterval(loadPortfolioViews, 10000)
+    const interval = window.setInterval(loadPortfolioViews, 30000)
     return () => {
       active = false
       window.clearInterval(interval)
     }
-  }, [addToast, portfoliosLoaded, selectedPortfolioId, setAnalytics, setFunds, setOrders, setPortfolioLoading, setPositions, user])
+  }, [
+    addToast,
+    portfolioRefreshNonce,
+    portfoliosLoaded,
+    selectedPortfolioId,
+    setAnalytics,
+    setFunds,
+    setOrders,
+    setPortfolioLoading,
+    setPositions,
+    user,
+  ])
 
   useEffect(() => {
-    if (!user) return
+    if (!user) {
+      return
+    }
+
     let active = true
+
     async function loadChain() {
       setChainLoading(true)
       try {
         const chain = await fetchOptionChain(selectedExpiry ?? undefined)
-        if (!active) return
+        if (!active) {
+          return
+        }
         setChain(chain)
       } catch (error) {
         if (active) {
@@ -222,8 +280,9 @@ export default function App() {
         }
       }
     }
+
     void loadChain()
-    const interval = window.setInterval(loadChain, 12000)
+    const interval = window.setInterval(loadChain, 30000)
     return () => {
       active = false
       window.clearInterval(interval)

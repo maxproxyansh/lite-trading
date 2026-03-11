@@ -7,7 +7,7 @@ import Logo from '../components/Logo'
 
 export default function Login() {
   const navigate = useNavigate()
-  const { addToast } = useStore()
+  const addToast = useStore((state) => state.addToast)
   const [mode, setMode] = useState<'login' | 'signup'>('login')
   const [email, setEmail] = useState('')
   const [displayName, setDisplayName] = useState('')

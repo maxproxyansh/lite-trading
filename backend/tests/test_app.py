@@ -6,6 +6,7 @@ import os
 import sys
 import tempfile
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -39,6 +40,7 @@ from services.alert_service import sync_alerts  # noqa: E402
 from services.auth_service import ensure_bootstrap_state  # noqa: E402
 from services.market_data import market_data_service  # noqa: E402
 from services.signal_adapter import signal_adapter  # noqa: E402
+from services.trading_service import process_open_orders_sync  # noqa: E402
 
 
 def _seed_market() -> None:
@@ -511,3 +513,181 @@ def test_websocket_requires_auth_and_streams_events(client: TestClient) -> None:
         message = websocket.receive_json()
         assert message["type"] == "market.snapshot"
         assert message["payload"]["spot"] == 22525
+
+
+def test_process_open_orders_filters_symbols_and_only_updates_impacted_portfolios(client: TestClient) -> None:
+    headers = _login(client, "admin@lite.trade", "lite-admin-123")
+    csrf_token = client.cookies.get("lite_csrf")
+    portfolio_id = _portfolio_map(client, headers)["manual"]["id"]
+
+    response = client.post(
+        "/api/v1/orders",
+        headers={"X-CSRF-Token": csrf_token},
+        json={
+            "portfolio_id": portfolio_id,
+            "symbol": "NIFTY_2026-03-12_22500_CE",
+            "expiry": "2026-03-12",
+            "strike": 22500,
+            "option_type": "CE",
+            "side": "BUY",
+            "order_type": "LIMIT",
+            "price": 110.0,
+            "product": "NRML",
+            "validity": "DAY",
+            "lots": 1,
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "OPEN"
+
+    db = SessionLocal()
+    try:
+        skipped = process_open_orders_sync(db, {"NIFTY_2026-03-12_22600_CE"})
+        assert skipped == set()
+    finally:
+        db.close()
+
+    market_data_service.quotes["NIFTY_2026-03-12_22500_CE"]["ask"] = 109.0
+    market_data_service.quotes["NIFTY_2026-03-12_22500_CE"]["ltp"] = 109.0
+
+    db = SessionLocal()
+    try:
+        changed = process_open_orders_sync(db, {"NIFTY_2026-03-12_22500_CE"})
+        assert changed == {portfolio_id}
+    finally:
+        db.close()
+
+    orders = client.get(f"/api/v1/orders?portfolio_id={portfolio_id}", headers=headers)
+    assert orders.status_code == 200, orders.text
+    assert orders.json()[0]["status"] == "FILLED"
+
+
+def test_market_data_feed_packets_update_live_snapshot_and_quote_batch() -> None:
+    _seed_market()
+    market_data_service.option_rows = [
+        {
+            "strike": 22500,
+            "is_atm": True,
+            "call": market_data_service.quotes["NIFTY_2026-03-12_22500_CE"],
+            "put": {
+                "symbol": "NIFTY_2026-03-12_22500_PE",
+                "security_id": "54321",
+                "strike": 22500,
+                "option_type": "PE",
+                "expiry": "2026-03-12",
+                "ltp": 95.0,
+                "bid": 94.8,
+                "ask": 95.2,
+                "bid_qty": 420,
+                "ask_qty": 410,
+                "oi": 110000,
+                "oi_lakhs": 1.1,
+                "volume": 18000,
+            },
+        }
+    ]
+    market_data_service._security_id_to_symbol = {"12345": "NIFTY_2026-03-12_22500_CE"}
+    market_data_service._dirty_quote_symbols.clear()
+    market_data_service._snapshot_dirty = False
+
+    market_data_service._handle_feed_packet({"type": "Quote Data", "security_id": 13, "LTP": "22555.25", "close": "22450.00"})
+    assert market_data_service.snapshot["spot"] == 22555.25
+    assert market_data_service.snapshot["change"] == 105.25
+    assert market_data_service._snapshot_dirty is True
+
+    market_data_service._handle_feed_packet(
+        {
+            "type": "Full Data",
+            "security_id": 12345,
+            "LTP": "118.50",
+            "volume": 26000,
+            "OI": 120000,
+            "depth": [
+                {
+                    "bid_price": "118.40",
+                    "ask_price": "118.55",
+                    "bid_quantity": 650,
+                    "ask_quantity": 600,
+                }
+            ],
+        }
+    )
+    quote = market_data_service.quotes["NIFTY_2026-03-12_22500_CE"]
+    assert quote["ltp"] == 118.5
+    assert quote["bid"] == 118.4
+    assert quote["ask"] == 118.55
+    assert quote["oi_lakhs"] == 1.2
+    assert quote["volume"] == 26000
+    assert "NIFTY_2026-03-12_22500_CE" in market_data_service._dirty_quote_symbols
+
+    batch = market_data_service._build_quote_batch(("NIFTY_2026-03-12_22500_CE",))
+    assert batch["quotes"][0]["symbol"] == "NIFTY_2026-03-12_22500_CE"
+    assert batch["quotes"][0]["ltp"] == 118.5
+
+
+def test_fetch_candles_returns_full_intraday_window_without_legacy_truncation(monkeypatch: pytest.MonkeyPatch) -> None:
+    base = int(datetime(2026, 3, 10, 3, 45, tzinfo=timezone.utc).timestamp())
+    timestamps = [base + index * 900 for index in range(600)]
+
+    class FakeDhanClient:
+        def intraday_minute_data(self, **kwargs):
+            self.last_kwargs = kwargs
+            return {
+                "data": {
+                    "timestamp": timestamps,
+                    "open": [22000 + index for index in range(600)],
+                    "high": [22001 + index for index in range(600)],
+                    "low": [21999 + index for index in range(600)],
+                    "close": [22000.5 + index for index in range(600)],
+                    "volume": [1000 + index for index in range(600)],
+                }
+            }
+
+    fake_client = FakeDhanClient()
+    monkeypatch.setattr(market_data_service, "_has_dhan", lambda: True)
+    monkeypatch.setattr(market_data_service, "_client", lambda: fake_client)
+
+    response = market_data_service._fetch_candles("15m")
+
+    assert len(response["candles"]) == 600
+    assert response["candles"][0]["time"] == timestamps[0]
+    assert response["candles"][-1]["time"] == timestamps[-1]
+    assert response["has_more"] is True
+    assert response["next_before"] == timestamps[0]
+    assert fake_client.last_kwargs["interval"] == 15
+
+
+def test_market_candles_route_supports_before_cursor(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    headers = _login(client, "admin@lite.trade", "lite-admin-123")
+    timestamps = [
+        int(datetime(2026, 3, 9, 3, 45, tzinfo=timezone.utc).timestamp()),
+        int(datetime(2026, 3, 9, 4, 0, tzinfo=timezone.utc).timestamp()),
+        int(datetime(2026, 3, 9, 4, 15, tzinfo=timezone.utc).timestamp()),
+    ]
+
+    class FakeDhanClient:
+        def intraday_minute_data(self, **kwargs):
+            return {
+                "data": {
+                    "timestamp": timestamps,
+                    "open": [22400.0, 22410.0, 22420.0],
+                    "high": [22405.0, 22415.0, 22425.0],
+                    "low": [22395.0, 22405.0, 22415.0],
+                    "close": [22402.0, 22412.0, 22422.0],
+                    "volume": [100, 120, 140],
+                }
+            }
+
+    monkeypatch.setattr(market_data_service, "_has_dhan", lambda: True)
+    monkeypatch.setattr(market_data_service, "_client", lambda: FakeDhanClient())
+
+    response = client.get(
+        f"/api/v1/market/candles?timeframe=15m&before={timestamps[1]}",
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+
+    payload = response.json()
+    assert [candle["time"] for candle in payload["candles"]] == [timestamps[0]]
+    assert payload["has_more"] is True
+    assert payload["next_before"] == timestamps[0]

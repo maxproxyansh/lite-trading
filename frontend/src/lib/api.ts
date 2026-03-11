@@ -22,6 +22,16 @@ export type OrderPayload = components['schemas']['OrderRequest']
 export type CreateAgentKeyPayload = components['schemas']['CreateAgentKeyRequest']
 export type AgentKeyResponse = components['schemas']['AgentKeyResponse']
 export type CreateUserPayload = components['schemas']['CreateUserRequest']
+export type QuotePatch = Partial<OptionQuote> & Pick<OptionQuote, 'symbol'> & { oi_lakhs?: number | null }
+export type QuoteBatchEvent = {
+  active_expiry: string | null
+  updated_at: string
+  quotes: QuotePatch[]
+}
+export type PortfolioRefreshEvent = {
+  portfolio_id?: string | null
+  reason?: string | null
+}
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 const REQUEST_TIMEOUT_MS = 15000
@@ -162,8 +172,12 @@ export async function fetchOptionChain(expiry?: string) {
   return rawFetch<OptionChainResponse>(`/api/v1/market/chain${qs}`)
 }
 
-export async function fetchCandles(timeframe: string) {
-  return rawFetch<CandleResponse>(`/api/v1/market/candles?timeframe=${encodeURIComponent(timeframe)}`)
+export async function fetchCandles(timeframe: string, before?: number | null) {
+  const params = new URLSearchParams({ timeframe })
+  if (before !== undefined && before !== null) {
+    params.set('before', String(before))
+  }
+  return rawFetch<CandleResponse>(`/api/v1/market/candles?${params.toString()}`)
 }
 
 export async function fetchAlerts() {

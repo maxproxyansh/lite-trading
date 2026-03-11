@@ -195,6 +195,8 @@ class CandleResponse(BaseModel):
     candles: list[Candle]
     source: str
     degraded: bool = False
+    has_more: bool = False
+    next_before: int | None = None
 
 
 class AlertCreateRequest(BaseModel):

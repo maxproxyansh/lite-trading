@@ -1,7 +1,7 @@
 import { useStore } from '../store/useStore'
 
 export default function TickerBar() {
-  const { snapshot } = useStore()
+  const snapshot = useStore((state) => state.snapshot)
 
   // Build items only from sources that have actual data
   const items: {

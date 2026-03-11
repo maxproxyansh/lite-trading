@@ -1,10 +1,15 @@
 import { useEffect, useRef } from 'react'
 
-import type { MarketSnapshot, OptionChainResponse, SignalResponse } from '../lib/api'
+import type {
+  MarketSnapshot,
+  OptionChainResponse,
+  PortfolioRefreshEvent,
+  QuoteBatchEvent,
+  SignalResponse,
+} from '../lib/api'
 import { useStore } from '../store/useStore'
 
 function buildWsUrl() {
-  // Auth is handled via cookies (access_cookie) — never pass tokens in the URL.
   const explicit = import.meta.env.VITE_WS_BASE_URL as string | undefined
   if (explicit) {
     return explicit
@@ -24,19 +29,64 @@ export function useWebSocket() {
   const staleRef = useRef<number | null>(null)
   const attemptRef = useRef(0)
   const wsRef = useRef<WebSocket | null>(null)
-  const {
-    setWsStatus,
-    setSnapshot,
-    applyChainEvent,
-    upsertSignal,
-  } = useStore()
+  const handlersRef = useRef({
+    setSnapshot: useStore.getState().setSnapshot,
+    applyChainEvent: useStore.getState().applyChainEvent,
+    applyQuoteBatch: useStore.getState().applyQuoteBatch,
+    upsertSignal: useStore.getState().upsertSignal,
+    requestPortfolioRefresh: useStore.getState().requestPortfolioRefresh,
+  })
+
   const accessToken = useStore((state) => state.accessToken)
+  const setWsStatus = useStore((state) => state.setWsStatus)
+  const setSnapshot = useStore((state) => state.setSnapshot)
+  const applyChainEvent = useStore((state) => state.applyChainEvent)
+  const applyQuoteBatch = useStore((state) => state.applyQuoteBatch)
+  const upsertSignal = useStore((state) => state.upsertSignal)
+  const requestPortfolioRefresh = useStore((state) => state.requestPortfolioRefresh)
+
+  useEffect(() => {
+    handlersRef.current = {
+      setSnapshot,
+      applyChainEvent,
+      applyQuoteBatch,
+      upsertSignal,
+      requestPortfolioRefresh,
+    }
+  }, [applyChainEvent, applyQuoteBatch, requestPortfolioRefresh, setSnapshot, upsertSignal])
 
   useEffect(() => {
     if (!accessToken) {
       setWsStatus('disconnected')
       wsRef.current?.close()
       return undefined
+    }
+
+    const handleMessage = (raw: string) => {
+      try {
+        if (raw === 'pong') {
+          return
+        }
+        const message = JSON.parse(raw) as { type: string; payload: unknown }
+        if (message.type === 'market.snapshot') {
+          handlersRef.current.setSnapshot(message.payload as MarketSnapshot)
+        }
+        if (message.type === 'option.chain') {
+          handlersRef.current.applyChainEvent(message.payload as OptionChainResponse)
+        }
+        if (message.type === 'option.quotes') {
+          handlersRef.current.applyQuoteBatch(message.payload as QuoteBatchEvent)
+        }
+        if (message.type === 'signal.updated') {
+          handlersRef.current.upsertSignal(message.payload as SignalResponse)
+        }
+        if (message.type === 'portfolio.refresh') {
+          const payload = message.payload as PortfolioRefreshEvent
+          handlersRef.current.requestPortfolioRefresh(payload.portfolio_id)
+        }
+      } catch {
+        // Ignore malformed push payloads.
+      }
     }
 
     const connect = () => {
@@ -66,23 +116,7 @@ export function useWebSocket() {
 
       socket.onmessage = (event) => {
         armStaleTimer()
-        try {
-          if (event.data === 'pong') {
-            return
-          }
-          const message = JSON.parse(event.data) as { type: string; payload: unknown }
-          if (message.type === 'market.snapshot') {
-            setSnapshot(message.payload as MarketSnapshot)
-          }
-          if (message.type === 'option.chain') {
-            applyChainEvent(message.payload as OptionChainResponse)
-          }
-          if (message.type === 'signal.updated') {
-            upsertSignal(message.payload as SignalResponse)
-          }
-        } catch {
-          // Ignore malformed push payloads.
-        }
+        handleMessage(String(event.data))
       }
 
       socket.onclose = () => {
@@ -117,5 +151,5 @@ export function useWebSocket() {
       }
       wsRef.current?.close()
     }
-  }, [accessToken, applyChainEvent, setSnapshot, setWsStatus, upsertSignal])
+  }, [accessToken, setWsStatus])
 }

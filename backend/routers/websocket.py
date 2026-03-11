@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import datetime, timezone
+from dataclasses import dataclass
 from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -10,24 +12,47 @@ from sqlalchemy.orm import Session
 
 from config import get_settings
 from database import SessionLocal
-from models import AgentApiKey, User
+from models import AgentApiKey, Portfolio, User
 from security import decode_access_token, hash_secret
 
 
 settings = get_settings()
 router = APIRouter(tags=["ws"])
-connected_clients: set[WebSocket] = set()
+
+
+@dataclass(frozen=True, slots=True)
+class WebSocketClient:
+    portfolio_ids: frozenset[str]
+
+
+connected_clients: dict[WebSocket, WebSocketClient] = {}
+
+
+async def _broadcast_to_clients(clients: list[WebSocket], message: str) -> None:
+    if not clients:
+        return
+    results = await asyncio.gather(
+        *(client.send_text(message) for client in clients),
+        return_exceptions=True,
+    )
+    for client, result in zip(clients, results, strict=False):
+        if isinstance(result, Exception):
+            connected_clients.pop(client, None)
 
 
 async def broadcast_message(event_type: str, payload: dict[str, Any]) -> None:
-    dead: set[WebSocket] = set()
-    message = json.dumps({"type": event_type, "payload": payload}, default=str)
-    for client in connected_clients:
-        try:
-            await client.send_text(message)
-        except Exception:  # noqa: BLE001
-            dead.add(client)
-    connected_clients.difference_update(dead)
+    message = json.dumps({"type": event_type, "payload": payload}, default=str, separators=(",", ":"))
+    await _broadcast_to_clients(list(connected_clients), message)
+
+
+async def broadcast_portfolio_message(portfolio_id: str, event_type: str, payload: dict[str, Any]) -> None:
+    message = json.dumps({"type": event_type, "payload": payload}, default=str, separators=(",", ":"))
+    clients = [
+        socket
+        for socket, client in connected_clients.items()
+        if portfolio_id in client.portfolio_ids
+    ]
+    await _broadcast_to_clients(clients, message)
 
 
 def _bearer_token(value: str | None) -> str | None:
@@ -47,11 +72,17 @@ async def websocket_endpoint(websocket: WebSocket):
         bearer_token = _bearer_token(websocket.headers.get("authorization"))
         api_key = websocket.headers.get("x-api-key")
         authorized = False
+        portfolio_ids: set[str] = set()
         if cookie_token or bearer_token:
             try:
                 payload = decode_access_token(cookie_token or bearer_token or "")
                 user = db.query(User).filter(User.id == payload.get("sub"), User.is_active.is_(True)).first()
                 authorized = user is not None
+                if user:
+                    portfolio_ids = {
+                        portfolio_id
+                        for (portfolio_id,) in db.query(Portfolio.id).filter(Portfolio.user_id == user.id).all()
+                    }
             except Exception:  # noqa: BLE001
                 authorized = False
         elif api_key:
@@ -63,6 +94,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 or_(AgentApiKey.expires_at.is_(None), AgentApiKey.expires_at > now),
             ).first()
             authorized = bool(key and key.user_id and key.portfolio_id)
+            if authorized and key and key.portfolio_id:
+                portfolio_ids = {key.portfolio_id}
 
         if not authorized:
             await websocket.close(code=4401)
@@ -71,13 +104,13 @@ async def websocket_endpoint(websocket: WebSocket):
         db.close()
 
     await websocket.accept()
-    connected_clients.add(websocket)
+    connected_clients[websocket] = WebSocketClient(portfolio_ids=frozenset(portfolio_ids))
     try:
         while True:
             message = await websocket.receive_text()
             if message == "ping":
                 await websocket.send_text("pong")
     except WebSocketDisconnect:
-        connected_clients.discard(websocket)
+        connected_clients.pop(websocket, None)
     finally:
-        connected_clients.discard(websocket)
+        connected_clients.pop(websocket, None)

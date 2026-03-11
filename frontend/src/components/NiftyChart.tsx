@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { Bell, X } from 'lucide-react'
 import { createChart, LineStyle } from 'lightweight-charts'
-import type { CandlestickData, IChartApi, IPriceLine, ISeriesApi, MouseEventParams, Time } from 'lightweight-charts'
+import type { CandlestickData, IChartApi, IPriceLine, ISeriesApi, LogicalRange, MouseEventParams, Time } from 'lightweight-charts'
+import { useShallow } from 'zustand/react/shallow'
 
-import { createAlert, deleteAlert, fetchAlerts, fetchCandles, type AlertSummary } from '../lib/api'
+import { createAlert, deleteAlert, fetchAlerts, fetchCandles, type AlertSummary, type Candle } from '../lib/api'
 import { useStore } from '../store/useStore'
 
 const TIMEFRAMES = ['1m', '5m', '15m', '1h', 'D'] as const
@@ -19,16 +20,59 @@ function getChartColors() {
   return { bgPrimary, bgSecondary, textMuted, borderPrimary, bullColor, bearColor }
 }
 
+function timeframeSeconds(timeframe: (typeof TIMEFRAMES)[number]) {
+  const map = {
+    '1m': 60,
+    '5m': 300,
+    '15m': 900,
+    '1h': 3600,
+    D: 86400,
+  } as const
+  return map[timeframe]
+}
+
+function toChartCandles(candles: Candle[]) {
+  return candles.map((candle) => ({
+    time: candle.time as Time,
+    open: candle.open,
+    high: candle.high,
+    low: candle.low,
+    close: candle.close,
+  }))
+}
+
+function mergeCandles(existing: CandlestickData<Time>[], incoming: CandlestickData<Time>[]) {
+  const merged = new Map<number, CandlestickData<Time>>()
+  for (const candle of existing) {
+    merged.set(Number(candle.time), candle)
+  }
+  for (const candle of incoming) {
+    merged.set(Number(candle.time), candle)
+  }
+  return [...merged.values()].sort((left, right) => Number(left.time) - Number(right.time))
+}
+
 export default function NiftyChart() {
-  const { addToast, optionChartSymbol, setOptionChartSymbol, snapshot } = useStore()
+  const { addToast, optionChartSymbol, setOptionChartSymbol, spot } = useStore(useShallow((state) => ({
+    addToast: state.addToast,
+    optionChartSymbol: state.optionChartSymbol,
+    setOptionChartSymbol: state.setOptionChartSymbol,
+    spot: state.snapshot?.spot ?? null,
+  })))
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
   const priceLinesRef = useRef<Map<string, IPriceLine>>(new Map())
   const announcedAlertIdsRef = useRef<Set<string>>(new Set())
-  const lastCandleRef = useRef<CandlestickData | null>(null)
+  const candlesRef = useRef<CandlestickData<Time>[]>([])
+  const lastBarRef = useRef<CandlestickData<Time> | null>(null)
+  const nextBeforeRef = useRef<number | null>(null)
+  const hasMoreHistoryRef = useRef(false)
+  const loadingMoreHistoryRef = useRef(false)
+  const historySessionRef = useRef(0)
   const [timeframe, setTimeframe] = useState<(typeof TIMEFRAMES)[number]>('D')
   const [loading, setLoading] = useState(true)
+  const [loadingMoreHistory, setLoadingMoreHistory] = useState(false)
   const [candleCount, setCandleCount] = useState(0)
   const [alerts, setAlerts] = useState<AlertSummary[]>([])
   const [pendingAlert, setPendingAlert] = useState<{ price: number; x: number; y: number } | null>(null)
@@ -37,7 +81,10 @@ export default function NiftyChart() {
 
   useEffect(() => {
     const container = containerRef.current
-    if (!container) return
+    if (!container) {
+      return
+    }
+
     const colors = getChartColors()
     const chart = createChart(container, {
       width: container.clientWidth,
@@ -124,47 +171,182 @@ export default function NiftyChart() {
 
   useEffect(() => {
     let active = true
+    historySessionRef.current += 1
+    const session = historySessionRef.current
+    candlesRef.current = []
+    lastBarRef.current = null
+    nextBeforeRef.current = null
+    hasMoreHistoryRef.current = false
+    loadingMoreHistoryRef.current = false
+    setLoadingMoreHistory(false)
+
     fetchCandles(timeframe)
       .then((response) => {
-        if (!active) return
-        const candles: CandlestickData[] = response.candles.map((candle) => ({
-          time: candle.time as Time,
-          open: candle.open,
-          high: candle.high,
-          low: candle.low,
-          close: candle.close,
-        }))
+        if (!active || historySessionRef.current !== session) {
+          return
+        }
+        const candles = toChartCandles(response.candles)
+        candlesRef.current = candles
+        lastBarRef.current = candles.at(-1) ?? null
+        nextBeforeRef.current = response.next_before ?? null
+        hasMoreHistoryRef.current = response.has_more
         seriesRef.current?.setData(candles)
         chartRef.current?.timeScale().fitContent()
-        lastCandleRef.current = candles.length > 0 ? candles[candles.length - 1] : null
         setCandleCount(candles.length)
       })
-      .finally(() => active && setLoading(false))
+      .catch((error) => {
+        if (!active || historySessionRef.current !== session) {
+          return
+        }
+        candlesRef.current = []
+        lastBarRef.current = null
+        nextBeforeRef.current = null
+        hasMoreHistoryRef.current = false
+        seriesRef.current?.setData([])
+        setCandleCount(0)
+        addToast('error', error instanceof Error ? error.message : 'Failed to load chart history')
+      })
+      .finally(() => {
+        if (active && historySessionRef.current === session) {
+          setLoading(false)
+        }
+      })
+
     return () => {
       active = false
     }
-  }, [timeframe])
+  }, [addToast, timeframe])
 
-  // Real-time candle update: when spot price changes via WebSocket, update the last candle
   useEffect(() => {
+    const chart = chartRef.current
     const series = seriesRef.current
-    const lastCandle = lastCandleRef.current
-    if (!series || !lastCandle || !snapshot?.spot || snapshot.spot <= 0) return
-
-    const spot = snapshot.spot
-    const updated: CandlestickData = {
-      ...lastCandle,
-      close: spot,
-      high: Math.max(lastCandle.high, spot),
-      low: Math.min(lastCandle.low, spot),
+    if (!chart || !series) {
+      return
     }
-    series.update(updated)
-    lastCandleRef.current = updated
-  }, [snapshot?.spot])
+
+    const loadMoreHistory = async (range: LogicalRange) => {
+      if (
+        loading
+        || loadingMoreHistoryRef.current
+        || !hasMoreHistoryRef.current
+        || nextBeforeRef.current === null
+      ) {
+        return
+      }
+
+      const barsInfo = series.barsInLogicalRange(range)
+      if (!barsInfo || barsInfo.barsBefore > 15) {
+        return
+      }
+
+      const session = historySessionRef.current
+      const before = nextBeforeRef.current
+      const previousRange = chart.timeScale().getVisibleLogicalRange()
+      const previousLength = candlesRef.current.length
+
+      loadingMoreHistoryRef.current = true
+      setLoadingMoreHistory(true)
+      try {
+        const response = await fetchCandles(timeframe, before)
+        if (historySessionRef.current !== session) {
+          return
+        }
+
+        const merged = mergeCandles(toChartCandles(response.candles), candlesRef.current)
+        const addedCount = merged.length - previousLength
+
+        candlesRef.current = merged
+        lastBarRef.current = merged.at(-1) ?? null
+        nextBeforeRef.current = response.next_before ?? null
+        hasMoreHistoryRef.current = response.has_more
+        series.setData(merged)
+        setCandleCount(merged.length)
+
+        if (previousRange && addedCount > 0) {
+          chart.timeScale().setVisibleLogicalRange({
+            from: previousRange.from + addedCount,
+            to: previousRange.to + addedCount,
+          })
+        }
+      } catch (error) {
+        if (historySessionRef.current === session) {
+          hasMoreHistoryRef.current = false
+          nextBeforeRef.current = null
+          addToast('error', error instanceof Error ? error.message : 'Failed to load older chart history')
+        }
+      } finally {
+        if (historySessionRef.current === session) {
+          loadingMoreHistoryRef.current = false
+          setLoadingMoreHistory(false)
+        }
+      }
+    }
+
+    const handleRangeChange = (range: LogicalRange | null) => {
+      if (!range) {
+        return
+      }
+      void loadMoreHistory(range)
+    }
+
+    chart.timeScale().subscribeVisibleLogicalRangeChange(handleRangeChange)
+    return () => {
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleRangeChange)
+    }
+  }, [addToast, loading, timeframe])
+
+  useEffect(() => {
+    if (!spot || spot <= 0 || !seriesRef.current || !lastBarRef.current) {
+      return
+    }
+
+    const lastBar = lastBarRef.current
+    const nextBoundary = Number(lastBar.time) + timeframeSeconds(timeframe)
+    const now = Math.floor(Date.now() / 1000)
+
+    if (now >= nextBoundary) {
+      const nextBar: CandlestickData<Time> = {
+        time: nextBoundary as Time,
+        open: lastBar.close,
+        high: spot,
+        low: spot,
+        close: spot,
+      }
+      lastBarRef.current = nextBar
+      candlesRef.current = [...candlesRef.current, nextBar]
+      setCandleCount(candlesRef.current.length)
+      seriesRef.current.update(nextBar)
+      return
+    }
+
+    const nextBar: CandlestickData<Time> = {
+      ...lastBar,
+      high: Math.max(lastBar.high, spot),
+      low: Math.min(lastBar.low, spot),
+      close: spot,
+    }
+
+    if (
+      nextBar.close === lastBar.close
+      && nextBar.high === lastBar.high
+      && nextBar.low === lastBar.low
+    ) {
+      return
+    }
+
+    lastBarRef.current = nextBar
+    candlesRef.current = candlesRef.current.map((bar, index, source) => (
+      index === source.length - 1 ? nextBar : bar
+    ))
+    seriesRef.current.update(nextBar)
+  }, [spot, timeframe])
 
   useEffect(() => {
     const series = seriesRef.current
-    if (!series) return
+    if (!series) {
+      return
+    }
+
     for (const line of priceLinesRef.current.values()) {
       series.removePriceLine(line)
     }
@@ -208,11 +390,10 @@ export default function NiftyChart() {
 
   return (
     <div className="relative flex h-full flex-col bg-bg-primary">
-      {/* Timeframe bar */}
       <div className="flex items-center gap-1 border-b border-border-secondary px-3 py-1">
         <span className="mr-2 text-[11px] text-text-muted">NIFTY 50</span>
         {optionChartSymbol && (
-          <div className="flex items-center gap-1 mr-2">
+          <div className="mr-2 flex items-center gap-1">
             <span className="text-[11px] text-brand">Option: {optionChartSymbol}</span>
             <button
               onClick={() => setOptionChartSymbol(null)}
@@ -222,9 +403,9 @@ export default function NiftyChart() {
             </button>
           </div>
         )}
-        {snapshot?.spot ? (
+        {spot ? (
           <span className="mr-3 text-[11px] text-text-secondary">
-            Spot {snapshot.spot.toFixed(2)}
+            Spot {spot.toFixed(2)}
           </span>
         ) : null}
         <div className="flex items-center gap-0.5">
@@ -237,7 +418,7 @@ export default function NiftyChart() {
               }}
               className={`px-2 py-0.5 text-[11px] transition-colors ${
                 timeframe === tf
-                  ? 'bg-brand text-bg-primary rounded-sm'
+                  ? 'rounded-sm bg-brand text-bg-primary'
                   : 'text-text-muted hover:text-text-secondary'
               }`}
             >
@@ -246,23 +427,23 @@ export default function NiftyChart() {
           ))}
         </div>
         <div className="ml-auto flex items-center gap-2 text-[11px] text-text-muted">
+          {loadingMoreHistory ? <span>Loading older…</span> : null}
           <Bell size={12} className="text-signal" />
           <span>{activeAlerts.length} active</span>
           {triggeredAlerts.length ? <span>{triggeredAlerts.length} triggered</span> : null}
         </div>
       </div>
 
-      {/* Chart */}
       <div ref={containerRef} className="relative flex-1 min-h-0">
         {loading && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-bg-primary/80">
-            <div className="h-6 w-6 rounded-full border-2 border-signal border-t-transparent animate-spin" />
+            <div className="h-6 w-6 animate-spin rounded-full border-2 border-signal border-t-transparent" />
           </div>
         )}
         {candleCount === 0 && !loading && (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-text-muted">
             <span className="text-sm">Market closed</span>
-            <span className="text-xs mt-1">NSE trading hours: 9:15 AM – 3:30 PM IST</span>
+            <span className="mt-1 text-xs">NSE trading hours: 9:15 AM – 3:30 PM IST</span>
           </div>
         )}
         {pendingAlert && alertPopupStyle ? (
