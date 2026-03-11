@@ -22,12 +22,12 @@ export default function ExpiryTabs({ maxVisible = 5 }: Props) {
   const active = selectedExpiry ?? activeExpiry ?? ''
 
   return (
-    <div className="flex items-center gap-0.5 overflow-x-auto px-2 py-1">
+    <div className="flex items-center justify-center gap-1 overflow-x-auto px-3 py-1.5">
       {visibleExpiries.map((expiry) => (
         <button
           key={expiry}
           onClick={() => setSelectedExpiry(expiry)}
-          className={`shrink-0 rounded-sm px-2 py-0.5 text-[11px] font-medium transition-colors ${
+          className={`shrink-0 rounded-sm px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
             expiry === active
               ? 'bg-brand text-bg-primary'
               : 'text-text-muted hover:bg-bg-hover hover:text-text-primary'

@@ -308,7 +308,7 @@ export const useStore = create<AppState>((set) => ({
   analytics: null,
   latestSignal: null,
   chainView: 'collapsed',
-  chainFilter: 'ALL',
+  chainFilter: 'ATM',
   chainPanelOpen: true,
   optionChartSymbol: null,
   portfolioRefreshNonce: 0,

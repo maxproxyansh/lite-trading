@@ -11,12 +11,12 @@ export default function ChainFilterTabs() {
   })))
 
   return (
-    <div className="flex items-center gap-0.5 px-2 py-1">
+    <div className="flex items-center justify-center gap-1 px-3 py-1.5">
       {FILTERS.map((filter) => (
         <button
           key={filter}
           onClick={() => setChainFilter(filter)}
-          className={`rounded-sm px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide transition-colors ${
+          className={`rounded-sm px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-wide transition-colors ${
             filter === chainFilter
               ? 'bg-bg-hover text-text-primary'
               : 'text-text-muted hover:text-text-secondary'

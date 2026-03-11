@@ -160,6 +160,7 @@ class MarketDataService:
                     await self._connect_feed()
                 await self._sync_feed_subscriptions()
                 try:
+                    # dhanhq exposes get_instrument_data() as an async recv wrapper; wait_for prevents a stuck socket.
                     payload = await asyncio.wait_for(self._feed.get_instrument_data(), timeout=5.0)
                 except asyncio.TimeoutError:
                     continue
