@@ -36,7 +36,7 @@ DEFAULT_AGENT_SCOPES = [
     "alerts:write",
     "funds:read",
 ]
-ALLOWED_AGENT_SCOPES = frozenset(DEFAULT_AGENT_SCOPES)
+ALLOWED_AGENT_SCOPES = frozenset([*DEFAULT_AGENT_SCOPES, "webhooks:read", "webhooks:write"])
 STARTING_CASH = 500_000.0
 PORTFOLIO_KINDS = ("manual", "agent")
 

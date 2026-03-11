@@ -10,6 +10,7 @@ from models import Alert
 from schemas import AlertCreateRequest
 from services.audit import log_audit
 from services.market_data import market_data_service
+from services.webhook_service import enqueue_webhook_event
 
 
 MONEY_PLACES = Decimal("0.01")
@@ -144,10 +145,44 @@ def sync_alerts(db: Session) -> int:
         if alert.direction == "ABOVE" and current_price >= target_price:
             alert.status = "TRIGGERED"
             alert.triggered_at = datetime.now(timezone.utc)
+            enqueue_webhook_event(
+                db,
+                portfolio_id=alert.portfolio_id,
+                event_type="alert.triggered",
+                payload={
+                    "event": "alert.triggered",
+                    "occurred_at": alert.triggered_at.isoformat(),
+                    "portfolio_id": alert.portfolio_id,
+                    "data": {
+                        "alert_id": alert.id,
+                        "symbol": alert.symbol,
+                        "target_price": float(alert.target_price),
+                        "direction": alert.direction,
+                        "last_price": current_price,
+                    },
+                },
+            )
             triggered += 1
         elif alert.direction == "BELOW" and current_price <= target_price:
             alert.status = "TRIGGERED"
             alert.triggered_at = datetime.now(timezone.utc)
+            enqueue_webhook_event(
+                db,
+                portfolio_id=alert.portfolio_id,
+                event_type="alert.triggered",
+                payload={
+                    "event": "alert.triggered",
+                    "occurred_at": alert.triggered_at.isoformat(),
+                    "portfolio_id": alert.portfolio_id,
+                    "data": {
+                        "alert_id": alert.id,
+                        "symbol": alert.symbol,
+                        "target_price": float(alert.target_price),
+                        "direction": alert.direction,
+                        "last_price": current_price,
+                    },
+                },
+            )
             triggered += 1
     if alerts:
         db.commit()

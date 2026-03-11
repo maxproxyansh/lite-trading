@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
@@ -12,6 +14,9 @@ from schemas import (
     AgentBootstrapRequest,
     AgentBootstrapResponse,
     AgentProfileResponse,
+    AgentWebhookCreateRequest,
+    AgentWebhookCreateResponse,
+    AgentWebhookSummary,
     AlertCreateRequest,
     AlertSummary,
     DhanFundResponse,
@@ -19,6 +24,7 @@ from schemas import (
     DhanOrderResponse,
     DhanPositionResponse,
     FundsResponse,
+    OrderListResponse,
     OrderModifyRequest,
     OrderRequest,
     OrderSummary,
@@ -49,11 +55,14 @@ from services.trading_service import (
     list_positions,
     modify_order,
     place_order,
+    search_orders,
 )
+from services.webhook_service import create_webhook, delete_webhook, list_webhooks
 
 
 settings = get_settings()
 router = APIRouter(prefix=f"{settings.api_prefix}/agent", tags=["agent"])
+ORDER_STATUS_FILTERS = frozenset({"OPEN", "FILLED", "CANCELLED", "REJECTED", "TRIGGER_PENDING"})
 
 
 def _prepare_secret_response(response: Response) -> None:
@@ -142,9 +151,49 @@ def agent_order(
     return OrderSummary.model_validate(order)
 
 
-@router.get("/orders", response_model=list[OrderSummary])
-def agent_orders(db: Session = Depends(get_db), key=Depends(require_agent_scope("orders:read"))):
-    return [OrderSummary.model_validate(order) for order in list_orders(db, key.portfolio_id)]
+@router.get("/orders", response_model=OrderListResponse)
+def agent_orders(
+    order_status: str | None = Query(default=None, alias="status"),
+    symbol: str | None = Query(default=None),
+    created_from: date | None = Query(default=None, alias="from"),
+    created_to: date | None = Query(default=None, alias="to"),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
+    sort: str = Query(default="desc", pattern="^(asc|desc)$"),
+    db: Session = Depends(get_db),
+    key=Depends(require_agent_scope("orders:read")),
+):
+    statuses: list[str] | None = None
+    if order_status:
+        statuses = []
+        for raw_status in order_status.split(","):
+            value = raw_status.strip().upper()
+            if not value:
+                continue
+            if value not in ORDER_STATUS_FILTERS:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"Unsupported status: {value}",
+                )
+            if value not in statuses:
+                statuses.append(value)
+    items, total = search_orders(
+        db,
+        portfolio_id=key.portfolio_id,
+        statuses=statuses,
+        symbol=symbol,
+        created_from=created_from,
+        created_to=created_to,
+        offset=offset,
+        limit=limit,
+        sort=sort,
+    )
+    return OrderListResponse(
+        items=[OrderSummary.model_validate(order) for order in items],
+        total=total,
+        offset=offset,
+        limit=limit,
+    )
 
 
 @router.get("/orders/{order_id}", response_model=OrderSummary)
@@ -275,6 +324,37 @@ def agent_delete_alert(
         actor_type="agent",
         actor_id=key.id,
     )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/webhooks", response_model=list[AgentWebhookSummary])
+def agent_webhooks(
+    db: Session = Depends(get_db),
+    key=Depends(require_agent_scope("webhooks:read")),
+):
+    return [AgentWebhookSummary.model_validate(webhook) for webhook in list_webhooks(db, agent_key_id=key.id)]
+
+
+@router.post("/webhooks", response_model=AgentWebhookCreateResponse, status_code=status.HTTP_201_CREATED)
+def agent_create_webhook(
+    payload: AgentWebhookCreateRequest,
+    db: Session = Depends(get_db),
+    key=Depends(require_agent_scope("webhooks:write")),
+    _: None = Depends(rate_limit("agent:webhooks", 60, 60)),
+):
+    webhook, secret = create_webhook(db, agent_key=key, payload=payload)
+    summary = AgentWebhookSummary.model_validate(webhook)
+    return AgentWebhookCreateResponse(**summary.model_dump(), secret=secret)
+
+
+@router.delete("/webhooks/{webhook_id}", status_code=status.HTTP_204_NO_CONTENT)
+def agent_delete_webhook(
+    webhook_id: str,
+    db: Session = Depends(get_db),
+    key=Depends(require_agent_scope("webhooks:write")),
+    _: None = Depends(rate_limit("agent:webhooks-delete", 60, 60)),
+):
+    delete_webhook(db, agent_key_id=key.id, webhook_id=webhook_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

@@ -17,6 +17,7 @@ from services.market_data import market_data_service
 from services.auth_service import ensure_bootstrap_state
 from services.signal_adapter import signal_adapter
 from services.trading_service import process_open_orders_sync
+from services.webhook_service import run_webhook_dispatcher
 from routers.websocket import broadcast_message, broadcast_portfolio_message
 
 
@@ -57,7 +58,11 @@ async def lifespan(app: FastAPI):
 
     await market_data_service.start()
     await signal_adapter.start()
+    webhook_stop = asyncio.Event()
+    webhook_task = asyncio.create_task(run_webhook_dispatcher(webhook_stop))
     yield
+    webhook_stop.set()
+    await webhook_task
     await signal_adapter.stop()
     await market_data_service.stop()
 

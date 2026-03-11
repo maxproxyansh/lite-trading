@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import ipaddress
+from urllib.parse import urlparse
 from datetime import datetime
 from typing import Any, Literal
 
@@ -11,10 +13,12 @@ OrderSide = Literal["BUY", "SELL"]
 OrderType = Literal["MARKET", "LIMIT", "SL", "SL-M"]
 OrderProduct = Literal["NRML", "MIS"]
 OrderValidity = Literal["DAY"]
+OrderSort = Literal["asc", "desc"]
 AlertDirection = Literal["ABOVE", "BELOW"]
 AlertStatus = Literal["ACTIVE", "TRIGGERED", "CANCELLED"]
 PortfolioKind = Literal["manual", "agent"]
 ExchangeSegment = Literal["NSE_FNO"]
+WebhookEvent = Literal["order.filled", "order.cancelled", "position.opened", "position.closed", "alert.triggered"]
 
 
 def default_agent_scopes() -> list[str]:
@@ -222,6 +226,51 @@ class AlertSummary(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class AgentWebhookCreateRequest(BaseModel):
+    url: str = Field(min_length=1, max_length=1024)
+    events: list[WebhookEvent] = Field(min_length=1, max_length=5)
+
+    @model_validator(mode="after")
+    def validate_target(self):
+        parsed = urlparse(self.url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("Webhook URL must be a valid http or https URL")
+        hostname = parsed.hostname or ""
+        if hostname == "localhost" or hostname.endswith(".local"):
+            raise ValueError("Webhook URL host is not allowed")
+        try:
+            ip = ipaddress.ip_address(hostname)
+        except ValueError:
+            ip = None
+        if ip and (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved):
+            raise ValueError("Webhook URL host is not allowed")
+        deduped: list[WebhookEvent] = []
+        for event in self.events:
+            if event not in deduped:
+                deduped.append(event)
+        self.events = deduped
+        return self
+
+
+class AgentWebhookSummary(BaseModel):
+    id: str
+    agent_key_id: str
+    portfolio_id: str
+    url: str
+    events: list[WebhookEvent]
+    last_delivery_at: datetime | None = None
+    last_failure_at: datetime | None = None
+    last_error: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AgentWebhookCreateResponse(AgentWebhookSummary):
+    secret: str
+
+
 class SignalResponse(BaseModel):
     id: str
     source: str
@@ -330,6 +379,13 @@ class OrderSummary(BaseModel):
     filled_at: datetime | None = None
 
     model_config = {"from_attributes": True}
+
+
+class OrderListResponse(BaseModel):
+    items: list[OrderSummary]
+    total: int
+    offset: int
+    limit: int
 
 
 class OrderModifyRequest(BaseModel):

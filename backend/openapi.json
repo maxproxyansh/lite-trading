@@ -43,6 +43,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "auth:signup",
+          "limit": 5,
+          "window_seconds": 60
         }
       }
     },
@@ -84,6 +89,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "auth:login",
+          "limit": 10,
+          "window_seconds": 60
         }
       }
     },
@@ -133,6 +143,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "auth:refresh",
+          "limit": 30,
+          "window_seconds": 60
         }
       }
     },
@@ -180,6 +195,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "auth:logout",
+          "limit": 30,
+          "window_seconds": 60
         }
       }
     },
@@ -384,6 +404,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "auth:create-agent-key",
+          "limit": 20,
+          "window_seconds": 60
         }
       },
       "get": {
@@ -589,6 +614,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "auth:revoke-agent-key",
+          "limit": 20,
+          "window_seconds": 60
         }
       }
     },
@@ -696,6 +726,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "admin:create-user",
+          "limit": 20,
+          "window_seconds": 60
         }
       }
     },
@@ -803,6 +838,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "admin:create-agent-key",
+          "limit": 20,
+          "window_seconds": 60
         }
       }
     },
@@ -2839,6 +2879,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "agent:bootstrap",
+          "limit": 10,
+          "window_seconds": 60
         }
       }
     },
@@ -2880,6 +2925,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "agent:signup",
+          "limit": 5,
+          "window_seconds": 60
         }
       }
     },
@@ -2988,6 +3038,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "agent:orders",
+          "limit": 120,
+          "window_seconds": 60
         }
       },
       "get": {
@@ -2997,6 +3052,106 @@
         "summary": "Agent Orders",
         "operationId": "agent_orders_api_v1_agent_orders_get",
         "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "symbol",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Symbol"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^(asc|desc)$",
+              "default": "desc",
+              "title": "Sort"
+            }
+          },
           {
             "name": "X-API-Key",
             "in": "header",
@@ -3020,11 +3175,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/OrderSummary"
-                  },
-                  "title": "Response Agent Orders Api V1 Agent Orders Get"
+                  "$ref": "#/components/schemas/OrderListResponse"
                 }
               }
             }
@@ -3163,6 +3314,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "agent:modify-order",
+          "limit": 120,
+          "window_seconds": 60
         }
       }
     },
@@ -3221,6 +3377,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "agent:cancel",
+          "limit": 120,
+          "window_seconds": 60
         }
       }
     },
@@ -3327,6 +3488,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "agent:square-off-all",
+          "limit": 60,
+          "window_seconds": 60
         }
       }
     },
@@ -3402,6 +3568,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "agent:close",
+          "limit": 120,
+          "window_seconds": 60
         }
       }
     },
@@ -3477,6 +3648,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "agent:close-alias",
+          "limit": 120,
+          "window_seconds": 60
         }
       }
     },
@@ -3636,6 +3812,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "agent:alerts",
+          "limit": 120,
+          "window_seconds": 60
         }
       }
     },
@@ -3687,6 +3868,182 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "agent:alerts-delete",
+          "limit": 120,
+          "window_seconds": 60
+        }
+      }
+    },
+    "/api/v1/agent/webhooks": {
+      "get": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Agent Webhooks",
+        "operationId": "agent_webhooks_api_v1_agent_webhooks_get",
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentWebhookSummary"
+                  },
+                  "title": "Response Agent Webhooks Api V1 Agent Webhooks Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Agent Create Webhook",
+        "operationId": "agent_create_webhook_api_v1_agent_webhooks_post",
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentWebhookCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentWebhookCreateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-ratelimit": {
+          "bucket": "agent:webhooks",
+          "limit": 60,
+          "window_seconds": 60
+        }
+      }
+    },
+    "/api/v1/agent/webhooks/{webhook_id}": {
+      "delete": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Agent Delete Webhook",
+        "operationId": "agent_delete_webhook_api_v1_agent_webhooks__webhook_id__delete",
+        "parameters": [
+          {
+            "name": "webhook_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Webhook Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-ratelimit": {
+          "bucket": "agent:webhooks-delete",
+          "limit": 60,
+          "window_seconds": 60
         }
       }
     },
@@ -3869,6 +4226,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "agent:signals",
+          "limit": 120,
+          "window_seconds": 60
         }
       }
     },
@@ -4081,6 +4443,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "agent:dhan-orders",
+          "limit": 120,
+          "window_seconds": 60
         }
       }
     },
@@ -4195,6 +4562,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "agent:dhan-cancel",
+          "limit": 120,
+          "window_seconds": 60
         }
       }
     },
@@ -4253,6 +4625,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "agent:dhan-exit",
+          "limit": 120,
+          "window_seconds": 60
         }
       }
     },
@@ -4598,6 +4975,223 @@
           "agent_name"
         ],
         "title": "AgentSignupRequest"
+      },
+      "AgentWebhookCreateRequest": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Url"
+          },
+          "events": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "order.filled",
+                "order.cancelled",
+                "position.opened",
+                "position.closed",
+                "alert.triggered"
+              ]
+            },
+            "type": "array",
+            "maxItems": 5,
+            "minItems": 1,
+            "title": "Events"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url",
+          "events"
+        ],
+        "title": "AgentWebhookCreateRequest"
+      },
+      "AgentWebhookCreateResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "agent_key_id": {
+            "type": "string",
+            "title": "Agent Key Id"
+          },
+          "portfolio_id": {
+            "type": "string",
+            "title": "Portfolio Id"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "events": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "order.filled",
+                "order.cancelled",
+                "position.opened",
+                "position.closed",
+                "alert.triggered"
+              ]
+            },
+            "type": "array",
+            "title": "Events"
+          },
+          "last_delivery_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Delivery At"
+          },
+          "last_failure_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Failure At"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "secret": {
+            "type": "string",
+            "title": "Secret"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "agent_key_id",
+          "portfolio_id",
+          "url",
+          "events",
+          "created_at",
+          "updated_at",
+          "secret"
+        ],
+        "title": "AgentWebhookCreateResponse"
+      },
+      "AgentWebhookSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "agent_key_id": {
+            "type": "string",
+            "title": "Agent Key Id"
+          },
+          "portfolio_id": {
+            "type": "string",
+            "title": "Portfolio Id"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "events": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "order.filled",
+                "order.cancelled",
+                "position.opened",
+                "position.closed",
+                "alert.triggered"
+              ]
+            },
+            "type": "array",
+            "title": "Events"
+          },
+          "last_delivery_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Delivery At"
+          },
+          "last_failure_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Failure At"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "agent_key_id",
+          "portfolio_id",
+          "url",
+          "events",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "AgentWebhookSummary"
       },
       "AlertCreateRequest": {
         "properties": {
@@ -5826,6 +6420,37 @@
           "ltp"
         ],
         "title": "OptionQuote"
+      },
+      "OrderListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OrderSummary"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "OrderListResponse"
       },
       "OrderModifyRequest": {
         "properties": {

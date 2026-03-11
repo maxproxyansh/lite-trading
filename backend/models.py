@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, Column, Date, DateTime, Float, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint
 
 from database import Base
 
@@ -75,6 +75,10 @@ class Portfolio(Base):
 
 class Order(Base, BaseModelMixin):
     __tablename__ = "orders"
+    __table_args__ = (
+        Index("ix_orders_portfolio_status", "portfolio_id", "status"),
+        Index("ix_orders_portfolio_created_at", "portfolio_id", "created_at"),
+    )
 
     portfolio_id = Column(String(64), ForeignKey("portfolios.id"), nullable=False, index=True)
     symbol = Column(String(128), nullable=False, index=True)
@@ -195,6 +199,33 @@ class DailyStat(Base):
     trades_count = Column(Integer, nullable=False, default=0)
     wins = Column(Integer, nullable=False, default=0)
     losses = Column(Integer, nullable=False, default=0)
+
+
+class AgentWebhook(Base, BaseModelMixin):
+    __tablename__ = "agent_webhooks"
+
+    agent_key_id = Column(String(64), ForeignKey("agent_api_keys.id"), nullable=False, index=True)
+    user_id = Column(String(64), ForeignKey("users.id"), nullable=False, index=True)
+    portfolio_id = Column(String(64), ForeignKey("portfolios.id"), nullable=False, index=True)
+    url = Column(String(1024), nullable=False)
+    events = Column(JSON, nullable=False, default=list)
+    secret_salt = Column(String(128), nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True)
+    last_delivery_at = Column(DateTime(timezone=True))
+    last_failure_at = Column(DateTime(timezone=True))
+    last_error = Column(Text)
+
+
+class WebhookDelivery(Base, BaseModelMixin):
+    __tablename__ = "webhook_deliveries"
+
+    webhook_id = Column(String(64), ForeignKey("agent_webhooks.id"), nullable=False, index=True)
+    event_type = Column(String(64), nullable=False, index=True)
+    payload = Column(JSON, nullable=False, default=dict)
+    attempt_count = Column(Integer, nullable=False, default=0)
+    next_attempt_at = Column(DateTime(timezone=True), index=True, default=utcnow)
+    delivered_at = Column(DateTime(timezone=True))
+    last_error = Column(Text)
 
 
 class AuditLog(Base):
