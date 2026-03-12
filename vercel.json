@@ -35,6 +35,10 @@
       "destination": "https://lite-options-api-production.up.railway.app/api/v1/redoc"
     },
     {
+      "source": "/api/v1/(.*)",
+      "destination": "https://lite-options-api-production.up.railway.app/api/v1/$1"
+    },
+    {
       "source": "/:path((?!.*\\..*).*)",
       "destination": "/index.html"
     }

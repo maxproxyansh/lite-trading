@@ -1,4 +1,5 @@
 import type { components } from './api-schema'
+import { getRuntimeConfig } from './runtime-config'
 import { useStore } from '../store/useStore'
 
 export type UserSummary = components['schemas']['UserSummary']
@@ -39,7 +40,6 @@ export type PortfolioRefreshEvent = {
   reason?: string | null
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 const REQUEST_TIMEOUT_MS = 15000
 
 export class ApiError extends Error {
@@ -89,6 +89,7 @@ function readCookie(name: string) {
 }
 
 async function rawFetch<T>(path: string, init: RequestInit = {}, retry = true): Promise<T> {
+  const { apiBaseUrl } = await getRuntimeConfig()
   const headers = new Headers(init.headers)
   const token = getAccessToken()
   if (token) {
@@ -106,7 +107,7 @@ async function rawFetch<T>(path: string, init: RequestInit = {}, retry = true): 
   const timer = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
   let response: Response
   try {
-    response = await fetch(`${API_BASE_URL}${path}`, {
+    response = await fetch(`${apiBaseUrl}${path}`, {
       ...init,
       headers,
       credentials: 'include',

@@ -19,6 +19,7 @@
     { "source": "/api/v1/docs", "destination": "https://lite-options-api-production.up.railway.app/api/v1/docs" },
     { "source": "/api/v1/openapi.json", "destination": "https://lite-options-api-production.up.railway.app/api/v1/openapi.json" },
     { "source": "/api/v1/redoc", "destination": "https://lite-options-api-production.up.railway.app/api/v1/redoc" },
+    { "source": "/api/v1/(.*)", "destination": "https://lite-options-api-production.up.railway.app/api/v1/$1" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

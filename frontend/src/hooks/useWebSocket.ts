@@ -7,21 +7,8 @@ import type {
   QuoteBatchEvent,
   SignalResponse,
 } from '../lib/api'
+import { getRuntimeConfig } from '../lib/runtime-config'
 import { useStore } from '../store/useStore'
-
-function buildWsUrl() {
-  const explicit = import.meta.env.VITE_WS_BASE_URL as string | undefined
-  if (explicit) {
-    return explicit
-  }
-  const apiBase = import.meta.env.VITE_API_BASE_URL as string | undefined
-  if (apiBase) {
-    const wsBase = apiBase.replace(/^http/, 'ws')
-    return `${wsBase}/api/v1/ws`
-  }
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${protocol}//${window.location.host}/api/v1/ws`
-}
 
 export function useWebSocket() {
   const reconnectRef = useRef<number | null>(null)
@@ -120,60 +107,73 @@ export function useWebSocket() {
         return
       }
       setWsStatus('connecting')
-      const socket = new WebSocket(buildWsUrl())
-      wsRef.current = socket
-
-      const armStaleTimer = () => {
-        if (staleRef.current) {
-          window.clearTimeout(staleRef.current)
-        }
-        staleRef.current = window.setTimeout(() => {
-          socket.close()
-        }, 25000)
-      }
-
-      socket.onopen = () => {
-        if (disposed || !shouldReconnectRef.current) {
-          socket.close()
-          return
-        }
-        attemptRef.current = 0
-        setWsStatus('connected')
-        armStaleTimer()
-        if (heartbeatRef.current !== null) {
-          window.clearInterval(heartbeatRef.current)
-        }
-        heartbeatRef.current = window.setInterval(() => {
-          if (socket.readyState === WebSocket.OPEN) {
-            socket.send('ping')
+      void getRuntimeConfig()
+        .then(({ wsUrl }) => {
+          if (disposed || !shouldReconnectRef.current) {
+            return
           }
-        }, 10000)
-      }
 
-      socket.onmessage = (event) => {
-        armStaleTimer()
-        handleMessage(String(event.data))
-      }
+          const socket = new WebSocket(wsUrl)
+          wsRef.current = socket
 
-      socket.onclose = () => {
-        if (wsRef.current === socket) {
-          wsRef.current = null
-        }
-        setWsStatus('disconnected')
-        clearTimers()
-        if (disposed || !shouldReconnectRef.current) {
-          return
-        }
-        attemptRef.current += 1
-        const delay = Math.min(1000 * 2 ** Math.min(attemptRef.current, 4), 15000)
-        reconnectRef.current = window.setTimeout(connect, delay)
-      }
+          const armStaleTimer = () => {
+            if (staleRef.current) {
+              window.clearTimeout(staleRef.current)
+            }
+            staleRef.current = window.setTimeout(() => {
+              socket.close()
+            }, 25000)
+          }
 
-      socket.onerror = () => {
-        if (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN) {
-          socket.close()
-        }
-      }
+          socket.onopen = () => {
+            if (disposed || !shouldReconnectRef.current) {
+              socket.close()
+              return
+            }
+            attemptRef.current = 0
+            setWsStatus('connected')
+            armStaleTimer()
+            if (heartbeatRef.current !== null) {
+              window.clearInterval(heartbeatRef.current)
+            }
+            heartbeatRef.current = window.setInterval(() => {
+              if (socket.readyState === WebSocket.OPEN) {
+                socket.send('ping')
+              }
+            }, 10000)
+          }
+
+          socket.onmessage = (event) => {
+            armStaleTimer()
+            handleMessage(String(event.data))
+          }
+
+          socket.onclose = () => {
+            if (wsRef.current === socket) {
+              wsRef.current = null
+            }
+            setWsStatus('disconnected')
+            clearTimers()
+            if (disposed || !shouldReconnectRef.current) {
+              return
+            }
+            attemptRef.current += 1
+            const delay = Math.min(1000 * 2 ** Math.min(attemptRef.current, 4), 15000)
+            reconnectRef.current = window.setTimeout(connect, delay)
+          }
+
+          socket.onerror = () => {
+            if (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN) {
+              socket.close()
+            }
+          }
+        })
+        .catch(() => {
+          setWsStatus('disconnected')
+          attemptRef.current += 1
+          const delay = Math.min(1000 * 2 ** Math.min(attemptRef.current, 4), 15000)
+          reconnectRef.current = window.setTimeout(connect, delay)
+        })
     }
 
     connect()
