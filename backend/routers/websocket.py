@@ -22,6 +22,7 @@ router = APIRouter(tags=["ws"])
 
 @dataclass(frozen=True, slots=True)
 class WebSocketClient:
+    user_id: str
     portfolio_ids: frozenset[str]
 
 
@@ -55,6 +56,16 @@ async def broadcast_portfolio_message(portfolio_id: str, event_type: str, payloa
     await _broadcast_to_clients(clients, message)
 
 
+async def broadcast_user_message(user_id: str, event_type: str, payload: dict[str, Any]) -> None:
+    message = json.dumps({"type": event_type, "payload": payload}, default=str, separators=(",", ":"))
+    clients = [
+        socket
+        for socket, client in connected_clients.items()
+        if client.user_id == user_id
+    ]
+    await _broadcast_to_clients(clients, message)
+
+
 def _bearer_token(value: str | None) -> str | None:
     if not value:
         return None
@@ -67,6 +78,7 @@ def _bearer_token(value: str | None) -> str | None:
 @router.websocket(f"{settings.api_prefix}/ws")
 async def websocket_endpoint(websocket: WebSocket):
     db: Session = SessionLocal()
+    user_id: str | None = None
     try:
         cookie_token = websocket.cookies.get(settings.access_cookie_name)
         bearer_token = _bearer_token(websocket.headers.get("authorization"))
@@ -79,6 +91,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 user = db.query(User).filter(User.id == payload.get("sub"), User.is_active.is_(True)).first()
                 authorized = user is not None
                 if user:
+                    user_id = user.id
                     portfolio_ids = {
                         portfolio_id
                         for (portfolio_id,) in db.query(Portfolio.id).filter(Portfolio.user_id == user.id).all()
@@ -94,17 +107,18 @@ async def websocket_endpoint(websocket: WebSocket):
                 or_(AgentApiKey.expires_at.is_(None), AgentApiKey.expires_at > now),
             ).first()
             authorized = bool(key and key.user_id and key.portfolio_id)
-            if authorized and key and key.portfolio_id:
+            if authorized and key and key.user_id and key.portfolio_id:
+                user_id = key.user_id
                 portfolio_ids = {key.portfolio_id}
 
-        if not authorized:
+        if not authorized or not user_id:
             await websocket.close(code=4401)
             return
     finally:
         db.close()
 
     await websocket.accept()
-    connected_clients[websocket] = WebSocketClient(portfolio_ids=frozenset(portfolio_ids))
+    connected_clients[websocket] = WebSocketClient(user_id=user_id, portfolio_ids=frozenset(portfolio_ids))
     try:
         while True:
             message = await websocket.receive_text()

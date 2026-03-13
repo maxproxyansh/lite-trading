@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime, timezone
 
@@ -7,13 +8,19 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from models import Alert
-from schemas import AlertCreateRequest, AlertUpdateRequest
+from schemas import AlertCreateRequest, AlertSummary, AlertUpdateRequest
 from services.audit import log_audit
 from services.market_data import market_data_service
 from services.webhook_service import enqueue_webhook_event
 
 
 MONEY_PLACES = Decimal("0.01")
+
+
+@dataclass(frozen=True, slots=True)
+class TriggeredAlertEvent:
+    user_id: str
+    payload: AlertSummary
 
 
 def _money(value: float | int | Decimal | None) -> Decimal:
@@ -184,8 +191,9 @@ def cancel_alert(
     return alert
 
 
-def sync_alerts(db: Session) -> int:
-    triggered = 0
+def sync_alerts(db: Session) -> list[TriggeredAlertEvent]:
+    triggered_events: list[TriggeredAlertEvent] = []
+    triggered_alerts: list[Alert] = []
     alerts = db.query(Alert).filter(Alert.status == "ACTIVE").all()
     for alert in alerts:
         current_price = _market_price(alert.symbol)
@@ -213,7 +221,7 @@ def sync_alerts(db: Session) -> int:
                     },
                 },
             )
-            triggered += 1
+            triggered_alerts.append(alert)
         elif alert.direction == "BELOW" and current_price <= target_price:
             alert.status = "TRIGGERED"
             alert.triggered_at = datetime.now(timezone.utc)
@@ -234,7 +242,15 @@ def sync_alerts(db: Session) -> int:
                     },
                 },
             )
-            triggered += 1
+            triggered_alerts.append(alert)
     if alerts:
         db.commit()
-    return triggered
+    for alert in triggered_alerts:
+        db.refresh(alert)
+        triggered_events.append(
+            TriggeredAlertEvent(
+                user_id=alert.user_id,
+                payload=AlertSummary.model_validate(alert),
+            )
+        )
+    return triggered_events

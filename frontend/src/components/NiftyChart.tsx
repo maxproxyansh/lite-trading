@@ -9,7 +9,6 @@ import {
   ApiError,
   createAlert,
   deleteAlert,
-  fetchAlerts,
   fetchCandles,
   updateAlert,
   type AlertSummary,
@@ -192,13 +191,26 @@ function isTextInputTarget(target: EventTarget | null) {
 }
 
 export default function NiftyChart() {
-  const { addToast, chain, chainIndex, optionChartSymbol, setOptionChartSymbol, spot } = useStore(useShallow((state) => ({
+  const {
+    addToast,
+    alerts,
+    chain,
+    chainIndex,
+    optionChartSymbol,
+    removeAlert,
+    setOptionChartSymbol,
+    spot,
+    upsertAlert,
+  } = useStore(useShallow((state) => ({
     addToast: state.addToast,
+    alerts: state.alerts,
     chain: state.chain,
     chainIndex: state.chainIndex,
     optionChartSymbol: state.optionChartSymbol,
+    removeAlert: state.removeAlert,
     setOptionChartSymbol: state.setOptionChartSymbol,
     spot: state.snapshot?.spot ?? null,
+    upsertAlert: state.upsertAlert,
   })))
   const chartQuote = optionChartSymbol && chain
     ? (() => {
@@ -218,7 +230,6 @@ export default function NiftyChart() {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
-  const announcedAlertIdsRef = useRef<Set<string>>(new Set())
   const candlesRef = useRef<CandlestickData<Time>[]>([])
   const lastBarRef = useRef<CandlestickData<Time> | null>(null)
   const nextBeforeRef = useRef<number | null>(null)
@@ -233,7 +244,6 @@ export default function NiftyChart() {
   const [loading, setLoading] = useState(true)
   const [loadingMoreHistory, setLoadingMoreHistory] = useState(false)
   const [candleCount, setCandleCount] = useState(0)
-  const [alerts, setAlerts] = useState<AlertSummary[]>([])
   const [hoveredAlertAnchor, setHoveredAlertAnchor] = useState<ChartAnchor | null>(null)
   const [selectedAlertAnchor, setSelectedAlertAnchor] = useState<ChartAnchor | null>(null)
   const [alertModal, setAlertModal] = useState<AlertModalState | null>(null)
@@ -356,7 +366,7 @@ export default function NiftyChart() {
       setAlertMutation({ kind: 'create' })
       try {
         const created = await createAlert({ symbol: 'NIFTY 50', target_price: roundedTargetPrice })
-        setAlerts((current) => [...current.filter((item) => item.id !== created.id), created])
+        upsertAlert(created)
         addToast('success', `Alert added at ${created.target_price.toFixed(2)}`)
         closeAlertModal()
       } catch (error) {
@@ -370,7 +380,7 @@ export default function NiftyChart() {
     setAlertMutation({ kind: 'update', alertId: alertModal.alertId })
     try {
       const updated = await updateAlert(alertModal.alertId, { target_price: roundedTargetPrice })
-      setAlerts((current) => current.map((item) => (item.id === updated.id ? updated : item)))
+      upsertAlert(updated)
       setDragPreview((current) => (current?.alertId === updated.id ? null : current))
       addToast('success', `Alert updated to ${updated.target_price.toFixed(2)}`)
       closeAlertModal()
@@ -385,7 +395,7 @@ export default function NiftyChart() {
     setAlertMutation({ kind: 'delete', alertId })
     try {
       await deleteAlert(alertId)
-      setAlerts((current) => current.filter((item) => item.id !== alertId))
+      removeAlert(alertId)
       setDragPreview((current) => (current?.alertId === alertId ? null : current))
       if (alertModal?.mode === 'edit' && alertModal.alertId === alertId) {
         closeAlertModal()
@@ -451,7 +461,7 @@ export default function NiftyChart() {
       setAlertMutation({ kind: 'update', alertId: state.alert.id })
       try {
         const updated = await updateAlert(state.alert.id, { target_price: state.currentPrice })
-        setAlerts((current) => current.map((item) => (item.id === updated.id ? updated : item)))
+        upsertAlert(updated)
         addToast('success', `Alert moved to ${updated.target_price.toFixed(2)}`)
       } catch (error) {
         addToast('error', error instanceof Error ? error.message : 'Failed to move alert')
@@ -597,37 +607,6 @@ export default function NiftyChart() {
       document.body.style.userSelect = ''
     }
   }, [])
-
-  useEffect(() => {
-    if (!alertsEnabled) {
-      setAlerts([])
-      return
-    }
-
-    let cancelled = false
-
-    const loadAlerts = async () => {
-      try {
-        const nextAlerts = await fetchAlerts()
-        if (!cancelled) {
-          setAlerts(nextAlerts.filter((alert) => alert.symbol === 'NIFTY 50'))
-        }
-      } catch {
-        if (!cancelled) {
-          setAlerts([])
-        }
-      }
-    }
-
-    void loadAlerts()
-    const interval = window.setInterval(() => {
-      void loadAlerts()
-    }, 5000)
-    return () => {
-      cancelled = true
-      window.clearInterval(interval)
-    }
-  }, [alertsEnabled])
 
   useEffect(() => {
     let active = true
@@ -791,24 +770,11 @@ export default function NiftyChart() {
     }
   }, [alertModal, alerts])
 
-  useEffect(() => {
-    const triggered = alerts.filter((alert) => alert.status === 'TRIGGERED')
-    for (const alert of triggered) {
-      if (announcedAlertIdsRef.current.has(alert.id)) {
-        continue
-      }
-      announcedAlertIdsRef.current.add(alert.id)
-      addToast(
-        'info',
-        `Alert triggered: ${alert.symbol} ${alert.direction === 'ABOVE' ? 'above' : 'below'} ${alert.target_price.toFixed(2)}`,
-      )
-    }
-  }, [addToast, alerts])
-
-  const activeAlerts = alerts.filter((alert) => alert.status === 'ACTIVE')
-  const triggeredAlerts = alerts.filter((alert) => alert.status === 'TRIGGERED')
+  const chartAlerts = alerts.filter((alert) => alert.symbol === 'NIFTY 50')
+  const activeAlerts = chartAlerts.filter((alert) => alert.status === 'ACTIVE')
+  const triggeredAlerts = chartAlerts.filter((alert) => alert.status === 'TRIGGERED')
   const editingAlert = alertModal?.mode === 'edit'
-    ? alerts.find((alert) => alert.id === alertModal.alertId) ?? null
+    ? chartAlerts.find((alert) => alert.id === alertModal.alertId) ?? null
     : null
   const editingAlertId = alertModal?.mode === 'edit' ? alertModal.alertId : null
   const isCreatingAlert = alertMutation?.kind === 'create'
@@ -838,7 +804,7 @@ export default function NiftyChart() {
       }
     : undefined
   const overlayAlerts = alertsEnabled && seriesRef.current && containerHeight > 0
-    ? alerts.flatMap((alert) => {
+    ? chartAlerts.flatMap((alert) => {
         const displayPrice = dragPreview?.alertId === alert.id ? dragPreview.price : alert.target_price
         const coordinate = seriesRef.current?.priceToCoordinate(displayPrice)
         if (coordinate === null || coordinate === undefined || !Number.isFinite(coordinate)) {
@@ -1114,12 +1080,12 @@ export default function NiftyChart() {
                 <div className="text-[11px] leading-4 text-text-muted">
                   Option candles are live, but persisted alerts remain scoped to the NIFTY spot chart.
                 </div>
-              ) : alerts.length === 0 ? (
+              ) : chartAlerts.length === 0 ? (
                 <div className="text-[11px] leading-4 text-text-muted">
                   Use the subtle + on the price scale, or click the chart and press A to add an alert.
                 </div>
               ) : (
-                alerts.map((alert) => (
+                chartAlerts.map((alert) => (
                   <div key={alert.id} className="rounded-sm border border-border-secondary bg-bg-primary/80 px-2 py-2">
                     <div className="flex items-center justify-between gap-2">
                       <button

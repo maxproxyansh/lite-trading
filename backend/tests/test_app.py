@@ -34,7 +34,7 @@ os.environ["BOOTSTRAP_AGENT_KEY"] = "lite-agent-dev-key"
 os.environ["BOOTSTRAP_AGENT_NAME"] = "bootstrap-agent"
 
 from database import Base, SessionLocal, engine  # noqa: E402
-from main import app  # noqa: E402
+from main import _process_market_side_effects, app  # noqa: E402
 from rate_limit import _rate_buckets  # noqa: E402
 from routers.websocket import broadcast_message  # noqa: E402
 from services.alert_service import sync_alerts  # noqa: E402
@@ -242,7 +242,7 @@ def test_root_meta_docs_and_openapi_are_agent_discoverable(client: TestClient) -
     assert payload["auth"]["agent"]["default_key_expires_in_days"] == 30
     assert payload["market_data"]["pcr_scope"] == "all_loaded_strikes_for_active_expiry"
     event_types = {event["type"] for event in payload["websocket"]["events"]}
-    assert {"market.snapshot", "option.chain", "option.quotes", "portfolio.refresh", "signal.updated"} <= event_types
+    assert {"market.snapshot", "option.chain", "option.quotes", "alert.triggered", "portfolio.refresh", "signal.updated"} <= event_types
 
 
 def test_meta_uses_forwarded_host_headers_for_public_urls(client: TestClient) -> None:
@@ -1419,7 +1419,7 @@ def test_alerts_are_user_isolated_and_trigger_against_spot(client: TestClient) -
     market_data_service.snapshot["spot"] = 22510.0
     db = SessionLocal()
     try:
-        assert sync_alerts(db) == 1
+        assert len(sync_alerts(db)) == 1
     finally:
         db.close()
 
@@ -1505,6 +1505,28 @@ def test_websocket_requires_auth_and_streams_events(client: TestClient) -> None:
         message = websocket.receive_json()
         assert message["type"] == "market.snapshot"
         assert message["payload"]["spot"] == 22525
+
+
+def test_websocket_pushes_triggered_alerts_immediately(client: TestClient) -> None:
+    headers = _login(client, "admin@lite.trade", "lite-admin-123")
+    created = client.post(
+        "/api/v1/alerts",
+        headers=headers,
+        json={"symbol": "NIFTY 50", "target_price": 22500},
+    )
+    assert created.status_code == 201, created.text
+    alert_id = created.json()["id"]
+
+    market_data_service.snapshot["spot"] = 22510.0
+
+    with client.websocket_connect("/api/v1/ws", headers=headers) as websocket:
+        asyncio.run(_process_market_side_effects(set()))
+        message = websocket.receive_json()
+
+    assert message["type"] == "alert.triggered"
+    assert message["payload"]["id"] == alert_id
+    assert message["payload"]["status"] == "TRIGGERED"
+    assert message["payload"]["last_price"] == 22510.0
 
 
 def test_process_open_orders_filters_symbols_and_only_updates_impacted_portfolios(client: TestClient) -> None:

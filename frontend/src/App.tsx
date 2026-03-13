@@ -8,9 +8,11 @@ import MobileNav from './components/MobileNav'
 import OrderModal from './components/OrderModal'
 import Sidebar from './components/Sidebar'
 import Toast from './components/Toast'
+import TriggeredAlertModal from './components/TriggeredAlertModal'
 import useKeyboardShortcuts from './hooks/useKeyboardShortcuts'
 import { useWebSocket } from './hooks/useWebSocket'
 import {
+  fetchAlerts,
   fetchAnalytics,
   fetchFunds,
   fetchLatestSignal,
@@ -80,6 +82,7 @@ function ProtectedLayout() {
         </div>
         <MobileNav />
         <Toast />
+        <TriggeredAlertModal />
         <OrderModal />
       </div>
     </ErrorBoundary>
@@ -105,6 +108,7 @@ export default function App() {
     setPositions,
     setFunds,
     setAnalytics,
+    setAlerts,
     setLatestSignal,
     setSharedLoading,
     setPortfolioLoading,
@@ -125,6 +129,7 @@ export default function App() {
     setPositions: state.setPositions,
     setFunds: state.setFunds,
     setAnalytics: state.setAnalytics,
+    setAlerts: state.setAlerts,
     setLatestSignal: state.setLatestSignal,
     setSharedLoading: state.setSharedLoading,
     setPortfolioLoading: state.setPortfolioLoading,
@@ -290,6 +295,30 @@ export default function App() {
       window.clearInterval(interval)
     }
   }, [addToast, selectedExpiry, setChain, setChainLoading, user])
+
+  useEffect(() => {
+    if (!user) {
+      return
+    }
+
+    let active = true
+
+    fetchAlerts()
+      .then((alerts) => {
+        if (active) {
+          setAlerts(alerts)
+        }
+      })
+      .catch((error) => {
+        if (active) {
+          addToast('error', error instanceof Error ? error.message : 'Failed to load alerts')
+        }
+      })
+
+    return () => {
+      active = false
+    }
+  }, [addToast, setAlerts, user])
 
   return (
     <Routes>

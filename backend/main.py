@@ -18,7 +18,7 @@ from services.auth_service import ensure_bootstrap_state
 from services.signal_adapter import signal_adapter
 from services.trading_service import process_open_orders_sync
 from services.webhook_service import run_webhook_dispatcher
-from routers.websocket import broadcast_message, broadcast_portfolio_message
+from routers.websocket import broadcast_message, broadcast_portfolio_message, broadcast_user_message
 
 
 settings = get_settings()
@@ -42,11 +42,18 @@ def _request_origin(request: Request) -> str:
 async def _process_market_side_effects(symbols: set[str]) -> None:
     db = SessionLocal()
     changed_portfolios: set[str] = set()
+    triggered_alerts = []
     try:
-        sync_alerts(db)
+        triggered_alerts = sync_alerts(db)
         changed_portfolios = process_open_orders_sync(db, symbols)
     finally:
         db.close()
+    for alert in triggered_alerts:
+        await broadcast_user_message(
+            alert.user_id,
+            "alert.triggered",
+            alert.payload.model_dump(mode="json"),
+        )
     for portfolio_id in changed_portfolios:
         await broadcast_portfolio_message(
             portfolio_id,

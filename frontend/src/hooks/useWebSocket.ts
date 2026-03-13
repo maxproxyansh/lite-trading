@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 
 import type {
+  AlertSummary,
   MarketSnapshot,
   OptionChainResponse,
   PortfolioRefreshEvent,
@@ -21,6 +22,7 @@ export function useWebSocket() {
     setSnapshot: useStore.getState().setSnapshot,
     applyChainEvent: useStore.getState().applyChainEvent,
     applyQuoteBatch: useStore.getState().applyQuoteBatch,
+    enqueueTriggeredAlert: useStore.getState().enqueueTriggeredAlert,
     upsertSignal: useStore.getState().upsertSignal,
     requestPortfolioRefresh: useStore.getState().requestPortfolioRefresh,
   })
@@ -30,6 +32,7 @@ export function useWebSocket() {
   const setSnapshot = useStore((state) => state.setSnapshot)
   const applyChainEvent = useStore((state) => state.applyChainEvent)
   const applyQuoteBatch = useStore((state) => state.applyQuoteBatch)
+  const enqueueTriggeredAlert = useStore((state) => state.enqueueTriggeredAlert)
   const upsertSignal = useStore((state) => state.upsertSignal)
   const requestPortfolioRefresh = useStore((state) => state.requestPortfolioRefresh)
 
@@ -38,10 +41,11 @@ export function useWebSocket() {
       setSnapshot,
       applyChainEvent,
       applyQuoteBatch,
+      enqueueTriggeredAlert,
       upsertSignal,
       requestPortfolioRefresh,
     }
-  }, [applyChainEvent, applyQuoteBatch, requestPortfolioRefresh, setSnapshot, upsertSignal])
+  }, [applyChainEvent, applyQuoteBatch, enqueueTriggeredAlert, requestPortfolioRefresh, setSnapshot, upsertSignal])
 
   useEffect(() => {
     const clearTimers = () => {
@@ -92,6 +96,9 @@ export function useWebSocket() {
         }
         if (message.type === 'signal.updated') {
           handlersRef.current.upsertSignal(message.payload as SignalResponse)
+        }
+        if (message.type === 'alert.triggered') {
+          handlersRef.current.enqueueTriggeredAlert(message.payload as AlertSummary)
         }
         if (message.type === 'portfolio.refresh') {
           const payload = message.payload as PortfolioRefreshEvent

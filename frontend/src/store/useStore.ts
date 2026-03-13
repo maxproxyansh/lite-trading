@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 
 import type {
+  AlertSummary,
   AnalyticsResponse,
   FundsResponse,
   MarketSnapshot,
@@ -66,6 +67,8 @@ interface AppState {
   funds: FundsResponse | null
   analytics: AnalyticsResponse | null
   latestSignal: SignalResponse | null
+  alerts: AlertSummary[]
+  triggeredAlertQueue: AlertSummary[]
   chainView: 'collapsed' | 'expanded'
   chainFilter: 'ALL' | 'ITM' | 'ATM' | 'OTM'
   chainPanelOpen: boolean
@@ -95,6 +98,11 @@ interface AppState {
   setFunds: (funds: FundsResponse | null) => void
   setAnalytics: (analytics: AnalyticsResponse | null) => void
   setLatestSignal: (signal: SignalResponse | null) => void
+  setAlerts: (alerts: AlertSummary[]) => void
+  upsertAlert: (alert: AlertSummary) => void
+  enqueueTriggeredAlert: (alert: AlertSummary) => void
+  removeAlert: (alertId: string) => void
+  dismissTriggeredAlert: (alertId: string) => void
   upsertSignal: (signal: SignalResponse) => void
   applyChainEvent: (chain: OptionChainResponse) => void
   applyQuoteBatch: (event: QuoteBatchEvent) => void
@@ -124,6 +132,8 @@ function initialUserScopedState(): Pick<
   | 'funds'
   | 'analytics'
   | 'latestSignal'
+  | 'alerts'
+  | 'triggeredAlertQueue'
   | 'optionChartSymbol'
   | 'portfolioRefreshNonce'
   | 'orderModal'
@@ -148,10 +158,32 @@ function initialUserScopedState(): Pick<
     funds: null,
     analytics: null,
     latestSignal: null,
+    alerts: [],
+    triggeredAlertQueue: [],
     optionChartSymbol: null,
     portfolioRefreshNonce: 0,
     orderModal: null,
   }
+}
+
+function sortAlerts(alerts: AlertSummary[]): AlertSummary[] {
+  return [...alerts].sort((left, right) => {
+    const statusOrder = { ACTIVE: 0, TRIGGERED: 1, CANCELLED: 2 } as const
+    const leftRank = statusOrder[left.status] ?? 99
+    const rightRank = statusOrder[right.status] ?? 99
+    if (leftRank !== rightRank) {
+      return leftRank - rightRank
+    }
+    return new Date(left.created_at).getTime() - new Date(right.created_at).getTime()
+  })
+}
+
+function upsertAlertRecord(alerts: AlertSummary[], alert: AlertSummary): AlertSummary[] {
+  const nextAlerts = alerts.filter((item) => item.id !== alert.id)
+  if (alert.status !== 'CANCELLED') {
+    nextAlerts.push(alert)
+  }
+  return sortAlerts(nextAlerts)
 }
 
 function roundMoney(value: number): number {
@@ -438,6 +470,32 @@ export const useStore = create<AppState>((set) => ({
     return { funds: derived.funds, analytics: derived.analytics }
   }),
   setLatestSignal: (latestSignal) => set({ latestSignal }),
+  setAlerts: (alerts) => set((state) => {
+    const visibleAlerts = sortAlerts(alerts.filter((alert) => alert.status !== 'CANCELLED'))
+    return {
+      alerts: visibleAlerts,
+      triggeredAlertQueue: state.triggeredAlertQueue.filter((queued) => visibleAlerts.some((alert) => alert.id === queued.id && alert.status === 'TRIGGERED')),
+    }
+  }),
+  upsertAlert: (alert) => set((state) => ({
+    alerts: upsertAlertRecord(state.alerts, alert),
+    triggeredAlertQueue: alert.status === 'TRIGGERED'
+      ? state.triggeredAlertQueue.map((queued) => (queued.id === alert.id ? alert : queued))
+      : state.triggeredAlertQueue.filter((queued) => queued.id !== alert.id),
+  })),
+  enqueueTriggeredAlert: (alert) => set((state) => ({
+    alerts: upsertAlertRecord(state.alerts, alert),
+    triggeredAlertQueue: state.triggeredAlertQueue.some((queued) => queued.id === alert.id)
+      ? state.triggeredAlertQueue.map((queued) => (queued.id === alert.id ? alert : queued))
+      : [...state.triggeredAlertQueue, alert],
+  })),
+  removeAlert: (alertId) => set((state) => ({
+    alerts: state.alerts.filter((alert) => alert.id !== alertId),
+    triggeredAlertQueue: state.triggeredAlertQueue.filter((alert) => alert.id !== alertId),
+  })),
+  dismissTriggeredAlert: (alertId) => set((state) => ({
+    triggeredAlertQueue: state.triggeredAlertQueue.filter((alert) => alert.id !== alertId),
+  })),
   upsertSignal: (latestSignal) => set({ latestSignal }),
   applyChainEvent: (chain) => set((state) => {
     const chainIndex = buildChainIndex(chain)

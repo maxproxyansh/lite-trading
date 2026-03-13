@@ -33,6 +33,7 @@ def websocket_event_catalog() -> list[tuple[str, str]]:
         ("market.snapshot", "Top-level NIFTY market snapshot updates."),
         ("option.chain", "Option chain refresh for the active expiry."),
         ("option.quotes", "Incremental quote updates for changed option contracts."),
+        ("alert.triggered", "User-scoped push event emitted immediately when a persisted alert is hit."),
         ("portfolio.refresh", "Portfolio-linked signal that orders or positions changed and should be reloaded."),
         ("signal.updated", "Signal adapter output was updated."),
     ]
