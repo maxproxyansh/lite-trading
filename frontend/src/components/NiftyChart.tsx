@@ -22,6 +22,8 @@ const ALERT_MODAL_WIDTH = 184
 const ALERT_MODAL_MAX_HEIGHT = 138
 const ALERT_MODAL_RIGHT = 14
 const AXIS_ADD_BUTTON_RIGHT = 74
+const AXIS_ADD_BUTTON_HITBOX = 32
+const AXIS_ADD_BUTTON_VISUAL = 20
 const DRAG_THRESHOLD_PX = 5
 
 type HoveredCandleStats = {
@@ -783,6 +785,7 @@ export default function NiftyChart() {
       ? 'text-profit'
       : 'text-loss'
   const shortcutAnchor = selectedAlertAnchor ?? hoveredAlertAnchor
+  const addButtonAnchor = shortcutAnchor
   const containerHeight = containerRef.current?.clientHeight ?? 0
   const modalCoordinate = alertModal
     ? alertModal.mode === 'edit' && editingAlert && seriesRef.current
@@ -962,18 +965,25 @@ export default function NiftyChart() {
             )
           })}
 
-          {hoveredAlertAnchor && !alertModal ? (
+          {addButtonAnchor && !alertModal ? (
             <div
-              className="absolute z-20"
-              style={{ right: AXIS_ADD_BUTTON_RIGHT, top: clamp(hoveredAlertAnchor.y, 0, containerHeight || 0) }}
+              data-alert-interactive="true"
+              className="pointer-events-auto absolute z-20 flex -translate-y-1/2 items-center justify-center"
+              style={{
+                right: AXIS_ADD_BUTTON_RIGHT - ((AXIS_ADD_BUTTON_HITBOX - AXIS_ADD_BUTTON_VISUAL) / 2),
+                top: clamp(addButtonAnchor.y, 0, containerHeight || 0),
+                width: AXIS_ADD_BUTTON_HITBOX,
+                height: AXIS_ADD_BUTTON_HITBOX,
+              }}
             >
               <button
                 data-alert-interactive="true"
-                onClick={(event) => {
+                onPointerDown={(event) => {
+                  event.preventDefault()
                   event.stopPropagation()
-                  openCreateAlertModal(hoveredAlertAnchor)
+                  openCreateAlertModal(addButtonAnchor)
                 }}
-                className="pointer-events-auto flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full border border-border-primary/80 bg-bg-secondary/88 text-text-muted shadow-sm backdrop-blur transition-colors hover:border-signal/60 hover:text-signal"
+                className="flex h-5 w-5 items-center justify-center rounded-full border border-border-primary/80 bg-bg-secondary/88 text-text-muted shadow-sm backdrop-blur transition-colors hover:border-signal/60 hover:text-signal"
                 title="Create alert (A)"
               >
                 <Plus size={10} />
