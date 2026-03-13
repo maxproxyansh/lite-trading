@@ -1449,6 +1449,42 @@ def test_alerts_are_user_isolated_and_trigger_against_spot(client: TestClient) -
     assert after_delete.json() == []
 
 
+def test_alerts_can_trigger_against_option_quotes(client: TestClient) -> None:
+    headers = _login(client, "admin@lite.trade", "lite-admin-123")
+    symbol = "NIFTY_2026-03-12_22500_CE"
+    created = client.post(
+        "/api/v1/alerts",
+        headers=headers,
+        json={"symbol": symbol, "target_price": 115.0},
+    )
+    assert created.status_code == 201, created.text
+    created_payload = created.json()
+    assert created_payload["symbol"] == symbol
+    assert created_payload["direction"] == "ABOVE"
+    assert created_payload["status"] == "ACTIVE"
+    assert created_payload["last_price"] == 112.5
+
+    market_data_service.quotes[symbol]["ltp"] = 116.25
+
+    with client.websocket_connect("/api/v1/ws", headers=headers) as websocket:
+        asyncio.run(_process_market_side_effects({symbol}))
+        message = websocket.receive_json()
+
+    assert message["type"] == "alert.triggered"
+    assert message["payload"]["id"] == created_payload["id"]
+    assert message["payload"]["symbol"] == symbol
+    assert message["payload"]["status"] == "TRIGGERED"
+    assert message["payload"]["last_price"] == 116.25
+
+    alerts = client.get("/api/v1/alerts", headers=headers)
+    assert alerts.status_code == 200, alerts.text
+    listed = alerts.json()
+    assert len(listed) == 1
+    assert listed[0]["id"] == created_payload["id"]
+    assert listed[0]["status"] == "TRIGGERED"
+    assert listed[0]["last_price"] == 116.25
+
+
 def test_signal_adapter_keeps_actionable_signal_when_targets_are_advisory(client: TestClient) -> None:
     payload = {
         "timestamp": "2026-03-06T09:20:00+05:30",

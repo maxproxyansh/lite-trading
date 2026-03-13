@@ -224,9 +224,10 @@ export default function NiftyChart() {
     : null
   const chartSymbol = chartQuote?.symbol ?? null
   const chartSecurityId = chartQuote?.security_id ?? null
-  const alertsEnabled = !chartQuote
   const chartLabel = chartQuote ? `NIFTY ${chartQuote.strike} ${chartQuote.option_type}` : 'NIFTY 50'
   const chartPrice = chartQuote?.ltp ?? spot
+  const alertSymbol = chartQuote?.symbol ?? 'NIFTY 50'
+  const alertInstrumentLabel = chartQuote ? `${chartQuote.strike} ${chartQuote.option_type} · ${chartQuote.expiry}` : 'NIFTY 50 spot'
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
@@ -236,7 +237,6 @@ export default function NiftyChart() {
   const hasMoreHistoryRef = useRef(false)
   const loadingMoreHistoryRef = useRef(false)
   const historySessionRef = useRef(0)
-  const alertsEnabledRef = useRef(alertsEnabled)
   const hoveredCandleTimeRef = useRef<number | null>(null)
   const dragStateRef = useRef<DragState | null>(null)
   const dragCleanupRef = useRef<(() => void) | null>(null)
@@ -365,7 +365,7 @@ export default function NiftyChart() {
     if (alertModal.mode === 'create') {
       setAlertMutation({ kind: 'create' })
       try {
-        const created = await createAlert({ symbol: 'NIFTY 50', target_price: roundedTargetPrice })
+        const created = await createAlert({ symbol: alertSymbol, target_price: roundedTargetPrice })
         upsertAlert(created)
         addToast('success', `Alert added at ${created.target_price.toFixed(2)}`)
         closeAlertModal()
@@ -543,7 +543,7 @@ export default function NiftyChart() {
     seriesRef.current = series
 
     const handleClick = (param: MouseEventParams<Time>) => {
-      if (!alertsEnabledRef.current || !param.point) {
+      if (!param.point) {
         return
       }
       const nextAnchor = toAlertAnchor(series, param.point.y)
@@ -584,20 +584,17 @@ export default function NiftyChart() {
   }, [])
 
   useEffect(() => {
-    alertsEnabledRef.current = alertsEnabled
-    if (!alertsEnabled) {
-      dragCleanupRef.current?.()
-      dragCleanupRef.current = null
-      dragStateRef.current = null
-      document.body.style.userSelect = ''
-      setHoveredAlertAnchor(null)
-      setSelectedAlertAnchor(null)
-      setAlertModal(null)
-      setAlertDraftPrice('')
-      setDragPreview(null)
-      setAlertMutation(null)
-    }
-  }, [alertsEnabled])
+    dragCleanupRef.current?.()
+    dragCleanupRef.current = null
+    dragStateRef.current = null
+    document.body.style.userSelect = ''
+    setHoveredAlertAnchor(null)
+    setSelectedAlertAnchor(null)
+    setAlertModal(null)
+    setAlertDraftPrice('')
+    setDragPreview(null)
+    setAlertMutation(null)
+  }, [alertSymbol])
 
   useEffect(() => {
     return () => {
@@ -770,7 +767,7 @@ export default function NiftyChart() {
     }
   }, [alertModal, alerts])
 
-  const chartAlerts = alerts.filter((alert) => alert.symbol === 'NIFTY 50')
+  const chartAlerts = alerts.filter((alert) => alert.symbol === alertSymbol)
   const activeAlerts = chartAlerts.filter((alert) => alert.status === 'ACTIVE')
   const triggeredAlerts = chartAlerts.filter((alert) => alert.status === 'TRIGGERED')
   const editingAlert = alertModal?.mode === 'edit'
@@ -803,7 +800,7 @@ export default function NiftyChart() {
         width: ALERT_MODAL_WIDTH,
       }
     : undefined
-  const overlayAlerts = alertsEnabled && seriesRef.current && containerHeight > 0
+  const overlayAlerts = seriesRef.current && containerHeight > 0
     ? chartAlerts.flatMap((alert) => {
         const displayPrice = dragPreview?.alertId === alert.id ? dragPreview.price : alert.target_price
         const coordinate = seriesRef.current?.priceToCoordinate(displayPrice)
@@ -835,7 +832,7 @@ export default function NiftyChart() {
       return
     }
 
-    if ((event.key === 'a' || event.key === 'A') && alertsEnabled && shortcutAnchor && !alertModal) {
+    if ((event.key === 'a' || event.key === 'A') && shortcutAnchor && !alertModal) {
       openCreateAlertModal(shortcutAnchor)
       event.preventDefault()
     }
@@ -893,23 +890,19 @@ export default function NiftyChart() {
         </div>
         <div className="ml-auto flex items-center gap-2 text-[11px] text-text-muted">
           {loadingMoreHistory ? <span>Loading older…</span> : null}
-          {alertsEnabled ? (
-            <button
-              onClick={() => setAlertsPanelOpen((open) => !open)}
-              className={`flex items-center gap-2 rounded-sm border px-2 py-1 transition-colors ${
-                alertsPanelOpen
-                  ? 'border-signal/60 bg-signal/10 text-text-primary'
-                  : 'border-border-primary text-text-muted hover:text-text-primary'
-              }`}
-              title={alertsPanelOpen ? 'Hide alerts' : 'Show alerts'}
-            >
-              <Bell size={12} className="text-signal" />
-              <span>{activeAlerts.length} active</span>
-              {triggeredAlerts.length ? <span>{triggeredAlerts.length} triggered</span> : null}
-            </button>
-          ) : (
-            <span>Live option chart</span>
-          )}
+          <button
+            onClick={() => setAlertsPanelOpen((open) => !open)}
+            className={`flex items-center gap-2 rounded-sm border px-2 py-1 transition-colors ${
+              alertsPanelOpen
+                ? 'border-signal/60 bg-signal/10 text-text-primary'
+                : 'border-border-primary text-text-muted hover:text-text-primary'
+            }`}
+            title={alertsPanelOpen ? 'Hide alerts' : 'Show alerts'}
+          >
+            <Bell size={12} className="text-signal" />
+            <span>{activeAlerts.length} active</span>
+            {triggeredAlerts.length ? <span>{triggeredAlerts.length} triggered</span> : null}
+          </button>
         </div>
       </div>
 
@@ -934,64 +927,62 @@ export default function NiftyChart() {
           </div>
         )}
 
-        {alertsEnabled ? (
-          <div className="pointer-events-none absolute inset-0 z-10">
-            {overlayAlerts.map(({ alert, price, y }) => {
-              const triggered = alert.status === 'TRIGGERED'
-              return (
-                <div key={alert.id} className="absolute inset-x-0" style={{ top: y }}>
-                  <div
-                    className="absolute inset-x-0 top-0 -translate-y-1/2 border-t"
-                    style={{
-                      borderColor: triggered ? '#16a34a' : '#f59e0b',
-                      borderTopStyle: triggered ? 'solid' : 'dashed',
-                      opacity: dragPreview?.alertId === alert.id ? 1 : 0.85,
-                    }}
-                  />
-                  <div
-                    data-alert-interactive="true"
-                    className={`pointer-events-auto absolute inset-x-0 top-0 h-5 -translate-y-1/2 ${
-                      alertMutation ? 'cursor-wait' : 'cursor-grab active:cursor-grabbing'
-                    }`}
-                    onPointerDown={(event) => startAlertLineInteraction(event, alert)}
-                    title="Drag to move alert. Click to edit."
-                  />
-                  <div className="pointer-events-none absolute right-2 top-0 -translate-y-1/2">
-                    <div className="flex items-center overflow-hidden rounded-sm border border-black/15 bg-bg-primary/92 shadow-[0_4px_14px_rgba(0,0,0,0.18)]">
-                      <span className={`px-2 py-0.5 text-[10px] font-medium ${triggered ? 'bg-profit text-bg-primary' : 'bg-[#f59e0b] text-[#1b1b1b]'}`}>
-                        {alert.direction === 'ABOVE' ? '↑ Alert' : '↓ Alert'}
-                      </span>
-                      <span className="border-l border-black/10 px-2 py-0.5 text-[10px] tabular-nums text-text-primary">
-                        {formatPrice(price)}
-                      </span>
-                    </div>
+        <div className="pointer-events-none absolute inset-0 z-10">
+          {overlayAlerts.map(({ alert, price, y }) => {
+            const triggered = alert.status === 'TRIGGERED'
+            return (
+              <div key={alert.id} className="absolute inset-x-0" style={{ top: y }}>
+                <div
+                  className="absolute inset-x-0 top-0 -translate-y-1/2 border-t"
+                  style={{
+                    borderColor: triggered ? '#16a34a' : '#f59e0b',
+                    borderTopStyle: triggered ? 'solid' : 'dashed',
+                    opacity: dragPreview?.alertId === alert.id ? 1 : 0.85,
+                  }}
+                />
+                <div
+                  data-alert-interactive="true"
+                  className={`pointer-events-auto absolute inset-x-0 top-0 h-5 -translate-y-1/2 ${
+                    alertMutation ? 'cursor-wait' : 'cursor-grab active:cursor-grabbing'
+                  }`}
+                  onPointerDown={(event) => startAlertLineInteraction(event, alert)}
+                  title="Drag to move alert. Click to edit."
+                />
+                <div className="pointer-events-none absolute right-2 top-0 -translate-y-1/2">
+                  <div className="flex items-center overflow-hidden rounded-sm border border-black/15 bg-bg-primary/92 shadow-[0_4px_14px_rgba(0,0,0,0.18)]">
+                    <span className={`px-2 py-0.5 text-[10px] font-medium ${triggered ? 'bg-profit text-bg-primary' : 'bg-[#f59e0b] text-[#1b1b1b]'}`}>
+                      {alert.direction === 'ABOVE' ? '↑ Alert' : '↓ Alert'}
+                    </span>
+                    <span className="border-l border-black/10 px-2 py-0.5 text-[10px] tabular-nums text-text-primary">
+                      {formatPrice(price)}
+                    </span>
                   </div>
                 </div>
-              )
-            })}
-
-            {hoveredAlertAnchor && !alertModal ? (
-              <div
-                className="absolute z-20"
-                style={{ right: AXIS_ADD_BUTTON_RIGHT, top: clamp(hoveredAlertAnchor.y, 0, containerHeight || 0) }}
-              >
-                <button
-                  data-alert-interactive="true"
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    openCreateAlertModal(hoveredAlertAnchor)
-                  }}
-                  className="pointer-events-auto flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full border border-border-primary/80 bg-bg-secondary/88 text-text-muted shadow-sm backdrop-blur transition-colors hover:border-signal/60 hover:text-signal"
-                  title="Create alert (A)"
-                >
-                  <Plus size={10} />
-                </button>
               </div>
-            ) : null}
-          </div>
-        ) : null}
+            )
+          })}
 
-        {alertsEnabled && alertModal && alertModalStyle ? (
+          {hoveredAlertAnchor && !alertModal ? (
+            <div
+              className="absolute z-20"
+              style={{ right: AXIS_ADD_BUTTON_RIGHT, top: clamp(hoveredAlertAnchor.y, 0, containerHeight || 0) }}
+            >
+              <button
+                data-alert-interactive="true"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  openCreateAlertModal(hoveredAlertAnchor)
+                }}
+                className="pointer-events-auto flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full border border-border-primary/80 bg-bg-secondary/88 text-text-muted shadow-sm backdrop-blur transition-colors hover:border-signal/60 hover:text-signal"
+                title="Create alert (A)"
+              >
+                <Plus size={10} />
+              </button>
+            </div>
+          ) : null}
+        </div>
+
+        {alertModal && alertModalStyle ? (
           <div
             data-alert-interactive="true"
             className="absolute z-20 rounded-md border border-border-primary/90 bg-bg-secondary/96 px-3 py-2.5 shadow-xl backdrop-blur"
@@ -1002,7 +993,7 @@ export default function NiftyChart() {
                 <div className="text-[11px] font-medium text-text-primary">
                   {alertModal.mode === 'edit' ? 'Edit alert' : 'Create alert'}
                 </div>
-                <div className="text-[10px] text-text-muted">NIFTY 50 spot</div>
+                <div className="text-[10px] text-text-muted">{alertInstrumentLabel}</div>
               </div>
               <button onClick={() => closeAlertModal()} className="text-text-muted transition-colors hover:text-text-primary">
                 <X size={12} />
@@ -1066,7 +1057,7 @@ export default function NiftyChart() {
                 <span className="text-[11px] font-medium text-text-primary">Chart alerts</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-[10px] text-text-muted">{alertsEnabled ? 'Spot' : 'Option'}</span>
+                <span className="text-[10px] text-text-muted">{chartQuote ? 'Option' : 'Spot'}</span>
                 <button
                   onClick={() => setAlertsPanelOpen(false)}
                   className="text-text-muted transition-colors hover:text-text-primary"
@@ -1076,11 +1067,8 @@ export default function NiftyChart() {
               </div>
             </div>
             <div className="mt-2 space-y-2">
-              {!alertsEnabled ? (
-                <div className="text-[11px] leading-4 text-text-muted">
-                  Option candles are live, but persisted alerts remain scoped to the NIFTY spot chart.
-                </div>
-              ) : chartAlerts.length === 0 ? (
+              <div className="text-[10px] text-text-muted">{alertInstrumentLabel}</div>
+              {chartAlerts.length === 0 ? (
                 <div className="text-[11px] leading-4 text-text-muted">
                   Use the subtle + on the price scale, or click the chart and press A to add an alert.
                 </div>
