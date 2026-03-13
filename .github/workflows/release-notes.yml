@@ -71,59 +71,50 @@ jobs:
             echo "FILES_EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Append to RELEASES.md
+      - name: Build release notes
         run: |
-          ENTRY="## ${{ steps.info.outputs.date }} — \`${{ steps.info.outputs.sha_short }}\`
+          cat > release-notes.md <<EOF
+          ## ${{ steps.info.outputs.date }} — \`${{ steps.info.outputs.sha_short }}\`
 
           **Latest:** ${{ steps.info.outputs.message }}
           **Author:** ${{ steps.info.outputs.author }}
           **Stats:** ${{ steps.categories.outputs.files }}
-          "
+          EOF
 
           if [ -n "${{ steps.categories.outputs.features }}" ]; then
-            ENTRY="$ENTRY
-          ### Features
-          ${{ steps.categories.outputs.features }}
-          "
+            {
+              echo ""
+              echo "### Features"
+              echo "${{ steps.categories.outputs.features }}"
+            } >> release-notes.md
           fi
 
           if [ -n "${{ steps.categories.outputs.fixes }}" ]; then
-            ENTRY="$ENTRY
-          ### Fixes
-          ${{ steps.categories.outputs.fixes }}
-          "
+            {
+              echo ""
+              echo "### Fixes"
+              echo "${{ steps.categories.outputs.fixes }}"
+            } >> release-notes.md
           fi
 
           if [ -n "${{ steps.categories.outputs.other }}" ]; then
-            ENTRY="$ENTRY
-          ### Other
-          ${{ steps.categories.outputs.other }}
-          "
+            {
+              echo ""
+              echo "### Other"
+              echo "${{ steps.categories.outputs.other }}"
+            } >> release-notes.md
           fi
 
-          ENTRY="$ENTRY
-          ---
-          "
-
-          if [ -f RELEASES.md ]; then
-            # Prepend new entry after the header
-            HEADER=$(head -2 RELEASES.md)
-            BODY=$(tail -n +3 RELEASES.md)
-            echo "$HEADER" > RELEASES.md
-            echo "" >> RELEASES.md
-            echo "$ENTRY" >> RELEASES.md
-            echo "$BODY" >> RELEASES.md
-          else
-            echo "# Release Log" > RELEASES.md
-            echo "" >> RELEASES.md
-            echo "$ENTRY" >> RELEASES.md
-          fi
-
-      - name: Commit release log
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: main-${{ steps.info.outputs.sha_short }}
+          TITLE: ${{ steps.info.outputs.date }} — ${{ steps.info.outputs.sha_short }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add RELEASES.md
-          git diff --cached --quiet && exit 0
-          git commit -m "docs: update release log for ${{ steps.info.outputs.sha_short }}"
-          git push
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "$TITLE" --notes-file release-notes.md
+          else
+            gh release create "$TAG" --target "$GITHUB_SHA" --title "$TITLE" --notes-file release-notes.md
+          fi
+
+          gh release view "$TAG" --json url --jq '.url' >> "$GITHUB_STEP_SUMMARY"
