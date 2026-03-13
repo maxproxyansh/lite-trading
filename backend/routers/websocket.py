@@ -24,6 +24,7 @@ router = APIRouter(tags=["ws"])
 class WebSocketClient:
     user_id: str
     portfolio_ids: frozenset[str]
+    agent_key_id: str | None = None
 
 
 connected_clients: dict[WebSocket, WebSocketClient] = {}
@@ -61,7 +62,17 @@ async def broadcast_user_message(user_id: str, event_type: str, payload: dict[st
     clients = [
         socket
         for socket, client in connected_clients.items()
-        if client.user_id == user_id
+        if client.user_id == user_id and client.agent_key_id is None
+    ]
+    await _broadcast_to_clients(clients, message)
+
+
+async def broadcast_agent_message(agent_key_id: str, event_type: str, payload: dict[str, Any]) -> None:
+    message = json.dumps({"type": event_type, "payload": payload}, default=str, separators=(",", ":"))
+    clients = [
+        socket
+        for socket, client in connected_clients.items()
+        if client.agent_key_id == agent_key_id
     ]
     await _broadcast_to_clients(clients, message)
 
@@ -79,6 +90,7 @@ def _bearer_token(value: str | None) -> str | None:
 async def websocket_endpoint(websocket: WebSocket):
     db: Session = SessionLocal()
     user_id: str | None = None
+    agent_key_id: str | None = None
     try:
         cookie_token = websocket.cookies.get(settings.access_cookie_name)
         bearer_token = _bearer_token(websocket.headers.get("authorization"))
@@ -110,6 +122,7 @@ async def websocket_endpoint(websocket: WebSocket):
             if authorized and key and key.user_id and key.portfolio_id:
                 user_id = key.user_id
                 portfolio_ids = {key.portfolio_id}
+                agent_key_id = key.id
 
         if not authorized or not user_id:
             await websocket.close(code=4401)
@@ -118,7 +131,11 @@ async def websocket_endpoint(websocket: WebSocket):
         db.close()
 
     await websocket.accept()
-    connected_clients[websocket] = WebSocketClient(user_id=user_id, portfolio_ids=frozenset(portfolio_ids))
+    connected_clients[websocket] = WebSocketClient(
+        user_id=user_id,
+        portfolio_ids=frozenset(portfolio_ids),
+        agent_key_id=agent_key_id,
+    )
     try:
         while True:
             message = await websocket.receive_text()

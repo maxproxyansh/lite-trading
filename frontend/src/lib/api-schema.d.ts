@@ -743,6 +743,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent/events/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Agent Claim Events */
+        post: operations["agent_claim_events_api_v1_agent_events_claim_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/events/{event_id}/ack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Agent Ack Event */
+        post: operations["agent_ack_event_api_v1_agent_events__event_id__ack_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/events/{event_id}/fail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Agent Fail Event */
+        post: operations["agent_fail_event_api_v1_agent_events__event_id__fail_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agent/funds/{portfolio_id}": {
         parameters: {
             query?: never;
@@ -1021,6 +1072,85 @@ export interface components {
             links: {
                 [key: string]: string;
             };
+        };
+        /** AgentEventClaimRequest */
+        AgentEventClaimRequest: {
+            /**
+             * Limit
+             * @default 25
+             */
+            limit: number;
+            /**
+             * Lease Seconds
+             * @default 30
+             */
+            lease_seconds: number;
+            /** Types */
+            types?: "alert.triggered"[] | null;
+        };
+        /** AgentEventEnvelope */
+        AgentEventEnvelope: {
+            /** Id */
+            id: string;
+            /**
+             * Type
+             * @constant
+             */
+            type: "alert.triggered";
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** User Id */
+            user_id: string;
+            /** Portfolio Id */
+            portfolio_id: string;
+            /** Agent Key Id */
+            agent_key_id: string;
+            source: components["schemas"]["AgentEventSource"];
+            /** Data */
+            data: {
+                [key: string]: unknown;
+            };
+            /** Claimed At */
+            claimed_at?: string | null;
+            /** Claim Expires At */
+            claim_expires_at?: string | null;
+            /** Acked At */
+            acked_at?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Last Error */
+            last_error?: string | null;
+        };
+        /** AgentEventFailRequest */
+        AgentEventFailRequest: {
+            /** Error */
+            error: string;
+            /**
+             * Retry Delay Seconds
+             * @default 0
+             */
+            retry_delay_seconds: number;
+        };
+        /** AgentEventSource */
+        AgentEventSource: {
+            /**
+             * Type
+             * @constant
+             */
+            type: "alert";
+            /** Id */
+            id: string;
         };
         /** AgentKeyResponse */
         AgentKeyResponse: {
@@ -3973,6 +4103,111 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_claim_events_api_v1_agent_events_claim_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentEventClaimRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentEventEnvelope"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_ack_event_api_v1_agent_events__event_id__ack_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentEventEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_fail_event_api_v1_agent_events__event_id__fail_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentEventFailRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentEventEnvelope"];
+                };
             };
             /** @description Validation Error */
             422: {

@@ -34,6 +34,7 @@ def websocket_event_catalog() -> list[tuple[str, str]]:
         ("option.chain", "Option chain refresh for the active expiry."),
         ("option.quotes", "Incremental quote updates for changed option contracts."),
         ("alert.triggered", "User-scoped push event emitted immediately when a persisted alert is hit."),
+        ("agent.event", "Agent-scoped durable event envelope pushed immediately to the specific authenticated agent."),
         ("portfolio.refresh", "Portfolio-linked signal that orders or positions changed and should be reloaded."),
         ("signal.updated", "Signal adapter output was updated."),
     ]
@@ -51,6 +52,7 @@ def agent_links() -> dict[str, str]:
         "orders": f"{prefix}/agent/orders",
         "positions": f"{prefix}/agent/positions",
         "alerts": f"{prefix}/agent/alerts",
+        "events": f"{prefix}/agent/events",
         "webhooks": f"{prefix}/agent/webhooks",
         "analytics": f"{prefix}/agent/analytics/detailed",
         "funds": f"{prefix}/agent/funds",

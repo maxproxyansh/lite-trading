@@ -30,10 +30,10 @@ DEFAULT_AGENT_SCOPES = [
     "positions:write",
     "alerts:read",
     "alerts:write",
+    "events:read",
+    "events:write",
     "signals:read",
     "signals:write",
-    "alerts:read",
-    "alerts:write",
     "funds:read",
 ]
 ALLOWED_AGENT_SCOPES = frozenset([*DEFAULT_AGENT_SCOPES, "webhooks:read", "webhooks:write"])

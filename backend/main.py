@@ -18,7 +18,7 @@ from services.auth_service import ensure_bootstrap_state
 from services.signal_adapter import signal_adapter
 from services.trading_service import process_open_orders_sync
 from services.webhook_service import run_webhook_dispatcher
-from routers.websocket import broadcast_message, broadcast_portfolio_message, broadcast_user_message
+from routers.websocket import broadcast_agent_message, broadcast_message, broadcast_portfolio_message, broadcast_user_message
 
 
 settings = get_settings()
@@ -54,6 +54,12 @@ async def _process_market_side_effects(symbols: set[str]) -> None:
             "alert.triggered",
             alert.payload.model_dump(mode="json"),
         )
+        if alert.agent_key_id and alert.agent_event_payload:
+            await broadcast_agent_message(
+                alert.agent_key_id,
+                "agent.event",
+                alert.agent_event_payload,
+            )
     for portfolio_id in changed_portfolios:
         await broadcast_portfolio_message(
             portfolio_id,

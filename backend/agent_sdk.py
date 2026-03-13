@@ -209,6 +209,28 @@ class LiteAgentClient:
     def delete_webhook(self, webhook_id: str) -> None:
         return self._request("DELETE", f"/api/v1/agent/webhooks/{webhook_id}")
 
+    def claim_events(
+        self,
+        *,
+        limit: int = 25,
+        lease_seconds: int = 30,
+        types: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        payload: dict[str, Any] = {"limit": limit, "lease_seconds": lease_seconds}
+        if types:
+            payload["types"] = types
+        return self._request("POST", "/api/v1/agent/events/claim", json_data=payload)
+
+    def ack_event(self, event_id: str) -> dict[str, Any]:
+        return self._request("POST", f"/api/v1/agent/events/{event_id}/ack")
+
+    def fail_event(self, event_id: str, *, error: str, retry_delay_seconds: int = 0) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            f"/api/v1/agent/events/{event_id}/fail",
+            json_data={"error": error, "retry_delay_seconds": retry_delay_seconds},
+        )
+
     def detailed_analytics(self, *, date_from: str | None = None, date_to: str | None = None) -> dict[str, Any]:
         params: dict[str, Any] = {}
         if date_from:

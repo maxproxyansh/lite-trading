@@ -179,6 +179,22 @@ def handle_alerts_delete(args: argparse.Namespace) -> Any:
     return {"deleted": True, "alert_id": args.alert_id}
 
 
+def handle_events_claim(args: argparse.Namespace) -> Any:
+    client, _, _ = make_client(args)
+    event_types = [event.strip() for event in args.types.split(",") if event.strip()] if args.types else None
+    return client.claim_events(limit=args.limit, lease_seconds=args.lease_seconds, types=event_types)
+
+
+def handle_events_ack(args: argparse.Namespace) -> Any:
+    client, _, _ = make_client(args)
+    return client.ack_event(args.event_id)
+
+
+def handle_events_fail(args: argparse.Namespace) -> Any:
+    client, _, _ = make_client(args)
+    return client.fail_event(args.event_id, error=args.error, retry_delay_seconds=args.retry_delay_seconds)
+
+
 def handle_positions(args: argparse.Namespace) -> Any:
     client, _, _ = make_client(args)
     return client.dhan_positions() if args.dhan else client.positions()
@@ -390,6 +406,25 @@ def build_parser() -> argparse.ArgumentParser:
     alerts_delete = alerts_subparsers.add_parser("delete", help="Delete an alert")
     alerts_delete.add_argument("alert_id")
     alerts_delete.set_defaults(handler=handle_alerts_delete)
+
+    events = subparsers.add_parser("events", help="Claim and acknowledge durable agent events")
+    event_subparsers = events.add_subparsers(dest="events_command", required=True)
+
+    events_claim = event_subparsers.add_parser("claim", help="Claim pending events for processing")
+    events_claim.add_argument("--limit", type=int, default=25)
+    events_claim.add_argument("--lease-seconds", type=int, default=30)
+    events_claim.add_argument("--types", default=None, help="Comma-separated event types like alert.triggered")
+    events_claim.set_defaults(handler=handle_events_claim)
+
+    events_ack = event_subparsers.add_parser("ack", help="Acknowledge a claimed event")
+    events_ack.add_argument("event_id")
+    events_ack.set_defaults(handler=handle_events_ack)
+
+    events_fail = event_subparsers.add_parser("fail", help="Mark an event as failed and optionally retry later")
+    events_fail.add_argument("event_id")
+    events_fail.add_argument("--error", required=True)
+    events_fail.add_argument("--retry-delay-seconds", type=int, default=0)
+    events_fail.set_defaults(handler=handle_events_fail)
 
     funds = subparsers.add_parser("funds", help="Show available funds for the bound portfolio")
     funds.add_argument("--dhan", action="store_true", help="Use the Dhan-compatible response shape")

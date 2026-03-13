@@ -177,12 +177,34 @@ class Alert(Base, BaseModelMixin):
 
     user_id = Column(String(64), ForeignKey("users.id"), nullable=False, index=True)
     portfolio_id = Column(String(64), ForeignKey("portfolios.id"), index=True)
+    creator_agent_key_id = Column(String(64), ForeignKey("agent_api_keys.id"), index=True)
     symbol = Column(String(128), nullable=False, index=True, default="NIFTY 50")
     target_price = Column(Numeric(14, 2), nullable=False)
     direction = Column(String(16), nullable=False)
     status = Column(String(16), nullable=False, default="ACTIVE")
     last_price = Column(Numeric(14, 2))
     triggered_at = Column(DateTime(timezone=True))
+
+
+class AgentEvent(Base, BaseModelMixin):
+    __tablename__ = "agent_events"
+    __table_args__ = (
+        Index("ix_agent_events_agent_pending", "agent_key_id", "acked_at", "claim_expires_at", "created_at"),
+        Index("ix_agent_events_agent_type", "agent_key_id", "event_type"),
+    )
+
+    agent_key_id = Column(String(64), ForeignKey("agent_api_keys.id"), nullable=False, index=True)
+    user_id = Column(String(64), ForeignKey("users.id"), nullable=False, index=True)
+    portfolio_id = Column(String(64), ForeignKey("portfolios.id"), nullable=False, index=True)
+    event_type = Column(String(64), nullable=False, index=True)
+    source_type = Column(String(32), nullable=False)
+    source_id = Column(String(64), nullable=False, index=True)
+    payload = Column(JSON, nullable=False, default=dict)
+    occurred_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, index=True)
+    claimed_at = Column(DateTime(timezone=True))
+    claim_expires_at = Column(DateTime(timezone=True), index=True)
+    acked_at = Column(DateTime(timezone=True), index=True)
+    last_error = Column(Text)
 
 
 class DailyStat(Base):

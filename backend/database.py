@@ -104,6 +104,10 @@ def _run_migrations(eng) -> None:
                 conn.execute(text("ALTER TABLE alerts ADD COLUMN portfolio_id VARCHAR(64)"))
                 conn.execute(text("CREATE INDEX IF NOT EXISTS ix_alerts_portfolio_id ON alerts (portfolio_id)"))
                 logger.info("Migration: added alerts.portfolio_id column")
+            if "creator_agent_key_id" not in alert_columns:
+                conn.execute(text("ALTER TABLE alerts ADD COLUMN creator_agent_key_id VARCHAR(64)"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_alerts_creator_agent_key_id ON alerts (creator_agent_key_id)"))
+                logger.info("Migration: added alerts.creator_agent_key_id column")
 
     # Migrate Float columns to Numeric(14,2) for financial precision
     # PostgreSQL supports ALTER COLUMN TYPE; SQLite ignores column types anyway

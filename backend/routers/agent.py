@@ -11,6 +11,9 @@ from dependencies import get_agent_key, require_agent_scope
 from models import Portfolio, Position, Signal, User
 from rate_limit import rate_limit
 from schemas import (
+    AgentEventClaimRequest,
+    AgentEventEnvelope,
+    AgentEventFailRequest,
     AgentBootstrapRequest,
     AgentBootstrapResponse,
     AgentProfileResponse,
@@ -36,6 +39,7 @@ from schemas import (
     SignalResponse,
     AgentSignupRequest,
 )
+from services.agent_event_service import ack_agent_event, claim_agent_events, fail_agent_event, serialize_agent_event
 from services.agent_service import (
     dhan_order_to_native,
     serialize_agent_bootstrap,
@@ -339,6 +343,7 @@ def agent_create_alert(
         user_id=key.user_id,
         payload=payload,
         portfolio_id=key.portfolio_id,
+        creator_agent_key_id=key.id,
         actor_type="agent",
         actor_id=key.id,
     )
@@ -392,6 +397,52 @@ def agent_delete_webhook(
 ):
     delete_webhook(db, agent_key_id=key.id, webhook_id=webhook_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/events/claim", response_model=list[AgentEventEnvelope])
+def agent_claim_events(
+    payload: AgentEventClaimRequest,
+    db: Session = Depends(get_db),
+    key=Depends(require_agent_scope("events:read")),
+    _: None = Depends(rate_limit("agent:events-claim", 240, 60)),
+):
+    events = claim_agent_events(
+        db,
+        agent_key_id=key.id,
+        limit=payload.limit,
+        lease_seconds=payload.lease_seconds,
+        event_types=payload.types,
+    )
+    return [serialize_agent_event(event) for event in events]
+
+
+@router.post("/events/{event_id}/ack", response_model=AgentEventEnvelope)
+def agent_ack_event(
+    event_id: str,
+    db: Session = Depends(get_db),
+    key=Depends(require_agent_scope("events:write")),
+    _: None = Depends(rate_limit("agent:events-ack", 240, 60)),
+):
+    return serialize_agent_event(ack_agent_event(db, agent_key_id=key.id, event_id=event_id))
+
+
+@router.post("/events/{event_id}/fail", response_model=AgentEventEnvelope)
+def agent_fail_event(
+    event_id: str,
+    payload: AgentEventFailRequest,
+    db: Session = Depends(get_db),
+    key=Depends(require_agent_scope("events:write")),
+    _: None = Depends(rate_limit("agent:events-fail", 240, 60)),
+):
+    return serialize_agent_event(
+        fail_agent_event(
+            db,
+            agent_key_id=key.id,
+            event_id=event_id,
+            error=payload.error,
+            retry_delay_seconds=payload.retry_delay_seconds,
+        )
+    )
 
 
 @router.get("/funds/{portfolio_id}", response_model=FundsResponse)

@@ -18,6 +18,7 @@ OrderSort = Literal["asc", "desc"]
 OrderLinkType = Literal["ENTRY", "STOP_LOSS", "TARGET"]
 AlertDirection = Literal["ABOVE", "BELOW"]
 AlertStatus = Literal["ACTIVE", "TRIGGERED", "CANCELLED"]
+AgentEventType = Literal["alert.triggered"]
 PortfolioKind = Literal["manual", "agent"]
 ExchangeSegment = Literal["NSE_FNO"]
 WebhookEvent = Literal["order.filled", "order.cancelled", "position.opened", "position.closed", "alert.triggered"]
@@ -32,6 +33,8 @@ def default_agent_scopes() -> list[str]:
         "positions:write",
         "alerts:read",
         "alerts:write",
+        "events:read",
+        "events:write",
         "signals:read",
         "signals:write",
         "funds:read",
@@ -297,6 +300,39 @@ class AlertSummary(BaseModel):
     triggered_at: datetime | None = None
 
     model_config = {"from_attributes": True}
+
+
+class AgentEventSource(BaseModel):
+    type: Literal["alert"]
+    id: str
+
+
+class AgentEventEnvelope(BaseModel):
+    id: str
+    type: AgentEventType
+    occurred_at: datetime
+    user_id: str
+    portfolio_id: str
+    agent_key_id: str
+    source: AgentEventSource
+    data: dict[str, Any]
+    claimed_at: datetime | None = None
+    claim_expires_at: datetime | None = None
+    acked_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+    last_error: str | None = None
+
+
+class AgentEventClaimRequest(BaseModel):
+    limit: int = Field(default=25, ge=1, le=100)
+    lease_seconds: int = Field(default=30, ge=5, le=300)
+    types: list[AgentEventType] | None = None
+
+
+class AgentEventFailRequest(BaseModel):
+    error: str = Field(min_length=1, max_length=1000)
+    retry_delay_seconds: int = Field(default=0, ge=0, le=300)
 
 
 class AgentWebhookCreateRequest(BaseModel):

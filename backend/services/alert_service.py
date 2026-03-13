@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime, timezone
+from typing import Any
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
@@ -10,6 +11,7 @@ from sqlalchemy.orm import Session
 from models import Alert
 from schemas import AlertCreateRequest, AlertSummary, AlertUpdateRequest
 from services.audit import log_audit
+from services.agent_event_service import create_agent_event, serialize_agent_event
 from services.market_data import market_data_service
 from services.webhook_service import enqueue_webhook_event
 
@@ -21,6 +23,8 @@ MONEY_PLACES = Decimal("0.01")
 class TriggeredAlertEvent:
     user_id: str
     payload: AlertSummary
+    agent_key_id: str | None = None
+    agent_event_payload: dict[str, Any] | None = None
 
 
 def _money(value: float | int | Decimal | None) -> Decimal:
@@ -78,6 +82,7 @@ def create_alert(
     user_id: str,
     payload: AlertCreateRequest,
     portfolio_id: str | None = None,
+    creator_agent_key_id: str | None = None,
     actor_type: str = "user",
     actor_id: str | None = None,
 ) -> Alert:
@@ -89,6 +94,7 @@ def create_alert(
     alert = Alert(
         user_id=user_id,
         portfolio_id=portfolio_id,
+        creator_agent_key_id=creator_agent_key_id,
         symbol=payload.symbol,
         target_price=_money(payload.target_price),
         direction=direction,
@@ -194,6 +200,7 @@ def cancel_alert(
 def sync_alerts(db: Session) -> list[TriggeredAlertEvent]:
     triggered_events: list[TriggeredAlertEvent] = []
     triggered_alerts: list[Alert] = []
+    agent_event_payloads: dict[str, tuple[str, dict[str, Any]]] = {}
     alerts = db.query(Alert).filter(Alert.status == "ACTIVE").all()
     for alert in alerts:
         current_price = _market_price(alert.symbol)
@@ -201,56 +208,58 @@ def sync_alerts(db: Session) -> list[TriggeredAlertEvent]:
             continue
         alert.last_price = _money(current_price)
         target_price = float(alert.target_price)
-        if alert.direction == "ABOVE" and current_price >= target_price:
-            alert.status = "TRIGGERED"
-            alert.triggered_at = datetime.now(timezone.utc)
+        triggered = (
+            (alert.direction == "ABOVE" and current_price >= target_price)
+            or (alert.direction == "BELOW" and current_price <= target_price)
+        )
+        if not triggered:
+            continue
+
+        alert.status = "TRIGGERED"
+        alert.triggered_at = datetime.now(timezone.utc)
+        payload_data = {
+            "alert_id": alert.id,
+            "symbol": alert.symbol,
+            "target_price": float(alert.target_price),
+            "direction": alert.direction,
+            "last_price": current_price,
+        }
+        if alert.creator_agent_key_id and alert.portfolio_id:
+            agent_event = create_agent_event(
+                db,
+                agent_key_id=alert.creator_agent_key_id,
+                user_id=alert.user_id,
+                portfolio_id=alert.portfolio_id,
+                event_type="alert.triggered",
+                source_type="alert",
+                source_id=alert.id,
+                payload=payload_data,
+                occurred_at=alert.triggered_at,
+            )
+            serialized_event = serialize_agent_event(agent_event).model_dump(mode="json")
+            agent_event_payloads[alert.id] = (alert.creator_agent_key_id, serialized_event)
             enqueue_webhook_event(
                 db,
                 portfolio_id=alert.portfolio_id,
                 event_type="alert.triggered",
-                payload={
-                    "event": "alert.triggered",
-                    "occurred_at": alert.triggered_at.isoformat(),
-                    "portfolio_id": alert.portfolio_id,
-                    "data": {
-                        "alert_id": alert.id,
-                        "symbol": alert.symbol,
-                        "target_price": float(alert.target_price),
-                        "direction": alert.direction,
-                        "last_price": current_price,
-                    },
-                },
+                payload=serialized_event,
+                agent_key_id=alert.creator_agent_key_id,
             )
-            triggered_alerts.append(alert)
-        elif alert.direction == "BELOW" and current_price <= target_price:
-            alert.status = "TRIGGERED"
-            alert.triggered_at = datetime.now(timezone.utc)
-            enqueue_webhook_event(
-                db,
-                portfolio_id=alert.portfolio_id,
-                event_type="alert.triggered",
-                payload={
-                    "event": "alert.triggered",
-                    "occurred_at": alert.triggered_at.isoformat(),
-                    "portfolio_id": alert.portfolio_id,
-                    "data": {
-                        "alert_id": alert.id,
-                        "symbol": alert.symbol,
-                        "target_price": float(alert.target_price),
-                        "direction": alert.direction,
-                        "last_price": current_price,
-                    },
-                },
-            )
-            triggered_alerts.append(alert)
+        triggered_alerts.append(alert)
     if alerts:
         db.commit()
     for alert in triggered_alerts:
         db.refresh(alert)
+        agent_key_id: str | None = None
+        agent_event_payload: dict[str, Any] | None = None
+        if alert.id in agent_event_payloads:
+            agent_key_id, agent_event_payload = agent_event_payloads[alert.id]
         triggered_events.append(
             TriggeredAlertEvent(
                 user_id=alert.user_id,
                 payload=AlertSummary.model_validate(alert),
+                agent_key_id=agent_key_id,
+                agent_event_payload=agent_event_payload,
             )
         )
     return triggered_events

@@ -1213,6 +1213,196 @@ def test_agent_webhooks_register_and_deliver_signed_events(client: TestClient, m
     assert deleted.status_code == 204, deleted.text
 
 
+def test_agent_alerts_create_claimable_events_and_support_ack(client: TestClient) -> None:
+    bootstrap = _bootstrap_agent(
+        client,
+        agent_name="events-agent",
+        scopes=[
+            "alerts:read",
+            "alerts:write",
+            "events:read",
+            "events:write",
+            "funds:read",
+        ],
+    )
+    api_key = bootstrap["api_key"]
+    agent_key_id = bootstrap["agent"]["id"]
+    symbol = "NIFTY_2026-03-12_22500_CE"
+
+    created = client.post(
+        "/api/v1/agent/alerts",
+        headers={"X-API-Key": api_key},
+        json={"symbol": symbol, "target_price": 115.0},
+    )
+    assert created.status_code == 201, created.text
+    alert_id = created.json()["id"]
+
+    market_data_service.quotes[symbol]["ltp"] = 116.25
+    asyncio.run(_process_market_side_effects({symbol}))
+
+    claimed = client.post(
+        "/api/v1/agent/events/claim",
+        headers={"X-API-Key": api_key},
+        json={"limit": 10, "lease_seconds": 30},
+    )
+    assert claimed.status_code == 200, claimed.text
+    payload = claimed.json()
+    assert len(payload) == 1
+    event = payload[0]
+    assert event["type"] == "alert.triggered"
+    assert event["agent_key_id"] == agent_key_id
+    assert event["source"] == {"type": "alert", "id": alert_id}
+    assert event["data"]["alert_id"] == alert_id
+    assert event["data"]["symbol"] == symbol
+    assert event["acked_at"] is None
+
+    claimed_again = client.post(
+        "/api/v1/agent/events/claim",
+        headers={"X-API-Key": api_key},
+        json={"limit": 10, "lease_seconds": 30},
+    )
+    assert claimed_again.status_code == 200, claimed_again.text
+    assert claimed_again.json() == []
+
+    acked = client.post(
+        f"/api/v1/agent/events/{event['id']}/ack",
+        headers={"X-API-Key": api_key},
+    )
+    assert acked.status_code == 200, acked.text
+    assert acked.json()["acked_at"] is not None
+
+    claimed_after_ack = client.post(
+        "/api/v1/agent/events/claim",
+        headers={"X-API-Key": api_key},
+        json={"limit": 10, "lease_seconds": 30},
+    )
+    assert claimed_after_ack.status_code == 200, claimed_after_ack.text
+    assert claimed_after_ack.json() == []
+
+
+def test_agent_websocket_receives_immediate_agent_event_for_triggered_alert(client: TestClient) -> None:
+    bootstrap = _bootstrap_agent(
+        client,
+        agent_name="agent-event-ws",
+        scopes=[
+            "alerts:read",
+            "alerts:write",
+            "events:read",
+            "events:write",
+            "funds:read",
+        ],
+    )
+    api_key = bootstrap["api_key"]
+    agent_key_id = bootstrap["agent"]["id"]
+    symbol = "NIFTY_2026-03-12_22500_CE"
+
+    created = client.post(
+        "/api/v1/agent/alerts",
+        headers={"X-API-Key": api_key},
+        json={"symbol": symbol, "target_price": 115.0},
+    )
+    assert created.status_code == 201, created.text
+    alert_id = created.json()["id"]
+
+    market_data_service.quotes[symbol]["ltp"] = 116.25
+
+    with client.websocket_connect("/api/v1/ws", headers={"X-API-Key": api_key}) as websocket:
+        asyncio.run(_process_market_side_effects({symbol}))
+        message = websocket.receive_json()
+
+    assert message["type"] == "agent.event"
+    payload = message["payload"]
+    assert payload["type"] == "alert.triggered"
+    assert payload["agent_key_id"] == agent_key_id
+    assert payload["source"] == {"type": "alert", "id": alert_id}
+    assert payload["data"]["alert_id"] == alert_id
+    assert payload["data"]["last_price"] == 116.25
+
+
+def test_agent_alert_webhooks_are_targeted_to_creating_agent(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    first = _bootstrap_agent(
+        client,
+        agent_name="alert-webhook-a",
+        scopes=[
+            "alerts:read",
+            "alerts:write",
+            "events:read",
+            "events:write",
+            "webhooks:read",
+            "webhooks:write",
+            "funds:read",
+        ],
+    )
+    second = _bootstrap_agent(
+        client,
+        agent_name="alert-webhook-b",
+        scopes=[
+            "alerts:read",
+            "alerts:write",
+            "events:read",
+            "events:write",
+            "webhooks:read",
+            "webhooks:write",
+            "funds:read",
+        ],
+    )
+
+    create_first = client.post(
+        "/api/v1/agent/webhooks",
+        headers={"X-API-Key": first["api_key"]},
+        json={"url": "https://agent-one.example/webhooks", "events": ["alert.triggered"]},
+    )
+    assert create_first.status_code == 201, create_first.text
+    first_secret = create_first.json()["secret"]
+
+    create_second = client.post(
+        "/api/v1/agent/webhooks",
+        headers={"X-API-Key": second["api_key"]},
+        json={"url": "https://agent-two.example/webhooks", "events": ["alert.triggered"]},
+    )
+    assert create_second.status_code == 201, create_second.text
+
+    captured: list[tuple[str, bytes, dict[str, str]]] = []
+
+    async def fake_post(self, url, content=None, headers=None):  # noqa: ANN001
+        captured.append((url, content or b"", headers or {}))
+
+        class Response:
+            status_code = 200
+
+        return Response()
+
+    monkeypatch.setattr("httpx.AsyncClient.post", fake_post)
+
+    symbol = "NIFTY_2026-03-12_22500_CE"
+    created = client.post(
+        "/api/v1/agent/alerts",
+        headers={"X-API-Key": first["api_key"]},
+        json={"symbol": symbol, "target_price": 115.0},
+    )
+    assert created.status_code == 201, created.text
+    alert_id = created.json()["id"]
+
+    market_data_service.quotes[symbol]["ltp"] = 116.25
+    asyncio.run(_process_market_side_effects({symbol}))
+
+    delivered = asyncio.run(process_webhook_deliveries_once())
+    assert delivered == 1
+    assert len(captured) == 1
+
+    url, body, headers = captured[0]
+    assert url == "https://agent-one.example/webhooks"
+    assert headers["X-Webhook-Event"] == "alert.triggered"
+    assert headers["X-Webhook-Signature"] == webhook_signature(body, first_secret)
+    assert headers["X-Lite-Event-Type"] == "alert.triggered"
+
+    payload = json.loads(body.decode("utf-8"))
+    assert payload["type"] == "alert.triggered"
+    assert payload["agent_key_id"] == first["agent"]["id"]
+    assert payload["source"] == {"type": "alert", "id": alert_id}
+    assert payload["data"]["alert_id"] == alert_id
+
+
 def test_unauthenticated_market_access_rejected(client: TestClient) -> None:
     for path in ["/api/v1/market/snapshot", "/api/v1/market/expiries", "/api/v1/market/chain", "/api/v1/market/candles", "/api/v1/market/depth/NIFTY"]:
         resp = client.get(path)

@@ -129,12 +129,13 @@ def enqueue_webhook_event(
     portfolio_id: str | None,
     event_type: str,
     payload: dict,
+    agent_key_id: str | None = None,
 ) -> int:
     if not portfolio_id:
         return 0
 
     now = _utcnow()
-    webhooks = (
+    query = (
         db.query(AgentWebhook)
         .join(AgentApiKey, AgentApiKey.id == AgentWebhook.agent_key_id)
         .filter(
@@ -144,8 +145,10 @@ def enqueue_webhook_event(
             AgentApiKey.revoked_at.is_(None),
             (AgentApiKey.expires_at.is_(None) | (AgentApiKey.expires_at > now)),
         )
-        .all()
     )
+    if agent_key_id:
+        query = query.filter(AgentWebhook.agent_key_id == agent_key_id)
+    webhooks = query.all()
 
     created = 0
     for webhook in webhooks:
@@ -167,12 +170,19 @@ def enqueue_webhook_event(
 async def _deliver(client: httpx.AsyncClient, webhook: AgentWebhook, delivery: WebhookDelivery) -> tuple[bool, str | None]:
     secret = _signing_secret(webhook.id, webhook.secret_salt)
     body = json.dumps(delivery.payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    payload = delivery.payload if isinstance(delivery.payload, dict) else {}
     headers = {
         "Content-Type": "application/json",
         "User-Agent": "lite-webhook/1.0",
         "X-Webhook-Signature": webhook_signature(body, secret),
         "X-Webhook-Event": delivery.event_type,
     }
+    if payload.get("id"):
+        headers["X-Lite-Event-Id"] = str(payload["id"])
+    if payload.get("type"):
+        headers["X-Lite-Event-Type"] = str(payload["type"])
+    if payload.get("occurred_at"):
+        headers["X-Lite-Occurred-At"] = str(payload["occurred_at"])
     try:
         response = await client.post(webhook.url, content=body, headers=headers)
     except httpx.HTTPError as exc:
