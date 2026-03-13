@@ -7,7 +7,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from models import Alert
-from schemas import AlertCreateRequest
+from schemas import AlertCreateRequest, AlertUpdateRequest
 from services.audit import log_audit
 from services.market_data import market_data_service
 from services.webhook_service import enqueue_webhook_event
@@ -44,6 +44,12 @@ def _market_price(symbol: str) -> float | None:
     return float(quote["ltp"])
 
 
+def _resolve_direction(target_price: float, current_price: float, direction: str | None) -> str:
+    if direction:
+        return direction
+    return "ABOVE" if target_price >= current_price else "BELOW"
+
+
 def list_alerts(
     db: Session,
     *,
@@ -72,7 +78,7 @@ def create_alert(
     if current_price is None or current_price <= 0:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="MARKET_DATA_UNAVAILABLE")
 
-    direction = payload.direction or ("ABOVE" if payload.target_price >= current_price else "BELOW")
+    direction = _resolve_direction(payload.target_price, current_price, payload.direction)
     alert = Alert(
         user_id=user_id,
         portfolio_id=portfolio_id,
@@ -89,6 +95,51 @@ def create_alert(
         actor_type=actor_type,
         actor_id=actor_id or user_id,
         action="alert.create",
+        entity_type="alert",
+        entity_id=alert.id,
+        details={
+            "symbol": alert.symbol,
+            "target_price": float(alert.target_price),
+            "direction": alert.direction,
+            "portfolio_id": alert.portfolio_id,
+        },
+    )
+    db.commit()
+    db.refresh(alert)
+    return alert
+
+
+def update_alert(
+    db: Session,
+    *,
+    user_id: str,
+    alert_id: str,
+    payload: AlertUpdateRequest,
+    portfolio_id: str | None = None,
+    actor_type: str = "user",
+    actor_id: str | None = None,
+) -> Alert:
+    query = db.query(Alert).filter(Alert.id == alert_id, Alert.user_id == user_id)
+    if portfolio_id is not None:
+        query = query.filter(Alert.portfolio_id == portfolio_id)
+    alert = query.first()
+    if not alert or alert.status == "CANCELLED":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alert not found")
+
+    current_price = _market_price(alert.symbol)
+    if current_price is None or current_price <= 0:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="MARKET_DATA_UNAVAILABLE")
+
+    alert.target_price = _money(payload.target_price)
+    alert.direction = _resolve_direction(payload.target_price, current_price, payload.direction)
+    alert.status = "ACTIVE"
+    alert.last_price = _money(current_price)
+    alert.triggered_at = None
+    log_audit(
+        db,
+        actor_type=actor_type,
+        actor_id=actor_id or user_id,
+        action="alert.update",
         entity_type="alert",
         entity_id=alert.id,
         details={

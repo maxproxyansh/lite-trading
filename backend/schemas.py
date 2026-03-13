@@ -279,6 +279,11 @@ class AlertCreateRequest(BaseModel):
     direction: AlertDirection | None = None
 
 
+class AlertUpdateRequest(BaseModel):
+    target_price: float = Field(gt=0)
+    direction: AlertDirection | None = None
+
+
 class AlertSummary(BaseModel):
     id: str
     portfolio_id: str | None = None

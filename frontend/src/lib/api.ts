@@ -12,6 +12,10 @@ export type Candle = components['schemas']['Candle']
 export type CandleResponse = components['schemas']['CandleResponse']
 export type AlertSummary = components['schemas']['AlertSummary']
 export type AlertPayload = components['schemas']['AlertCreateRequest']
+export type AlertUpdatePayload = {
+  target_price: number
+  direction?: AlertSummary['direction'] | null
+}
 export type PortfolioSummary = components['schemas']['PortfolioSummary']
 export type OrderSummary = components['schemas']['OrderSummary']
 export type PositionSummary = components['schemas']['PositionSummary']
@@ -232,6 +236,13 @@ export async function fetchAlerts() {
 export async function createAlert(payload: AlertPayload) {
   return rawFetch<AlertSummary>('/api/v1/alerts', {
     method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function updateAlert(alertId: string, payload: AlertUpdatePayload) {
+  return rawFetch<AlertSummary>(`/api/v1/alerts/${encodeURIComponent(alertId)}`, {
+    method: 'PATCH',
     body: JSON.stringify(payload),
   })
 }

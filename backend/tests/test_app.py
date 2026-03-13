@@ -1429,6 +1429,19 @@ def test_alerts_are_user_isolated_and_trigger_against_spot(client: TestClient) -
     assert len(payload) == 1
     assert payload[0]["status"] == "TRIGGERED"
 
+    market_data_service.snapshot["spot"] = 22490.0
+    updated = client.patch(
+        f"/api/v1/alerts/{alert_id}",
+        headers=admin_headers,
+        json={"target_price": 22450},
+    )
+    assert updated.status_code == 200, updated.text
+    updated_payload = updated.json()
+    assert updated_payload["target_price"] == 22450
+    assert updated_payload["direction"] == "BELOW"
+    assert updated_payload["status"] == "ACTIVE"
+    assert updated_payload["triggered_at"] is None
+
     deleted = client.delete(f"/api/v1/alerts/{alert_id}", headers=admin_headers)
     assert deleted.status_code == 204, deleted.text
     after_delete = client.get("/api/v1/alerts", headers=admin_headers)

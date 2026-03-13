@@ -1,14 +1,62 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react'
-import { Bell, X } from 'lucide-react'
-import { createChart, LineStyle } from 'lightweight-charts'
-import type { CandlestickData, IChartApi, IPriceLine, ISeriesApi, LogicalRange, MouseEventParams, Time } from 'lightweight-charts'
+import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
+import { Bell, Plus, Trash2, X } from 'lucide-react'
+import { createChart } from 'lightweight-charts'
+import type { CandlestickData, IChartApi, ISeriesApi, LogicalRange, MouseEventParams, Time } from 'lightweight-charts'
 import { useShallow } from 'zustand/react/shallow'
 
-import { ApiError, createAlert, deleteAlert, fetchAlerts, fetchCandles, type AlertSummary, type Candle } from '../lib/api'
+import {
+  ApiError,
+  createAlert,
+  deleteAlert,
+  fetchAlerts,
+  fetchCandles,
+  updateAlert,
+  type AlertSummary,
+  type Candle,
+} from '../lib/api'
 import { useStore } from '../store/useStore'
 
 const TIMEFRAMES = ['1m', '5m', '15m', '1h', 'D', 'W', 'M'] as const
 const IST_OFFSET_SECONDS = 5.5 * 60 * 60
+const ALERT_MODAL_WIDTH = 184
+const ALERT_MODAL_MAX_HEIGHT = 138
+const ALERT_MODAL_RIGHT = 14
+const AXIS_ADD_BUTTON_RIGHT = 74
+const DRAG_THRESHOLD_PX = 5
+
+type HoveredCandleStats = {
+  time: number
+  open: number
+  high: number
+  low: number
+  close: number
+  change: number | null
+  changePct: number | null
+}
+
+type ChartAnchor = {
+  price: number
+  y: number
+}
+
+type AlertModalState =
+  | { mode: 'create'; price: number; y: number }
+  | { mode: 'edit'; alertId: string; price: number; y: number }
+
+type AlertMutation =
+  | { kind: 'create' }
+  | { kind: 'update'; alertId: string }
+  | { kind: 'delete'; alertId: string }
+  | null
+
+type DragState = {
+  alert: AlertSummary
+  startClientY: number
+  startPrice: number
+  currentPrice: number
+  moved: boolean
+}
 
 function getChartColors() {
   const styles = getComputedStyle(document.documentElement)
@@ -58,16 +106,6 @@ function mergeCandles(existing: CandlestickData<Time>[], incoming: CandlestickDa
     merged.set(Number(candle.time), candle)
   }
   return [...merged.values()].sort((left, right) => Number(left.time) - Number(right.time))
-}
-
-type HoveredCandleStats = {
-  time: number
-  open: number
-  high: number
-  low: number
-  close: number
-  change: number | null
-  changePct: number | null
 }
 
 function findCandleIndexByTime(candles: CandlestickData<Time>[], time: number) {
@@ -124,6 +162,35 @@ function formatSignedPercent(value: number) {
   return `${value >= 0 ? '+' : '-'}${Math.abs(value).toFixed(2)}%`
 }
 
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max)
+}
+
+function roundAlertPrice(value: number) {
+  return Number(value.toFixed(2))
+}
+
+function toAlertAnchor(series: ISeriesApi<'Candlestick'>, y: number): ChartAnchor | null {
+  const price = series.coordinateToPrice(y)
+  if (price === null || !Number.isFinite(price)) {
+    return null
+  }
+  return {
+    price: roundAlertPrice(price),
+    y,
+  }
+}
+
+function isTextInputTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) {
+    return false
+  }
+  return target.tagName === 'INPUT'
+    || target.tagName === 'TEXTAREA'
+    || target.tagName === 'SELECT'
+    || target.isContentEditable
+}
+
 export default function NiftyChart() {
   const { addToast, chain, chainIndex, optionChartSymbol, setOptionChartSymbol, spot } = useStore(useShallow((state) => ({
     addToast: state.addToast,
@@ -151,7 +218,6 @@ export default function NiftyChart() {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
-  const priceLinesRef = useRef<Map<string, IPriceLine>>(new Map())
   const announcedAlertIdsRef = useRef<Set<string>>(new Set())
   const candlesRef = useRef<CandlestickData<Time>[]>([])
   const lastBarRef = useRef<CandlestickData<Time> | null>(null)
@@ -161,15 +227,22 @@ export default function NiftyChart() {
   const historySessionRef = useRef(0)
   const alertsEnabledRef = useRef(alertsEnabled)
   const hoveredCandleTimeRef = useRef<number | null>(null)
+  const dragStateRef = useRef<DragState | null>(null)
+  const dragCleanupRef = useRef<(() => void) | null>(null)
   const [timeframe, setTimeframe] = useState<(typeof TIMEFRAMES)[number]>('D')
   const [loading, setLoading] = useState(true)
   const [loadingMoreHistory, setLoadingMoreHistory] = useState(false)
   const [candleCount, setCandleCount] = useState(0)
   const [alerts, setAlerts] = useState<AlertSummary[]>([])
-  const [pendingAlert, setPendingAlert] = useState<{ price: number; x: number; y: number } | null>(null)
-  const [submittingAlert, setSubmittingAlert] = useState(false)
+  const [hoveredAlertAnchor, setHoveredAlertAnchor] = useState<ChartAnchor | null>(null)
+  const [selectedAlertAnchor, setSelectedAlertAnchor] = useState<ChartAnchor | null>(null)
+  const [alertModal, setAlertModal] = useState<AlertModalState | null>(null)
+  const [alertDraftPrice, setAlertDraftPrice] = useState('')
+  const [alertMutation, setAlertMutation] = useState<AlertMutation>(null)
+  const [dragPreview, setDragPreview] = useState<{ alertId: string; price: number } | null>(null)
   const [alertsPanelOpen, setAlertsPanelOpen] = useState(false)
   const [hoveredCandleStats, setHoveredCandleStats] = useState<HoveredCandleStats | null>(null)
+  const [, setOverlayRevision] = useState(0)
 
   const syncHoveredCandleStats = useEffectEvent((time: number | null = hoveredCandleTimeRef.current) => {
     const candles = candlesRef.current
@@ -194,6 +267,27 @@ export default function NiftyChart() {
     setHoveredCandleStats(toHoveredCandleStats(candles, index))
   })
 
+  const closeAlertModal = () => {
+    setAlertModal(null)
+    setAlertDraftPrice('')
+  }
+
+  const openCreateAlertModal = (anchor: ChartAnchor) => {
+    setAlertModal({ mode: 'create', price: anchor.price, y: anchor.y })
+    setAlertDraftPrice(anchor.price.toFixed(2))
+    setSelectedAlertAnchor(anchor)
+  }
+
+  const openEditAlertModal = (alert: AlertSummary, price: number = alert.target_price) => {
+    const series = seriesRef.current
+    const fallbackY = containerRef.current ? containerRef.current.clientHeight / 2 : 0
+    const nextY = series ? series.priceToCoordinate(price) ?? fallbackY : fallbackY
+    const anchor = { price: roundAlertPrice(price), y: nextY }
+    setAlertModal({ mode: 'edit', alertId: alert.id, price: anchor.price, y: anchor.y })
+    setAlertDraftPrice(anchor.price.toFixed(2))
+    setSelectedAlertAnchor(anchor)
+  }
+
   const syncLiveChartPrice = useEffectEvent(() => {
     const price = chartQuote?.ltp ?? spot
     if (!price || price <= 0 || !seriesRef.current || !lastBarRef.current) {
@@ -217,6 +311,7 @@ export default function NiftyChart() {
       setCandleCount(candlesRef.current.length)
       seriesRef.current.update(nextBar)
       syncHoveredCandleStats()
+      setOverlayRevision((value) => value + 1)
       return
     }
 
@@ -241,7 +336,174 @@ export default function NiftyChart() {
     ))
     seriesRef.current.update(nextBar)
     syncHoveredCandleStats()
+    setOverlayRevision((value) => value + 1)
   })
+
+  const submitAlertModal = async () => {
+    if (!alertModal) {
+      return
+    }
+
+    const targetPrice = Number.parseFloat(alertDraftPrice)
+    if (!Number.isFinite(targetPrice) || targetPrice <= 0) {
+      addToast('error', 'Enter a valid alert price')
+      return
+    }
+
+    const roundedTargetPrice = roundAlertPrice(targetPrice)
+
+    if (alertModal.mode === 'create') {
+      setAlertMutation({ kind: 'create' })
+      try {
+        const created = await createAlert({ symbol: 'NIFTY 50', target_price: roundedTargetPrice })
+        setAlerts((current) => [...current.filter((item) => item.id !== created.id), created])
+        addToast('success', `Alert added at ${created.target_price.toFixed(2)}`)
+        closeAlertModal()
+      } catch (error) {
+        addToast('error', error instanceof Error ? error.message : 'Failed to create alert')
+      } finally {
+        setAlertMutation(null)
+      }
+      return
+    }
+
+    setAlertMutation({ kind: 'update', alertId: alertModal.alertId })
+    try {
+      const updated = await updateAlert(alertModal.alertId, { target_price: roundedTargetPrice })
+      setAlerts((current) => current.map((item) => (item.id === updated.id ? updated : item)))
+      setDragPreview((current) => (current?.alertId === updated.id ? null : current))
+      addToast('success', `Alert updated to ${updated.target_price.toFixed(2)}`)
+      closeAlertModal()
+    } catch (error) {
+      addToast('error', error instanceof Error ? error.message : 'Failed to update alert')
+    } finally {
+      setAlertMutation(null)
+    }
+  }
+
+  const handleDeleteAlert = async (alertId: string) => {
+    setAlertMutation({ kind: 'delete', alertId })
+    try {
+      await deleteAlert(alertId)
+      setAlerts((current) => current.filter((item) => item.id !== alertId))
+      setDragPreview((current) => (current?.alertId === alertId ? null : current))
+      if (alertModal?.mode === 'edit' && alertModal.alertId === alertId) {
+        closeAlertModal()
+      }
+      addToast('success', 'Alert deleted')
+    } catch (error) {
+      addToast('error', error instanceof Error ? error.message : 'Failed to remove alert')
+    } finally {
+      setAlertMutation(null)
+    }
+  }
+
+  const startAlertLineInteraction = (event: ReactPointerEvent<HTMLDivElement>, alert: AlertSummary) => {
+    event.preventDefault()
+    event.stopPropagation()
+
+    if (alertMutation) {
+      return
+    }
+
+    const initialPrice = dragPreview?.alertId === alert.id ? dragPreview.price : alert.target_price
+    dragStateRef.current = {
+      alert,
+      startClientY: event.clientY,
+      startPrice: initialPrice,
+      currentPrice: initialPrice,
+      moved: false,
+    }
+
+    const cleanup = () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+      window.removeEventListener('pointercancel', handlePointerCancel)
+      if (dragCleanupRef.current === cleanup) {
+        dragCleanupRef.current = null
+      }
+    }
+
+    const finishDrag = async (cancelled: boolean) => {
+      cleanup()
+      document.body.style.userSelect = ''
+      const state = dragStateRef.current
+      dragStateRef.current = null
+      if (!state) {
+        return
+      }
+
+      if (cancelled) {
+        setDragPreview(null)
+        return
+      }
+
+      if (!state.moved) {
+        openEditAlertModal(state.alert, state.startPrice)
+        return
+      }
+
+      setDragPreview(null)
+      if (state.currentPrice === state.alert.target_price) {
+        return
+      }
+
+      setAlertMutation({ kind: 'update', alertId: state.alert.id })
+      try {
+        const updated = await updateAlert(state.alert.id, { target_price: state.currentPrice })
+        setAlerts((current) => current.map((item) => (item.id === updated.id ? updated : item)))
+        addToast('success', `Alert moved to ${updated.target_price.toFixed(2)}`)
+      } catch (error) {
+        addToast('error', error instanceof Error ? error.message : 'Failed to move alert')
+      } finally {
+        setAlertMutation(null)
+      }
+    }
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const container = containerRef.current
+      const series = seriesRef.current
+      const state = dragStateRef.current
+      if (!container || !series || !state) {
+        return
+      }
+
+      const rect = container.getBoundingClientRect()
+      const nextAnchor = toAlertAnchor(series, clamp(moveEvent.clientY - rect.top, 0, rect.height))
+      if (!nextAnchor) {
+        return
+      }
+
+      if (!state.moved && Math.abs(moveEvent.clientY - state.startClientY) > DRAG_THRESHOLD_PX) {
+        state.moved = true
+        if (alertModal?.mode === 'edit' && alertModal.alertId === state.alert.id) {
+          closeAlertModal()
+        }
+      }
+
+      if (!state.moved) {
+        return
+      }
+
+      state.currentPrice = nextAnchor.price
+      setDragPreview({ alertId: state.alert.id, price: nextAnchor.price })
+      setOverlayRevision((value) => value + 1)
+    }
+
+    const handlePointerUp = () => {
+      void finishDrag(false)
+    }
+
+    const handlePointerCancel = () => {
+      void finishDrag(true)
+    }
+
+    dragCleanupRef.current = cleanup
+    document.body.style.userSelect = 'none'
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp, { once: true })
+    window.addEventListener('pointercancel', handlePointerCancel, { once: true })
+  }
 
   useEffect(() => {
     const container = containerRef.current
@@ -271,28 +533,18 @@ export default function NiftyChart() {
     seriesRef.current = series
 
     const handleClick = (param: MouseEventParams<Time>) => {
-      if (!alertsEnabledRef.current) {
-        setPendingAlert(null)
+      if (!alertsEnabledRef.current || !param.point) {
         return
       }
-      if (!param.point) {
-        setPendingAlert(null)
-        return
-      }
-      const price = series.coordinateToPrice(param.point.y)
-      if (price === null) {
-        setPendingAlert(null)
-        return
-      }
-      setPendingAlert({
-        price: Number(price.toFixed(2)),
-        x: param.point.x,
-        y: param.point.y,
-      })
+      const nextAnchor = toAlertAnchor(series, param.point.y)
+      setSelectedAlertAnchor(nextAnchor)
+      container.focus()
     }
     chart.subscribeClick(handleClick)
 
     const handleCrosshairMove = (param: MouseEventParams<Time>) => {
+      setHoveredAlertAnchor(param.point ? toAlertAnchor(series, param.point.y) : null)
+
       const candle = param.seriesData.get(series) as CandlestickData<Time> | undefined
       if (!param.point || !param.time || !candle) {
         hoveredCandleTimeRef.current = null
@@ -307,18 +559,14 @@ export default function NiftyChart() {
 
     const observer = new ResizeObserver(() => {
       chart.applyOptions({ width: container.clientWidth, height: container.clientHeight })
+      setOverlayRevision((value) => value + 1)
     })
     observer.observe(container)
-    const priceLines = priceLinesRef.current
 
     return () => {
       chart.unsubscribeClick(handleClick)
       chart.unsubscribeCrosshairMove(handleCrosshairMove)
       observer.disconnect()
-      for (const line of priceLines.values()) {
-        series.removePriceLine(line)
-      }
-      priceLines.clear()
       chartRef.current = null
       seriesRef.current = null
       chart.remove()
@@ -328,9 +576,27 @@ export default function NiftyChart() {
   useEffect(() => {
     alertsEnabledRef.current = alertsEnabled
     if (!alertsEnabled) {
-      setPendingAlert(null)
+      dragCleanupRef.current?.()
+      dragCleanupRef.current = null
+      dragStateRef.current = null
+      document.body.style.userSelect = ''
+      setHoveredAlertAnchor(null)
+      setSelectedAlertAnchor(null)
+      setAlertModal(null)
+      setAlertDraftPrice('')
+      setDragPreview(null)
+      setAlertMutation(null)
     }
   }, [alertsEnabled])
+
+  useEffect(() => {
+    return () => {
+      dragCleanupRef.current?.()
+      dragCleanupRef.current = null
+      dragStateRef.current = null
+      document.body.style.userSelect = ''
+    }
+  }, [])
 
   useEffect(() => {
     if (!alertsEnabled) {
@@ -396,6 +662,7 @@ export default function NiftyChart() {
         setCandleCount(candles.length)
         syncHoveredCandleStats(null)
         syncLiveChartPrice()
+        setOverlayRevision((value) => value + 1)
       })
       .catch((error) => {
         if (!active || historySessionRef.current !== session) {
@@ -408,6 +675,7 @@ export default function NiftyChart() {
         seriesRef.current?.setData([])
         setCandleCount(0)
         setHoveredCandleStats(null)
+        setOverlayRevision((value) => value + 1)
         if (optionChartSymbol && error instanceof ApiError && [400, 404, 503].includes(error.status)) {
           setOptionChartSymbol(null)
           addToast('error', 'Option chart unavailable. Switched back to NIFTY 50.')
@@ -476,6 +744,7 @@ export default function NiftyChart() {
         series.setData(merged)
         setCandleCount(merged.length)
         syncHoveredCandleStats()
+        setOverlayRevision((value) => value + 1)
 
         if (previousRange && addedCount > 0) {
           chart.timeScale().setVisibleLogicalRange({
@@ -498,6 +767,7 @@ export default function NiftyChart() {
     }
 
     const handleRangeChange = (range: LogicalRange | null) => {
+      setOverlayRevision((value) => value + 1)
       if (!range) {
         return
       }
@@ -515,28 +785,11 @@ export default function NiftyChart() {
   }, [candleCount, chartPrice, chartSymbol, timeframe])
 
   useEffect(() => {
-    const series = seriesRef.current
-    if (!series) {
-      return
+    if (alertModal?.mode === 'edit' && !alerts.some((alert) => alert.id === alertModal.alertId)) {
+      setAlertModal(null)
+      setAlertDraftPrice('')
     }
-
-    for (const line of priceLinesRef.current.values()) {
-      series.removePriceLine(line)
-    }
-    priceLinesRef.current.clear()
-
-    for (const alert of alerts) {
-      const line = series.createPriceLine({
-        price: alert.target_price,
-        color: alert.status === 'TRIGGERED' ? '#16a34a' : '#f59e0b',
-        lineWidth: 1,
-        lineStyle: alert.status === 'TRIGGERED' ? LineStyle.Solid : LineStyle.Dashed,
-        axisLabelVisible: true,
-        title: `${alert.direction === 'ABOVE' ? '↑' : '↓'} Alert`,
-      })
-      priceLinesRef.current.set(alert.id, line)
-    }
-  }, [alerts])
+  }, [alertModal, alerts])
 
   useEffect(() => {
     const triggered = alerts.filter((alert) => alert.status === 'TRIGGERED')
@@ -554,17 +807,73 @@ export default function NiftyChart() {
 
   const activeAlerts = alerts.filter((alert) => alert.status === 'ACTIVE')
   const triggeredAlerts = alerts.filter((alert) => alert.status === 'TRIGGERED')
+  const editingAlert = alertModal?.mode === 'edit'
+    ? alerts.find((alert) => alert.id === alertModal.alertId) ?? null
+    : null
+  const editingAlertId = alertModal?.mode === 'edit' ? alertModal.alertId : null
+  const isCreatingAlert = alertMutation?.kind === 'create'
+  const isSavingAlert = alertMutation?.kind === 'update' && alertMutation.alertId === editingAlertId
+  const isDeletingAlert = alertMutation?.kind === 'delete' && alertMutation.alertId === editingAlertId
   const hoverChangeTone = hoveredCandleStats?.change == null
     ? 'text-text-secondary'
     : hoveredCandleStats.change >= 0
       ? 'text-profit'
       : 'text-loss'
-  const alertPopupStyle = pendingAlert && containerRef.current
+  const shortcutAnchor = selectedAlertAnchor ?? hoveredAlertAnchor
+  const containerHeight = containerRef.current?.clientHeight ?? 0
+  const modalCoordinate = alertModal
+    ? alertModal.mode === 'edit' && editingAlert && seriesRef.current
+      ? seriesRef.current.priceToCoordinate(dragPreview?.alertId === editingAlert.id ? dragPreview.price : editingAlert.target_price) ?? alertModal.y
+      : alertModal.y
+    : null
+  const alertModalStyle = alertModal && containerRef.current && modalCoordinate !== null
     ? {
-        left: Math.min(Math.max(pendingAlert.x + 12, 12), Math.max(containerRef.current.clientWidth - 220, 12)),
-        top: Math.min(Math.max(pendingAlert.y + 12, 12), Math.max(containerRef.current.clientHeight - 96, 12)),
+        right: ALERT_MODAL_RIGHT,
+        top: clamp(
+          modalCoordinate - 46,
+          12,
+          Math.max(containerRef.current.clientHeight - ALERT_MODAL_MAX_HEIGHT, 12),
+        ),
+        width: ALERT_MODAL_WIDTH,
       }
     : undefined
+  const overlayAlerts = alertsEnabled && seriesRef.current && containerHeight > 0
+    ? alerts.flatMap((alert) => {
+        const displayPrice = dragPreview?.alertId === alert.id ? dragPreview.price : alert.target_price
+        const coordinate = seriesRef.current?.priceToCoordinate(displayPrice)
+        if (coordinate === null || coordinate === undefined || !Number.isFinite(coordinate)) {
+          return []
+        }
+        if (coordinate < -24 || coordinate > containerHeight + 24) {
+          return []
+        }
+        return [{ alert, price: displayPrice, y: clamp(coordinate, 0, containerHeight) }]
+      })
+    : []
+
+  const handleChartPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.target instanceof HTMLElement && event.target.closest('[data-alert-interactive="true"]')) {
+      return
+    }
+    event.currentTarget.focus()
+  }
+
+  const handleChartKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Escape' && alertModal) {
+      closeAlertModal()
+      event.preventDefault()
+      return
+    }
+
+    if (event.metaKey || event.ctrlKey || event.altKey || isTextInputTarget(event.target)) {
+      return
+    }
+
+    if ((event.key === 'a' || event.key === 'A') && alertsEnabled && shortcutAnchor && !alertModal) {
+      openCreateAlertModal(shortcutAnchor)
+      event.preventDefault()
+    }
+  }
 
   return (
     <div className="relative flex h-full flex-col bg-bg-primary">
@@ -638,9 +947,15 @@ export default function NiftyChart() {
         </div>
       </div>
 
-      <div ref={containerRef} className="relative flex-1 min-h-0">
+      <div
+        ref={containerRef}
+        className="relative flex-1 min-h-0 outline-none"
+        tabIndex={0}
+        onPointerDown={handleChartPointerDown}
+        onKeyDown={handleChartKeyDown}
+      >
         {loading && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-bg-primary/80">
+          <div className="absolute inset-0 z-30 flex items-center justify-center bg-bg-primary/80">
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-signal border-t-transparent" />
           </div>
         )}
@@ -652,112 +967,199 @@ export default function NiftyChart() {
             </span>
           </div>
         )}
-        {alertsEnabled && pendingAlert && alertPopupStyle ? (
-          <div
-            className="absolute z-20 w-52 rounded-md border border-border-primary bg-bg-secondary/95 p-3 shadow-xl backdrop-blur"
-            style={alertPopupStyle}
-          >
-            <div className="mb-1 flex items-center justify-between">
-              <div className="text-[11px] font-medium text-text-primary">Create alert</div>
-              <button onClick={() => setPendingAlert(null)} className="text-text-muted hover:text-text-primary">
-                <X size={12} />
-              </button>
-            </div>
-            <div className="text-[11px] text-text-muted">NIFTY 50 spot</div>
-            <div className="mt-1 text-sm font-semibold tabular-nums text-text-primary">
-              {pendingAlert.price.toFixed(2)}
-            </div>
-            <button
-              onClick={async () => {
-                setSubmittingAlert(true)
-                try {
-                  const created = await createAlert({ symbol: 'NIFTY 50', target_price: pendingAlert.price })
-                  setAlerts((current) => [...current.filter((item) => item.id !== created.id), created])
-                  addToast('success', `Alert added at ${created.target_price.toFixed(2)}`)
-                  setPendingAlert(null)
-                } catch (error) {
-                  addToast('error', error instanceof Error ? error.message : 'Failed to create alert')
-                } finally {
-                  setSubmittingAlert(false)
-                }
-              }}
-              disabled={submittingAlert}
-              className="mt-3 w-full rounded-sm bg-signal px-3 py-2 text-[11px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-            >
-              {submittingAlert ? 'Adding…' : 'Add alert'}
-            </button>
+
+        {alertsEnabled ? (
+          <div className="pointer-events-none absolute inset-0 z-10">
+            {overlayAlerts.map(({ alert, price, y }) => {
+              const triggered = alert.status === 'TRIGGERED'
+              return (
+                <div key={alert.id} className="absolute inset-x-0" style={{ top: y }}>
+                  <div
+                    className="absolute inset-x-0 top-0 -translate-y-1/2 border-t"
+                    style={{
+                      borderColor: triggered ? '#16a34a' : '#f59e0b',
+                      borderTopStyle: triggered ? 'solid' : 'dashed',
+                      opacity: dragPreview?.alertId === alert.id ? 1 : 0.85,
+                    }}
+                  />
+                  <div
+                    data-alert-interactive="true"
+                    className={`pointer-events-auto absolute inset-x-0 top-0 h-5 -translate-y-1/2 ${
+                      alertMutation ? 'cursor-wait' : 'cursor-grab active:cursor-grabbing'
+                    }`}
+                    onPointerDown={(event) => startAlertLineInteraction(event, alert)}
+                    title="Drag to move alert. Click to edit."
+                  />
+                  <div className="pointer-events-none absolute right-2 top-0 -translate-y-1/2">
+                    <div className="flex items-center overflow-hidden rounded-sm border border-black/15 bg-bg-primary/92 shadow-[0_4px_14px_rgba(0,0,0,0.18)]">
+                      <span className={`px-2 py-0.5 text-[10px] font-medium ${triggered ? 'bg-profit text-bg-primary' : 'bg-[#f59e0b] text-[#1b1b1b]'}`}>
+                        {alert.direction === 'ABOVE' ? '↑ Alert' : '↓ Alert'}
+                      </span>
+                      <span className="border-l border-black/10 px-2 py-0.5 text-[10px] tabular-nums text-text-primary">
+                        {formatPrice(price)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+
+            {hoveredAlertAnchor && !alertModal ? (
+              <div
+                className="absolute z-20"
+                style={{ right: AXIS_ADD_BUTTON_RIGHT, top: clamp(hoveredAlertAnchor.y, 0, containerHeight || 0) }}
+              >
+                <button
+                  data-alert-interactive="true"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    openCreateAlertModal(hoveredAlertAnchor)
+                  }}
+                  className="pointer-events-auto flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full border border-border-primary/80 bg-bg-secondary/88 text-text-muted shadow-sm backdrop-blur transition-colors hover:border-signal/60 hover:text-signal"
+                  title="Create alert (A)"
+                >
+                  <Plus size={10} />
+                </button>
+              </div>
+            ) : null}
           </div>
         ) : null}
 
-        {alertsPanelOpen ? <div className="absolute right-3 top-3 z-10 w-64 rounded-md border border-border-primary bg-bg-secondary/90 p-3 shadow-lg backdrop-blur">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Bell size={14} className="text-signal" />
-              <span className="text-[11px] font-medium text-text-primary">Chart alerts</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] text-text-muted">{alertsEnabled ? 'Spot' : 'Option'}</span>
-              <button
-                onClick={() => setAlertsPanelOpen(false)}
-                className="text-text-muted hover:text-text-primary transition-colors"
-              >
+        {alertsEnabled && alertModal && alertModalStyle ? (
+          <div
+            data-alert-interactive="true"
+            className="absolute z-20 rounded-md border border-border-primary/90 bg-bg-secondary/96 px-3 py-2.5 shadow-xl backdrop-blur"
+            style={alertModalStyle}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <div className="text-[11px] font-medium text-text-primary">
+                  {alertModal.mode === 'edit' ? 'Edit alert' : 'Create alert'}
+                </div>
+                <div className="text-[10px] text-text-muted">NIFTY 50 spot</div>
+              </div>
+              <button onClick={() => closeAlertModal()} className="text-text-muted transition-colors hover:text-text-primary">
                 <X size={12} />
               </button>
             </div>
+
+            <label className="mt-2 block">
+              <span className="mb-1 block text-[10px] uppercase tracking-wide text-text-muted">Trigger price</span>
+              <input
+                data-alert-interactive="true"
+                type="number"
+                inputMode="decimal"
+                min="0"
+                step="0.05"
+                value={alertDraftPrice}
+                onChange={(event) => setAlertDraftPrice(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    void submitAlertModal()
+                  }
+                  if (event.key === 'Escape') {
+                    event.preventDefault()
+                    closeAlertModal()
+                  }
+                }}
+                className="w-full rounded-sm border border-border-primary bg-bg-primary/80 px-2 py-1.5 text-sm tabular-nums text-text-primary outline-none transition-colors focus:border-signal/60"
+              />
+            </label>
+
+            <div className="mt-2 flex items-center gap-1.5">
+              <button
+                onClick={() => void submitAlertModal()}
+                disabled={Boolean(alertMutation)}
+                className="flex-1 rounded-sm bg-signal px-3 py-1.5 text-[11px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              >
+                {alertModal.mode === 'edit'
+                  ? isSavingAlert ? 'Saving…' : 'Save'
+                  : isCreatingAlert ? 'Adding…' : 'Add alert'}
+              </button>
+              {alertModal.mode === 'edit' ? (
+                <button
+                  onClick={() => void handleDeleteAlert(alertModal.alertId)}
+                  disabled={Boolean(alertMutation)}
+                  className="flex items-center gap-1 rounded-sm border border-loss/35 px-2.5 py-1.5 text-[11px] font-medium text-loss transition-colors hover:border-loss/60 hover:bg-loss/8 disabled:opacity-50"
+                  title="Delete alert"
+                >
+                  <Trash2 size={11} />
+                  <span>{isDeletingAlert ? 'Deleting…' : 'Delete'}</span>
+                </button>
+              ) : null}
+            </div>
           </div>
-          <div className="mt-2 space-y-2">
-            {!alertsEnabled ? (
-              <div className="text-[11px] leading-4 text-text-muted">
-                Option candles are live, but persisted alerts remain scoped to the NIFTY spot chart.
+        ) : null}
+
+        {alertsPanelOpen ? (
+          <div data-alert-interactive="true" className="absolute right-3 top-3 z-20 w-64 rounded-md border border-border-primary bg-bg-secondary/90 p-3 shadow-lg backdrop-blur">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Bell size={14} className="text-signal" />
+                <span className="text-[11px] font-medium text-text-primary">Chart alerts</span>
               </div>
-            ) : alerts.length === 0 ? (
-              <div className="text-[11px] leading-4 text-text-muted">
-                Click any price on the chart to place an alert line, similar to TradingView.
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-text-muted">{alertsEnabled ? 'Spot' : 'Option'}</span>
+                <button
+                  onClick={() => setAlertsPanelOpen(false)}
+                  className="text-text-muted transition-colors hover:text-text-primary"
+                >
+                  <X size={12} />
+                </button>
               </div>
-            ) : (
-              alerts.map((alert) => (
-                <div key={alert.id} className="rounded-sm border border-border-secondary bg-bg-primary/80 px-2 py-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <div className="text-[10px] uppercase tracking-wide text-text-muted">{alert.direction}</div>
-                      <div className="text-sm font-medium tabular-nums text-text-primary">{alert.target_price.toFixed(2)}</div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                          alert.status === 'TRIGGERED'
-                            ? 'bg-profit/15 text-profit'
-                            : 'bg-signal/15 text-signal'
-                        }`}
-                      >
-                        {alert.status}
-                      </span>
-                      <button
-                        onClick={async () => {
-                          try {
-                            await deleteAlert(alert.id)
-                            setAlerts((current) => current.filter((item) => item.id !== alert.id))
-                          } catch (error) {
-                            addToast('error', error instanceof Error ? error.message : 'Failed to remove alert')
-                          }
-                        }}
-                        className="text-text-muted hover:text-text-primary"
-                        title="Remove alert"
-                      >
-                        <X size={12} />
-                      </button>
-                    </div>
-                  </div>
-                  {alert.last_price != null ? (
-                    <div className="mt-1 text-[10px] text-text-muted">
-                      Last seen {alert.last_price.toFixed(2)}
-                    </div>
-                  ) : null}
+            </div>
+            <div className="mt-2 space-y-2">
+              {!alertsEnabled ? (
+                <div className="text-[11px] leading-4 text-text-muted">
+                  Option candles are live, but persisted alerts remain scoped to the NIFTY spot chart.
                 </div>
-              ))
-            )}
+              ) : alerts.length === 0 ? (
+                <div className="text-[11px] leading-4 text-text-muted">
+                  Use the subtle + on the price scale, or click the chart and press A to add an alert.
+                </div>
+              ) : (
+                alerts.map((alert) => (
+                  <div key={alert.id} className="rounded-sm border border-border-secondary bg-bg-primary/80 px-2 py-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <button
+                        onClick={() => openEditAlertModal(alert)}
+                        className="min-w-0 text-left"
+                      >
+                        <div className="text-[10px] uppercase tracking-wide text-text-muted">{alert.direction}</div>
+                        <div className="text-sm font-medium tabular-nums text-text-primary">{alert.target_price.toFixed(2)}</div>
+                      </button>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                            alert.status === 'TRIGGERED'
+                              ? 'bg-profit/15 text-profit'
+                              : 'bg-signal/15 text-signal'
+                          }`}
+                        >
+                          {alert.status}
+                        </span>
+                        <button
+                          onClick={() => void handleDeleteAlert(alert.id)}
+                          className="text-text-muted hover:text-text-primary"
+                          disabled={alertMutation?.kind === 'delete' && alertMutation.alertId === alert.id}
+                          title="Remove alert"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    </div>
+                    {alert.last_price != null ? (
+                      <div className="mt-1 text-[10px] text-text-muted">
+                        Last seen {alert.last_price.toFixed(2)}
+                      </div>
+                    ) : null}
+                  </div>
+                ))
+              )}
+            </div>
           </div>
-        </div> : null}
+        ) : null}
       </div>
     </div>
   )

@@ -158,6 +158,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/meta": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Api Meta */
+        get: operations["api_meta_api_v1_meta_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/market/snapshot": {
         parameters: {
             query?: never;
@@ -275,7 +292,8 @@ export interface paths {
         delete: operations["delete_alert_api_v1_alerts__alert_id__delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** Patch Alert */
+        patch: operations["patch_alert_api_v1_alerts__alert_id__patch"];
         trace?: never;
     };
     "/api/v1/portfolios": {
@@ -501,6 +519,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent/orders/bracket": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Agent Bracket Order */
+        post: operations["agent_bracket_order_api_v1_agent_orders_bracket_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agent/orders/{order_id}": {
         parameters: {
             query?: never;
@@ -510,6 +545,24 @@ export interface paths {
         };
         /** Agent Order Detail */
         get: operations["agent_order_detail_api_v1_agent_orders__order_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Agent Modify Order */
+        patch: operations["agent_modify_order_api_v1_agent_orders__order_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/agent/orders/{order_id}/linked": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Agent Linked Orders */
+        get: operations["agent_linked_orders_api_v1_agent_orders__order_id__linked_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -620,6 +673,76 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent/alerts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Agent Alerts */
+        get: operations["agent_alerts_api_v1_agent_alerts_get"];
+        put?: never;
+        /** Agent Create Alert */
+        post: operations["agent_create_alert_api_v1_agent_alerts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/alerts/{alert_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Agent Delete Alert */
+        delete: operations["agent_delete_alert_api_v1_agent_alerts__alert_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/webhooks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Agent Webhooks */
+        get: operations["agent_webhooks_api_v1_agent_webhooks_get"];
+        put?: never;
+        /** Agent Create Webhook */
+        post: operations["agent_create_webhook_api_v1_agent_webhooks_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/webhooks/{webhook_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Agent Delete Webhook */
+        delete: operations["agent_delete_webhook_api_v1_agent_webhooks__webhook_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agent/funds/{portfolio_id}": {
         parameters: {
             query?: never;
@@ -629,6 +752,23 @@ export interface paths {
         };
         /** Agent Funds */
         get: operations["agent_funds_api_v1_agent_funds__portfolio_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/analytics/detailed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Agent Detailed Analytics */
+        get: operations["agent_detailed_analytics_api_v1_agent_analytics_detailed_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -813,6 +953,36 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AgentAuthMeta */
+        AgentAuthMeta: {
+            /**
+             * Mode
+             * @default api_key
+             * @constant
+             */
+            mode: "api_key";
+            /**
+             * Recommended For Agents
+             * @default true
+             */
+            recommended_for_agents: boolean;
+            /**
+             * Header
+             * @default X-API-Key
+             */
+            header: string;
+            /** Bootstrap Path */
+            bootstrap_path: string;
+            /** Signup Path */
+            signup_path: string;
+            /** Default Key Expires In Days */
+            default_key_expires_in_days: number;
+            /**
+             * Rotation Supported
+             * @default true
+             */
+            rotation_supported: boolean;
+        };
         /** AgentBootstrapRequest */
         AgentBootstrapRequest: {
             /**
@@ -916,6 +1086,73 @@ export interface components {
              */
             rotate_existing: boolean;
         };
+        /** AgentWebhookCreateRequest */
+        AgentWebhookCreateRequest: {
+            /** Url */
+            url: string;
+            /** Events */
+            events: ("order.filled" | "order.cancelled" | "position.opened" | "position.closed" | "alert.triggered")[];
+        };
+        /** AgentWebhookCreateResponse */
+        AgentWebhookCreateResponse: {
+            /** Id */
+            id: string;
+            /** Agent Key Id */
+            agent_key_id: string;
+            /** Portfolio Id */
+            portfolio_id: string;
+            /** Url */
+            url: string;
+            /** Events */
+            events: ("order.filled" | "order.cancelled" | "position.opened" | "position.closed" | "alert.triggered")[];
+            /** Last Delivery At */
+            last_delivery_at?: string | null;
+            /** Last Failure At */
+            last_failure_at?: string | null;
+            /** Last Error */
+            last_error?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Secret */
+            secret: string;
+        };
+        /** AgentWebhookSummary */
+        AgentWebhookSummary: {
+            /** Id */
+            id: string;
+            /** Agent Key Id */
+            agent_key_id: string;
+            /** Portfolio Id */
+            portfolio_id: string;
+            /** Url */
+            url: string;
+            /** Events */
+            events: ("order.filled" | "order.cancelled" | "position.opened" | "position.closed" | "alert.triggered")[];
+            /** Last Delivery At */
+            last_delivery_at?: string | null;
+            /** Last Failure At */
+            last_failure_at?: string | null;
+            /** Last Error */
+            last_error?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
         /** AlertCreateRequest */
         AlertCreateRequest: {
             /**
@@ -932,6 +1169,8 @@ export interface components {
         AlertSummary: {
             /** Id */
             id: string;
+            /** Portfolio Id */
+            portfolio_id?: string | null;
             /** Symbol */
             symbol: string;
             /** Target Price */
@@ -961,6 +1200,34 @@ export interface components {
             /** Triggered At */
             triggered_at?: string | null;
         };
+        /** AlertUpdateRequest */
+        AlertUpdateRequest: {
+            /** Target Price */
+            target_price: number;
+            /** Direction */
+            direction?: ("ABOVE" | "BELOW") | null;
+        };
+        /** AnalyticsAttribution */
+        AnalyticsAttribution: {
+            /** Symbol */
+            symbol: string;
+            /** Strike */
+            strike: number;
+            /**
+             * Option Type
+             * @enum {string}
+             */
+            option_type: "CE" | "PE";
+            /**
+             * Direction
+             * @enum {string}
+             */
+            direction: "LONG" | "SHORT";
+            /** Closed Trades */
+            closed_trades: number;
+            /** Realized Pnl */
+            realized_pnl: number;
+        };
         /** AnalyticsPoint */
         AnalyticsPoint: {
             /** Label */
@@ -988,6 +1255,97 @@ export interface components {
             equity_curve: components["schemas"]["AnalyticsPoint"][];
             /** Pnl By Day */
             pnl_by_day: components["schemas"]["AnalyticsPoint"][];
+        };
+        /** ApiMetaResponse */
+        ApiMetaResponse: {
+            /** App */
+            app: string;
+            /** Version */
+            version: string;
+            /** Api Prefix */
+            api_prefix: string;
+            /** Base Url */
+            base_url: string;
+            /** Meta Url */
+            meta_url: string;
+            /** Docs Url */
+            docs_url: string;
+            /** Openapi Url */
+            openapi_url: string;
+            /** Redoc Url */
+            redoc_url?: string | null;
+            websocket: components["schemas"]["WebSocketMeta"];
+            auth: components["schemas"]["AuthContractMeta"];
+            market_data: components["schemas"]["MarketDataContractMeta"];
+            /** Links */
+            links: {
+                [key: string]: string;
+            };
+        };
+        /** AuthContractMeta */
+        AuthContractMeta: {
+            human: components["schemas"]["HumanAuthMeta"];
+            agent: components["schemas"]["AgentAuthMeta"];
+        };
+        /** BracketOrderRequest */
+        BracketOrderRequest: {
+            /** Portfolio Id */
+            portfolio_id: string;
+            /** Symbol */
+            symbol?: string | null;
+            /** Expiry */
+            expiry: string;
+            /** Strike */
+            strike: number;
+            /**
+             * Option Type
+             * @enum {string}
+             */
+            option_type: "CE" | "PE";
+            /**
+             * Side
+             * @enum {string}
+             */
+            side: "BUY" | "SELL";
+            /**
+             * Product
+             * @default NRML
+             * @enum {string}
+             */
+            product: "NRML" | "MIS";
+            /**
+             * Validity
+             * @default DAY
+             * @constant
+             */
+            validity: "DAY";
+            /**
+             * Lots
+             * @default 1
+             */
+            lots: number;
+            /**
+             * Entry Order Type
+             * @default LIMIT
+             * @enum {string}
+             */
+            entry_order_type: "MARKET" | "LIMIT";
+            /** Entry Price */
+            entry_price?: number | null;
+            /** Stop Loss Price */
+            stop_loss_price: number;
+            /** Stop Loss Trigger Price */
+            stop_loss_trigger_price: number;
+            /** Target Price */
+            target_price: number;
+            /** Idempotency Key */
+            idempotency_key?: string | null;
+        };
+        /** BracketOrderResponse */
+        BracketOrderResponse: {
+            parent: components["schemas"]["OrderSummary"];
+            stop_loss: components["schemas"]["OrderSummary"];
+            target: components["schemas"]["OrderSummary"];
         };
         /** Candle */
         Candle: {
@@ -1061,6 +1419,76 @@ export interface components {
              * @enum {string}
              */
             role: "admin" | "trader" | "viewer";
+        };
+        /** DetailedAnalyticsResponse */
+        DetailedAnalyticsResponse: {
+            /** Portfolio Id */
+            portfolio_id: string;
+            /** From Date */
+            from_date?: string | null;
+            /** To Date */
+            to_date?: string | null;
+            /** Total Closed Trades */
+            total_closed_trades: number;
+            /** Realized Pnl */
+            realized_pnl: number;
+            /** Unrealized Pnl */
+            unrealized_pnl: number;
+            /** Total Equity */
+            total_equity: number;
+            /** Trade Attribution */
+            trade_attribution: components["schemas"]["AnalyticsAttribution"][];
+            /** Closed Trades */
+            closed_trades: components["schemas"]["DetailedTradeSummary"][];
+            /** Drawdown Curve */
+            drawdown_curve: components["schemas"]["AnalyticsPoint"][];
+            /** Sharpe Ratio */
+            sharpe_ratio: number;
+            /** Sortino Ratio */
+            sortino_ratio: number;
+            /** Calmar Ratio */
+            calmar_ratio: number;
+            /** Win Loss Distribution */
+            win_loss_distribution: components["schemas"]["AnalyticsPoint"][];
+            /** Average Hold Seconds */
+            average_hold_seconds: number;
+            /** Max Consecutive Wins */
+            max_consecutive_wins: number;
+            /** Max Consecutive Losses */
+            max_consecutive_losses: number;
+        };
+        /** DetailedTradeSummary */
+        DetailedTradeSummary: {
+            /** Symbol */
+            symbol: string;
+            /** Strike */
+            strike: number;
+            /**
+             * Option Type
+             * @enum {string}
+             */
+            option_type: "CE" | "PE";
+            /**
+             * Direction
+             * @enum {string}
+             */
+            direction: "LONG" | "SHORT";
+            /** Quantity */
+            quantity: number;
+            /**
+             * Entry Time
+             * Format: date-time
+             */
+            entry_time: string;
+            /**
+             * Exit Time
+             * Format: date-time
+             */
+            exit_time: string;
+            /** Hold Seconds */
+            hold_seconds: number;
+            /** Realized Pnl */
+            realized_pnl: number;
         };
         /** DhanFundResponse */
         DhanFundResponse: {
@@ -1260,6 +1688,36 @@ export interface components {
             app: string;
             /** Environment */
             environment: string;
+            /** Api Prefix */
+            api_prefix?: string | null;
+            /** Meta Url */
+            meta_url?: string | null;
+            /** Docs Url */
+            docs_url?: string | null;
+            /** Openapi Url */
+            openapi_url?: string | null;
+            /** Redoc Url */
+            redoc_url?: string | null;
+        };
+        /** HumanAuthMeta */
+        HumanAuthMeta: {
+            /**
+             * Mode
+             * @default jwt_bearer
+             * @constant
+             */
+            mode: "jwt_bearer";
+            /**
+             * Recommended For Agents
+             * @default false
+             */
+            recommended_for_agents: boolean;
+            /** Login Path */
+            login_path: string;
+            /** Refresh Path */
+            refresh_path: string;
+            /** Access Token Expires In Seconds */
+            access_token_expires_in_seconds: number;
         };
         /** LoginRequest */
         LoginRequest: {
@@ -1270,6 +1728,17 @@ export interface components {
             email: string;
             /** Password */
             password: string;
+        };
+        /** MarketDataContractMeta */
+        MarketDataContractMeta: {
+            /**
+             * Pcr Scope
+             * @default all_loaded_strikes_for_active_expiry
+             * @constant
+             */
+            pcr_scope: "all_loaded_strikes_for_active_expiry";
+            /** Pcr Description */
+            pcr_description: string;
         };
         /** MarketSnapshot */
         MarketSnapshot: {
@@ -1288,6 +1757,22 @@ export interface components {
             vix?: number | null;
             /** Pcr */
             pcr?: number | null;
+            /**
+             * Pcr Scope
+             * @default all_loaded_strikes_for_active_expiry
+             * @constant
+             */
+            pcr_scope: "all_loaded_strikes_for_active_expiry";
+            /**
+             * Call Oi Total
+             * @default 0
+             */
+            call_oi_total: number;
+            /**
+             * Put Oi Total
+             * @default 0
+             */
+            put_oi_total: number;
             /** Market Status */
             market_status: string;
             /** Expiries */
@@ -1363,6 +1848,26 @@ export interface components {
             theta?: number | null;
             /** Vega */
             vega?: number | null;
+        };
+        /** OrderListResponse */
+        OrderListResponse: {
+            /** Items */
+            items: components["schemas"]["OrderSummary"][];
+            /** Total */
+            total: number;
+            /** Offset */
+            offset: number;
+            /** Limit */
+            limit: number;
+        };
+        /** OrderModifyRequest */
+        OrderModifyRequest: {
+            /** Price */
+            price?: number | null;
+            /** Trigger Price */
+            trigger_price?: number | null;
+            /** Quantity */
+            quantity?: number | null;
         };
         /** OrderRequest */
         OrderRequest: {
@@ -1462,6 +1967,10 @@ export interface components {
             trigger_price?: number | null;
             /** Status */
             status: string;
+            /** Parent Order Id */
+            parent_order_id?: string | null;
+            /** Link Type */
+            link_type?: ("ENTRY" | "STOP_LOSS" | "TARGET") | null;
             /** Average Price */
             average_price?: number | null;
             /** Filled Quantity */
@@ -1657,6 +2166,37 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /** WebSocketEventMeta */
+        WebSocketEventMeta: {
+            /** Type */
+            type: string;
+            /** Description */
+            description: string;
+        };
+        /** WebSocketMeta */
+        WebSocketMeta: {
+            /** Path */
+            path: string;
+            /** Url */
+            url: string;
+            /**
+             * Auth Header
+             * @default X-API-Key
+             */
+            auth_header: string;
+            /**
+             * Ping Message
+             * @default ping
+             */
+            ping_message: string;
+            /**
+             * Pong Message
+             * @default pong
+             */
+            pong_message: string;
+            /** Events */
+            events: components["schemas"]["WebSocketEventMeta"][];
         };
     };
     responses: never;
@@ -2019,12 +2559,33 @@ export interface operations {
             };
         };
     };
+    api_meta_api_v1_meta_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiMetaResponse"];
+                };
+            };
+        };
+    };
     snapshot_api_v1_market_snapshot_get: {
         parameters: {
             query?: never;
             header?: {
                 authorization?: string | null;
                 "X-CSRF-Token"?: string | null;
+                "X-API-Key"?: string | null;
             };
             path?: never;
             cookie?: {
@@ -2060,6 +2621,7 @@ export interface operations {
             header?: {
                 authorization?: string | null;
                 "X-CSRF-Token"?: string | null;
+                "X-API-Key"?: string | null;
             };
             path?: never;
             cookie?: {
@@ -2097,6 +2659,7 @@ export interface operations {
             header?: {
                 authorization?: string | null;
                 "X-CSRF-Token"?: string | null;
+                "X-API-Key"?: string | null;
             };
             path?: never;
             cookie?: {
@@ -2131,10 +2694,13 @@ export interface operations {
             query?: {
                 timeframe?: string;
                 before?: number | null;
+                symbol?: string | null;
+                security_id?: string | null;
             };
             header?: {
                 authorization?: string | null;
                 "X-CSRF-Token"?: string | null;
+                "X-API-Key"?: string | null;
             };
             path?: never;
             cookie?: {
@@ -2170,6 +2736,7 @@ export interface operations {
             header?: {
                 authorization?: string | null;
                 "X-CSRF-Token"?: string | null;
+                "X-API-Key"?: string | null;
             };
             path: {
                 symbol: string;
@@ -2298,6 +2865,47 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_alert_api_v1_alerts__alert_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "X-CSRF-Token"?: string | null;
+            };
+            path: {
+                alert_id: string;
+            };
+            cookie?: {
+                lite_access?: string | null;
+                lite_csrf?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AlertUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertSummary"];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -2777,7 +3385,15 @@ export interface operations {
     };
     agent_orders_api_v1_agent_orders_get: {
         parameters: {
-            query?: never;
+            query?: {
+                status?: string | null;
+                symbol?: string | null;
+                from?: string | null;
+                to?: string | null;
+                offset?: number;
+                limit?: number;
+                sort?: string;
+            };
             header?: {
                 "X-API-Key"?: string | null;
             };
@@ -2792,7 +3408,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["OrderSummary"][];
+                    "application/json": components["schemas"]["OrderListResponse"];
                 };
             };
             /** @description Validation Error */
@@ -2841,6 +3457,41 @@ export interface operations {
             };
         };
     };
+    agent_bracket_order_api_v1_agent_orders_bracket_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BracketOrderRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BracketOrderResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     agent_order_detail_api_v1_agent_orders__order_id__get: {
         parameters: {
             query?: never;
@@ -2861,6 +3512,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OrderSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_modify_order_api_v1_agent_orders__order_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                order_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrderModifyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_linked_orders_api_v1_agent_orders__order_id__linked_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                order_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderSummary"][];
                 };
             };
             /** @description Validation Error */
@@ -2971,7 +3692,9 @@ export interface operations {
     };
     agent_close_api_v1_agent_positions__position_id__close_post: {
         parameters: {
-            query?: never;
+            query?: {
+                quantity?: number | null;
+            };
             header?: {
                 "X-API-Key"?: string | null;
             };
@@ -3004,7 +3727,9 @@ export interface operations {
     };
     agent_square_off_position_api_v1_agent_positions__position_id__square_off_post: {
         parameters: {
-            query?: never;
+            query?: {
+                quantity?: number | null;
+            };
             header?: {
                 "X-API-Key"?: string | null;
             };
@@ -3066,6 +3791,200 @@ export interface operations {
             };
         };
     };
+    agent_alerts_api_v1_agent_alerts_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertSummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_create_alert_api_v1_agent_alerts_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AlertCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_delete_alert_api_v1_agent_alerts__alert_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                alert_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_webhooks_api_v1_agent_webhooks_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentWebhookSummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_create_webhook_api_v1_agent_webhooks_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentWebhookCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentWebhookCreateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_delete_webhook_api_v1_agent_webhooks__webhook_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path: {
+                webhook_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     agent_funds_api_v1_agent_funds__portfolio_id__get: {
         parameters: {
             query?: never;
@@ -3086,6 +4005,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FundsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_detailed_analytics_api_v1_agent_analytics_detailed_get: {
+        parameters: {
+            query?: {
+                from?: string | null;
+                to?: string | null;
+            };
+            header?: {
+                "X-API-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DetailedAnalyticsResponse"];
                 };
             };
             /** @description Validation Error */

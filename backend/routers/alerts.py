@@ -6,8 +6,8 @@ from sqlalchemy.orm import Session
 from config import get_settings
 from database import get_db
 from dependencies import get_current_user
-from schemas import AlertCreateRequest, AlertSummary
-from services.alert_service import cancel_alert, create_alert, list_alerts
+from schemas import AlertCreateRequest, AlertSummary, AlertUpdateRequest
+from services.alert_service import cancel_alert, create_alert, list_alerts, update_alert
 
 
 settings = get_settings()
@@ -22,6 +22,12 @@ def get_alerts(db: Session = Depends(get_db), user=Depends(get_current_user)):
 @router.post("", response_model=AlertSummary, status_code=status.HTTP_201_CREATED)
 def post_alert(payload: AlertCreateRequest, db: Session = Depends(get_db), user=Depends(get_current_user)):
     alert = create_alert(db, user_id=user.id, payload=payload)
+    return AlertSummary.model_validate(alert)
+
+
+@router.patch("/{alert_id}", response_model=AlertSummary)
+def patch_alert(alert_id: str, payload: AlertUpdateRequest, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    alert = update_alert(db, user_id=user.id, alert_id=alert_id, payload=payload)
     return AlertSummary.model_validate(alert)
 
 
