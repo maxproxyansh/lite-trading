@@ -3,10 +3,6 @@ name: Deploy Frontend
 on:
   push:
     branches: [main]
-    paths:
-      - 'frontend/**'
-      - 'vercel.json'
-      - '.github/workflows/deploy-frontend.yml'
 
 jobs:
   deploy:
