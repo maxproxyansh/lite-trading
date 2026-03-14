@@ -23,8 +23,13 @@ const ALERT_MODAL_MAX_HEIGHT = 138
 const ALERT_MODAL_RIGHT = 14
 const AXIS_ADD_BUTTON_RIGHT = 74
 const AXIS_ADD_BUTTON_HITBOX = 32
+const AXIS_ADD_BUTTON_TOUCH_HITBOX = 46
 const AXIS_ADD_BUTTON_VISUAL = 20
+const AXIS_ADD_BUTTON_TOUCH_VISUAL = 24
+const ALERT_LINE_HITBOX = 20
+const ALERT_LINE_TOUCH_HITBOX = 32
 const DRAG_THRESHOLD_PX = 5
+const DRAG_THRESHOLD_TOUCH_PX = 12
 
 type HoveredCandleStats = {
   time: number
@@ -254,7 +259,35 @@ export default function NiftyChart() {
   const [dragPreview, setDragPreview] = useState<{ alertId: string; price: number } | null>(null)
   const [alertsPanelOpen, setAlertsPanelOpen] = useState(false)
   const [hoveredCandleStats, setHoveredCandleStats] = useState<HoveredCandleStats | null>(null)
+  const [hasCoarsePointer, setHasCoarsePointer] = useState(false)
   const [, setOverlayRevision] = useState(0)
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      return
+    }
+
+    const mediaQuery = window.matchMedia('(pointer: coarse)')
+    const sync = () => {
+      setHasCoarsePointer(mediaQuery.matches || navigator.maxTouchPoints > 0 || window.innerWidth <= 768)
+    }
+
+    sync()
+    window.addEventListener('resize', sync)
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', sync)
+      return () => {
+        window.removeEventListener('resize', sync)
+        mediaQuery.removeEventListener('change', sync)
+      }
+    }
+
+    mediaQuery.addListener(sync)
+    return () => {
+      window.removeEventListener('resize', sync)
+      mediaQuery.removeListener(sync)
+    }
+  }, [])
 
   const syncHoveredCandleStats = useEffectEvent((time: number | null = hoveredCandleTimeRef.current) => {
     const candles = candlesRef.current
@@ -418,6 +451,13 @@ export default function NiftyChart() {
       return
     }
 
+    const target = event.currentTarget
+    try {
+      target.setPointerCapture(event.pointerId)
+    } catch {
+      // Ignore pointer-capture failures on browsers that reject it during touch edge cases.
+    }
+
     const initialPrice = dragPreview?.alertId === alert.id ? dragPreview.price : alert.target_price
     dragStateRef.current = {
       alert,
@@ -431,6 +471,13 @@ export default function NiftyChart() {
       window.removeEventListener('pointermove', handlePointerMove)
       window.removeEventListener('pointerup', handlePointerUp)
       window.removeEventListener('pointercancel', handlePointerCancel)
+      try {
+        if (target.hasPointerCapture?.(event.pointerId)) {
+          target.releasePointerCapture(event.pointerId)
+        }
+      } catch {
+        // Ignore stale pointer capture cleanup.
+      }
       if (dragCleanupRef.current === cleanup) {
         dragCleanupRef.current = null
       }
@@ -486,7 +533,7 @@ export default function NiftyChart() {
         return
       }
 
-      if (!state.moved && Math.abs(moveEvent.clientY - state.startClientY) > DRAG_THRESHOLD_PX) {
+      if (!state.moved && Math.abs(moveEvent.clientY - state.startClientY) > dragThresholdPx) {
         state.moved = true
         if (alertModal?.mode === 'edit' && alertModal.alertId === state.alert.id) {
           closeAlertModal()
@@ -786,6 +833,11 @@ export default function NiftyChart() {
       : 'text-loss'
   const shortcutAnchor = selectedAlertAnchor ?? hoveredAlertAnchor
   const addButtonAnchor = shortcutAnchor
+  const axisAddButtonHitbox = hasCoarsePointer ? AXIS_ADD_BUTTON_TOUCH_HITBOX : AXIS_ADD_BUTTON_HITBOX
+  const axisAddButtonVisual = hasCoarsePointer ? AXIS_ADD_BUTTON_TOUCH_VISUAL : AXIS_ADD_BUTTON_VISUAL
+  const axisAddButtonIconSize = hasCoarsePointer ? 12 : 10
+  const alertLineHitbox = hasCoarsePointer ? ALERT_LINE_TOUCH_HITBOX : ALERT_LINE_HITBOX
+  const dragThresholdPx = hasCoarsePointer ? DRAG_THRESHOLD_TOUCH_PX : DRAG_THRESHOLD_PX
   const containerHeight = containerRef.current?.clientHeight ?? 0
   const modalCoordinate = alertModal
     ? alertModal.mode === 'edit' && editingAlert && seriesRef.current
@@ -945,9 +997,10 @@ export default function NiftyChart() {
                 />
                 <div
                   data-alert-interactive="true"
-                  className={`pointer-events-auto absolute inset-x-0 top-0 h-5 -translate-y-1/2 ${
+                  className={`pointer-events-auto absolute inset-x-0 top-0 -translate-y-1/2 ${
                     alertMutation ? 'cursor-wait' : 'cursor-grab active:cursor-grabbing'
                   }`}
+                  style={{ height: alertLineHitbox, touchAction: 'none' }}
                   onPointerDown={(event) => startAlertLineInteraction(event, alert)}
                   title="Drag to move alert. Click to edit."
                 />
@@ -970,10 +1023,10 @@ export default function NiftyChart() {
               data-alert-interactive="true"
               className="pointer-events-auto absolute z-20 flex -translate-y-1/2 items-center justify-center"
               style={{
-                right: AXIS_ADD_BUTTON_RIGHT - ((AXIS_ADD_BUTTON_HITBOX - AXIS_ADD_BUTTON_VISUAL) / 2),
+                right: AXIS_ADD_BUTTON_RIGHT - ((axisAddButtonHitbox - axisAddButtonVisual) / 2),
                 top: clamp(addButtonAnchor.y, 0, containerHeight || 0),
-                width: AXIS_ADD_BUTTON_HITBOX,
-                height: AXIS_ADD_BUTTON_HITBOX,
+                width: axisAddButtonHitbox,
+                height: axisAddButtonHitbox,
               }}
             >
               <button
@@ -983,10 +1036,16 @@ export default function NiftyChart() {
                   event.stopPropagation()
                   openCreateAlertModal(addButtonAnchor)
                 }}
-                className="flex h-5 w-5 items-center justify-center rounded-full border border-border-primary/80 bg-bg-secondary/88 text-text-muted shadow-sm backdrop-blur transition-colors hover:border-signal/60 hover:text-signal"
+                className="group flex h-full w-full items-center justify-center text-text-muted transition-colors hover:text-signal"
+                style={{ touchAction: 'manipulation' }}
                 title="Create alert (A)"
               >
-                <Plus size={10} />
+                <span
+                  className="flex items-center justify-center rounded-full border border-border-primary/80 bg-bg-secondary/88 shadow-sm backdrop-blur transition-colors group-hover:border-signal/60"
+                  style={{ width: axisAddButtonVisual, height: axisAddButtonVisual }}
+                >
+                  <Plus size={axisAddButtonIconSize} />
+                </span>
               </button>
             </div>
           ) : null}
