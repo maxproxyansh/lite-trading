@@ -150,6 +150,16 @@ def _totp_code(secret: str, *, for_time: float | None = None) -> str:
     return f"{code % 1_000_000:06d}"
 
 
+def _totp_candidates(secret: str) -> list[str]:
+    current_time = time.time()
+    candidates: list[str] = []
+    for offset in (0, -30, 30):
+        code = _totp_code(secret, for_time=current_time + offset)
+        if code not in candidates:
+            candidates.append(code)
+    return candidates
+
+
 class DhanCredentialService:
     def __init__(self) -> None:
         self._lock = threading.RLock()
@@ -462,14 +472,30 @@ class DhanCredentialService:
                 auth_failed=True,
             )
 
-        totp = _totp_code(totp_secret)
-        payload = self._request_json(
-            "POST",
-            f"{DHAN_AUTH_BASE}/generateAccessToken",
-            params={"dhanClientId": client_id, "pin": pin, "totp": totp},
-            failure_reason="DHAN_TOKEN_REGENERATION_FAILED",
-            auth_failed=True,
-        )
+        payload = None
+        last_error: DhanApiError | None = None
+        for totp in _totp_candidates(totp_secret):
+            try:
+                payload = self._request_json(
+                    "POST",
+                    f"{DHAN_AUTH_BASE}/generateAccessToken",
+                    params={"dhanClientId": client_id, "pin": pin, "totp": totp},
+                    failure_reason="DHAN_TOKEN_REGENERATION_FAILED",
+                    auth_failed=True,
+                )
+                break
+            except DhanApiError as exc:
+                last_error = exc
+                continue
+
+        if payload is None:
+            if last_error:
+                raise last_error
+            raise DhanApiError(
+                "DHAN_TOKEN_REGENERATION_FAILED",
+                "Dhan TOTP regeneration failed without a response payload",
+                auth_failed=True,
+            )
         next_token = str(payload.get("accessToken") or payload.get("token") or "").strip()
         if not next_token:
             raise DhanApiError(
