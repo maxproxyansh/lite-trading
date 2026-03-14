@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from config import get_settings
 from dependencies import get_current_user_or_agent
-from schemas import CandleResponse, OptionChainResponse
+from schemas import CandleResponse, DhanProviderHealth, OptionChainResponse
+from services.dhan_credential_service import DhanApiError
 from services.market_data import CandleQueryError, market_data_service
 
 
@@ -22,12 +23,20 @@ def expiries(_actor=Depends(get_current_user_or_agent)):
     return {"expiries": market_data_service.expiries, "active_expiry": market_data_service.active_expiry}
 
 
+@router.get("/provider-health", response_model=DhanProviderHealth)
+def provider_health(_actor=Depends(get_current_user_or_agent)):
+    return market_data_service.get_provider_health()
+
+
 @router.get("/chain", response_model=OptionChainResponse)
 async def chain(expiry: str | None = None, _actor=Depends(get_current_user_or_agent)):
-    if expiry and expiry != market_data_service.active_expiry:
-        activated = await market_data_service.activate_expiry(expiry)
-        if not activated and not market_data_service.option_rows:
-            raise HTTPException(status_code=503, detail="OPTION_CHAIN_UNAVAILABLE")
+    try:
+        if expiry and expiry != market_data_service.active_expiry:
+            activated = await market_data_service.activate_expiry(expiry)
+            if not activated and not market_data_service.option_rows:
+                raise HTTPException(status_code=503, detail="OPTION_CHAIN_UNAVAILABLE")
+    except DhanApiError as exc:
+        raise HTTPException(status_code=503, detail=exc.reason) from exc
     return market_data_service.get_option_chain()
 
 

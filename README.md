@@ -94,6 +94,11 @@ python3 /Users/proxy/trading/lite/backend/scripts/lite_agent.py \
 - `JWT_SECRET`
 - `DHAN_CLIENT_ID`
 - `DHAN_ACCESS_TOKEN`
+- `DHAN_P0_SLACK_WEBHOOK_URL`
+  Required if you want automatic Slack paging when Dhan auth or realtime market data fails.
+- `DHAN_PIN`
+- `DHAN_TOTP_SECRET`
+  Recommended for full unattended recovery if Dhan `RenewToken` fails or the service restarts after token expiry.
 - `ALLOW_PUBLIC_SIGNUP=true`
 - `BOOTSTRAP_ADMIN_EMAIL`
 - `BOOTSTRAP_ADMIN_PASSWORD`
@@ -114,6 +119,7 @@ python3 /Users/proxy/trading/lite/backend/scripts/lite_agent.py \
 - WebSocket auth uses the session cookie for humans or `Authorization` / `X-API-Key` headers for non-browser clients. URL query secrets are intentionally rejected.
 - Open-order processing uses Postgres row locks with `SKIP LOCKED` semantics so multiple replicas do not fill the same pending order twice.
 - Chart alerts are persisted per user and currently track the NIFTY spot chart rendered in the dashboard.
+- Dhan health is exposed at `GET /api/v1/market/provider-health` so production incidents have a single source of truth.
 
 ### Important hosted-signal note
 

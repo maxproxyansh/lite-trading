@@ -76,6 +76,11 @@ Set these on the Railway backend service:
   Use a long random secret.
 - `DHAN_CLIENT_ID`
 - `DHAN_ACCESS_TOKEN`
+- `DHAN_P0_SLACK_WEBHOOK_URL`
+  Required if you want automatic Slack paging for Dhan P0 incidents.
+- `DHAN_PIN`
+- `DHAN_TOTP_SECRET`
+  Recommended so the backend can regenerate a fresh Dhan access token if `RenewToken` fails.
 - `BOOTSTRAP_ADMIN_EMAIL`
   Recommended so you always have an operator account even when public signup is enabled.
 - `BOOTSTRAP_ADMIN_PASSWORD`
@@ -157,21 +162,28 @@ Then verify:
 1. Admin login succeeds.
 2. `GET /api/v1/market/snapshot` returns a non-error response.
 3. `GET /api/v1/market/chain` returns rows when Dhan credentials are valid.
-4. `POST /api/v1/agent/signals` works with the configured agent key.
-5. Portfolio-scoped agent key can place an order only on its bound `agent` portfolio.
-6. WebSocket connection to `/api/v1/ws` succeeds for an authenticated session.
+4. `GET /api/v1/market/provider-health` reports `p0_status=ok`.
+5. `POST /api/v1/agent/signals` works with the configured agent key.
+6. Portfolio-scoped agent key can place an order only on its bound `agent` portfolio.
+7. WebSocket connection to `/api/v1/ws` succeeds for an authenticated session.
 
 ## Dhan credential rotation
 
 If Dhan market data starts failing:
 
-1. Generate or retrieve the current working `DHAN_ACCESS_TOKEN`.
-2. Update `DHAN_ACCESS_TOKEN` in Railway.
-3. Trigger a fresh Railway deploy.
-4. Re-check:
+1. Check `GET /api/v1/market/provider-health`.
+2. If `DHAN_P0_SLACK_WEBHOOK_URL` is missing, add it.
+3. If `DHAN_PIN` or `DHAN_TOTP_SECRET` is missing, add them for unattended recovery.
+4. If the service still reports `DHAN_TOKEN_RENEWAL_FAILED` or `DHAN_TOKEN_REGENERATION_FAILED`, generate or retrieve a fresh `DHAN_ACCESS_TOKEN`.
+5. Update `DHAN_ACCESS_TOKEN` in Railway.
+6. Trigger a fresh Railway deploy.
+7. Re-check:
+   - `/api/v1/market/provider-health`
    - `/api/v1/market/expiries`
    - `/api/v1/market/chain`
    - `/api/v1/market/candles`
+
+For the deeper incident workflow, see [docs/dhan-p0-runbook.md](/Users/proxy/trading/lite/docs/dhan-p0-runbook.md).
 
 ## Hosted signal ingestion
 

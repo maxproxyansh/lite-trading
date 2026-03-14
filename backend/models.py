@@ -263,3 +263,15 @@ class AuditLog(Base):
     entity_id = Column(String(64))
     details = Column(JSON, nullable=False, default=dict)
     created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+
+class ServiceCredential(Base, BaseModelMixin):
+    __tablename__ = "service_credentials"
+
+    provider = Column(String(64), nullable=False, unique=True, index=True)
+    client_id = Column(String(64), nullable=False)
+    access_token = Column(Text, nullable=False)
+    expires_at = Column(DateTime(timezone=True), index=True)
+    token_source = Column(String(32), nullable=False, default="env")
+    last_refreshed_at = Column(DateTime(timezone=True))
+    last_validated_at = Column(DateTime(timezone=True))

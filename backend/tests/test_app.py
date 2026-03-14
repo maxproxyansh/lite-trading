@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import os
 import sys
@@ -35,10 +36,14 @@ os.environ["BOOTSTRAP_AGENT_NAME"] = "bootstrap-agent"
 
 from database import Base, SessionLocal, engine  # noqa: E402
 from main import _process_market_side_effects, app  # noqa: E402
+from models import ServiceCredential  # noqa: E402
 from rate_limit import _rate_buckets  # noqa: E402
 from routers.websocket import broadcast_message  # noqa: E402
 from services.alert_service import sync_alerts  # noqa: E402
 from services.auth_service import ensure_bootstrap_state  # noqa: E402
+import services.dhan_credential_service as dhan_credentials_module  # noqa: E402
+from services.dhan_credential_service import DhanApiError, dhan_credential_service  # noqa: E402
+import services.market_data as market_data_module  # noqa: E402
 from services.market_data import market_data_service  # noqa: E402
 from services.signal_adapter import signal_adapter  # noqa: E402
 from services.trading_service import process_open_orders_sync  # noqa: E402
@@ -82,6 +87,23 @@ def _seed_market() -> None:
             "volume": 25000,
         }
     }
+
+
+def _fake_dhan_token(*, issued_at: datetime, expires_at: datetime) -> str:
+    def encode(payload: dict[str, object]) -> str:
+        raw = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+        return base64.urlsafe_b64encode(raw).decode("utf-8").rstrip("=")
+
+    header = encode({"typ": "JWT", "alg": "HS256"})
+    payload = encode(
+        {
+            "iss": "dhan",
+            "iat": int(issued_at.timestamp()),
+            "exp": int(expires_at.timestamp()),
+            "dhanClientId": "1103337749",
+        }
+    )
+    return f"{header}.{payload}.signature"
 
 
 @pytest.fixture(autouse=True)
@@ -143,6 +165,9 @@ def client():
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     _rate_buckets.clear()
+    dhan_credential_service.reset_runtime_state()
+    dhan_credential_service.initialize(force_reload=True)
+    market_data_service.reset_runtime_state_for_tests()
     db = SessionLocal()
     try:
         ensure_bootstrap_state(db)
@@ -1885,7 +1910,7 @@ def test_fetch_candles_returns_full_intraday_window_without_legacy_truncation(mo
 
     fake_client = FakeDhanClient()
     monkeypatch.setattr(market_data_service, "_has_dhan", lambda: True)
-    monkeypatch.setattr(market_data_service, "_client", lambda: fake_client)
+    monkeypatch.setattr(dhan_credential_service, "call", lambda operation_name, fn, **kwargs: fn(fake_client)["data"])
 
     response = market_data_service._fetch_candles("15m")
 
@@ -1924,7 +1949,7 @@ def test_fetch_candles_aggregates_weekly_and_monthly_from_daily_history(monkeypa
 
     fake_client = FakeDhanClient()
     monkeypatch.setattr(market_data_service, "_has_dhan", lambda: True)
-    monkeypatch.setattr(market_data_service, "_client", lambda: fake_client)
+    monkeypatch.setattr(dhan_credential_service, "call", lambda operation_name, fn, **kwargs: fn(fake_client)["data"])
     monkeypatch.setattr(market_data_service, "_live_price_for_target", lambda target: None)
 
     weekly = market_data_service._fetch_candles("W")
@@ -1979,7 +2004,8 @@ def test_market_candles_route_supports_before_cursor(client: TestClient, monkeyp
             }
 
     monkeypatch.setattr(market_data_service, "_has_dhan", lambda: True)
-    monkeypatch.setattr(market_data_service, "_client", lambda: FakeDhanClient())
+    fake_client = FakeDhanClient()
+    monkeypatch.setattr(dhan_credential_service, "call", lambda operation_name, fn, **kwargs: fn(fake_client)["data"])
 
     response = client.get(
         f"/api/v1/market/candles?timeframe=15m&before={timestamps[1]}",
@@ -2016,7 +2042,7 @@ def test_fetch_candles_resolves_option_symbol_via_option_metadata(monkeypatch: p
 
     fake_client = FakeDhanClient()
     monkeypatch.setattr(market_data_service, "_has_dhan", lambda: True)
-    monkeypatch.setattr(market_data_service, "_client", lambda: fake_client)
+    monkeypatch.setattr(dhan_credential_service, "call", lambda operation_name, fn, **kwargs: fn(fake_client)["data"])
     monkeypatch.setattr(
         market_data_service,
         "_fetch_option_chain",
@@ -2066,7 +2092,7 @@ def test_market_candles_route_supports_option_symbol(client: TestClient, monkeyp
 
     fake_client = FakeDhanClient()
     monkeypatch.setattr(market_data_service, "_has_dhan", lambda: True)
-    monkeypatch.setattr(market_data_service, "_client", lambda: fake_client)
+    monkeypatch.setattr(dhan_credential_service, "call", lambda operation_name, fn, **kwargs: fn(fake_client)["data"])
     market_data_service._security_id_to_symbol = {"12345": symbol}
 
     response = client.get(
@@ -2092,3 +2118,157 @@ def test_market_candles_route_rejects_unsupported_symbol_format(client: TestClie
     )
     assert response.status_code == 400
     assert response.json()["detail"] == "Unsupported symbol format. Expected NIFTY 50 or NIFTY_YYYY-MM-DD_STRIKE_CE|PE"
+
+
+def test_dhan_credential_service_renews_and_persists_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    now = datetime(2026, 3, 14, 3, 45, tzinfo=timezone.utc)
+    current_token = _fake_dhan_token(issued_at=now - timedelta(hours=23), expires_at=now + timedelta(minutes=20))
+    next_token = _fake_dhan_token(issued_at=now, expires_at=now + timedelta(days=1, hours=1))
+
+    db = SessionLocal()
+    try:
+        db.query(ServiceCredential).delete()
+        db.commit()
+    finally:
+        db.close()
+
+    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_client_id", "1103337749")
+    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_access_token", current_token)
+    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_pin", None)
+    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_totp_secret", None)
+    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_token_renewal_lead_seconds", 3600)
+    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_profile_check_seconds", 900)
+
+    def fake_request_json(method: str, url: str, **kwargs):
+        if url.endswith("/profile"):
+            return {
+                "dhanClientId": "1103337749",
+                "tokenValidity": "14/03/2026 10:00",
+                "dataPlan": "Active",
+                "dataValidity": "2026-04-03 21:50:36.0",
+            }
+        if url.endswith("/RenewToken"):
+            return {
+                "token": next_token,
+                "createTime": "2026-03-14T09:15:00.000",
+                "expiryTime": "2026-03-15T10:15:00.000",
+            }
+        raise AssertionError(url)
+
+    monkeypatch.setattr(dhan_credential_service, "_request_json", fake_request_json)
+
+    dhan_credential_service.reset_runtime_state()
+    dhan_credential_service.initialize(force_reload=True)
+
+    assert dhan_credential_service.ensure_token_fresh() is True
+    snapshot = dhan_credential_service.snapshot()
+    assert snapshot.access_token == next_token
+    assert snapshot.token_source == "renew"
+
+    db = SessionLocal()
+    try:
+        stored = db.query(ServiceCredential).filter(ServiceCredential.provider == "dhan").first()
+        assert stored is not None
+        assert stored.access_token == next_token
+        assert stored.token_source == "renew"
+    finally:
+        db.close()
+
+
+def test_dhan_credential_service_falls_back_to_totp_regeneration(monkeypatch: pytest.MonkeyPatch) -> None:
+    now = datetime(2026, 3, 14, 4, 0, tzinfo=timezone.utc)
+    expired_token = _fake_dhan_token(issued_at=now - timedelta(days=1, hours=1), expires_at=now - timedelta(minutes=5))
+    regenerated_token = _fake_dhan_token(issued_at=now, expires_at=now + timedelta(days=1))
+
+    db = SessionLocal()
+    try:
+        db.query(ServiceCredential).delete()
+        db.commit()
+    finally:
+        db.close()
+
+    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_client_id", "1103337749")
+    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_access_token", expired_token)
+    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_pin", "4321")
+    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_totp_secret", "JBSWY3DPEHPK3PXP")
+    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_token_renewal_lead_seconds", 3600)
+    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_profile_check_seconds", 0)
+
+    calls: list[str] = []
+
+    def fake_request_json(method: str, url: str, **kwargs):
+        calls.append(url)
+        if url.endswith("/RenewToken"):
+            raise DhanApiError("DHAN_TOKEN_RENEWAL_FAILED", "token expired", auth_failed=True)
+        if url.endswith("/profile"):
+            raise DhanApiError("DHAN_PROFILE_FAILED", "token expired", auth_failed=True)
+        if url.endswith("/generateAccessToken"):
+            return {
+                "accessToken": regenerated_token,
+                "expiryTime": "2026-03-15T09:30:00.000",
+            }
+        raise AssertionError(url)
+
+    monkeypatch.setattr(dhan_credential_service, "_request_json", fake_request_json)
+
+    dhan_credential_service.reset_runtime_state()
+    dhan_credential_service.initialize(force_reload=True)
+
+    assert dhan_credential_service.ensure_token_fresh() is True
+    snapshot = dhan_credential_service.snapshot()
+    assert snapshot.access_token == regenerated_token
+    assert snapshot.token_source == "totp"
+    assert any(url.endswith("/RenewToken") for url in calls)
+    assert any(url.endswith("/generateAccessToken") for url in calls)
+
+
+def test_market_provider_health_route_reports_runtime_state(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    headers = _login(client, "admin@lite.trade", "lite-admin-123")
+    now = datetime.now(timezone.utc)
+
+    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_client_id", "1103337749")
+    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_access_token", _fake_dhan_token(issued_at=now, expires_at=now + timedelta(days=1)))
+    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_pin", "4321")
+    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_totp_secret", "JBSWY3DPEHPK3PXP")
+    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_p0_slack_webhook_url", "https://slack.example")
+
+    dhan_credential_service.reset_runtime_state()
+    dhan_credential_service.initialize(force_reload=True)
+    market_data_service.reset_runtime_state_for_tests()
+    market_data_service._health.last_option_chain_success_at = now
+    market_data_service._health.last_feed_message_at = now
+    market_data_service._health.last_market_data_at = now
+
+    response = client.get("/api/v1/market/provider-health", headers=headers)
+    assert response.status_code == 200, response.text
+
+    payload = response.json()
+    assert payload["provider"] == "dhan"
+    assert payload["configured"] is True
+    assert payload["p0_status"] == "ok"
+    assert payload["slack_configured"] is True
+    assert payload["totp_regeneration_enabled"] is True
+
+
+def test_market_data_incident_alerts_only_on_transition(monkeypatch: pytest.MonkeyPatch) -> None:
+    sent: list[str] = []
+    now = datetime.now(timezone.utc)
+
+    monkeypatch.setattr(market_data_module.settings, "dhan_p0_slack_webhook_url", "https://slack.example")
+    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_client_id", "1103337749")
+    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_access_token", _fake_dhan_token(issued_at=now, expires_at=now + timedelta(days=1)))
+    dhan_credential_service.reset_runtime_state()
+    dhan_credential_service.initialize(force_reload=True)
+    market_data_service.reset_runtime_state_for_tests()
+
+    async def fake_send_p0_slack_alert(*, title: str, lines: list[str]) -> bool:
+        sent.append(title)
+        return True
+
+    monkeypatch.setattr(market_data_module, "send_p0_slack_alert", fake_send_p0_slack_alert)
+
+    asyncio.run(market_data_service._open_incident("REALTIME_FEED_STALE", "No realtime ticks received"))
+    asyncio.run(market_data_service._open_incident("REALTIME_FEED_STALE", "No realtime ticks received"))
+    asyncio.run(market_data_service._close_incident("Realtime ticks resumed"))
+
+    assert sent == ["[P0] Dhan market data", "[RECOVERY] Dhan market data"]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import math
 import re
 from collections.abc import Awaitable, Callable
@@ -13,10 +14,13 @@ from dhanhq.marketfeed import DhanFeed, Full, IDX, NSE_FNO, Quote
 
 from config import get_settings
 from market_hours import IST, market_status
-from schemas import MarketSnapshot, OptionChainResponse
+from schemas import DhanProviderHealth, MarketSnapshot, OptionChainResponse
+from services.dhan_credential_service import DhanApiError, dhan_credential_service
+from services.ops_alert_service import send_p0_slack_alert
 
 
 settings = get_settings()
+logger = logging.getLogger("lite.market-data")
 
 NIFTY_INDEX_SECURITY_ID = "13"
 VIX_INDEX_SECURITY_ID = "21"
@@ -59,6 +63,22 @@ class CandleQueryError(Exception):
         super().__init__(detail)
         self.status_code = status_code
         self.detail = detail
+
+
+@dataclass(slots=True)
+class ProviderHealthState:
+    incident_open: bool = False
+    incident_reason: str | None = None
+    incident_message: str | None = None
+    incident_since: datetime | None = None
+    last_error_at: datetime | None = None
+    last_error_reason: str | None = None
+    last_error_message: str | None = None
+    last_option_chain_success_at: datetime | None = None
+    last_feed_message_at: datetime | None = None
+    last_market_data_at: datetime | None = None
+    last_incident_alert_at: datetime | None = None
+    last_recovery_alert_at: datetime | None = None
 
 
 def _parse_datetime(value: Any) -> datetime:
@@ -106,10 +126,12 @@ class MarketDataService:
         self.last_known_prev_close: float = 0.0
         self.last_known_change: float = 0.0
         self.last_known_change_pct: float = 0.0
+        self._health = ProviderHealthState()
         self._snapshot_task: asyncio.Task | None = None
         self._feed_task: asyncio.Task | None = None
         self._flush_task: asyncio.Task | None = None
         self._feed: DhanFeed | None = None
+        self._feed_token_generation = 0
         self._desired_feed_instruments: set[tuple[int, str, int]] = set()
         self._subscribed_feed_instruments: set[tuple[int, str, int]] = set()
         self._security_id_to_symbol: dict[str, str] = {}
@@ -124,10 +146,10 @@ class MarketDataService:
         self._process_orders = processor
 
     def _has_dhan(self) -> bool:
-        return bool(settings.dhan_client_id and settings.dhan_access_token)
+        return dhan_credential_service.configured()
 
     def _client(self) -> Dhanhq:
-        return Dhanhq(settings.dhan_client_id, settings.dhan_access_token)
+        return dhan_credential_service.create_client()
 
     @staticmethod
     def _history_anchor(before: int | None) -> datetime:
@@ -168,6 +190,7 @@ class MarketDataService:
     async def start(self) -> None:
         if self._snapshot_task or self._feed_task or self._flush_task:
             return
+        dhan_credential_service.initialize()
         await self.refresh()
         self._snapshot_task = asyncio.create_task(self._snapshot_loop())
         self._feed_task = asyncio.create_task(self._feed_loop())
@@ -185,16 +208,173 @@ class MarketDataService:
                 setattr(self, task_name, None)
         await self._reset_feed()
 
+    def reset_runtime_state_for_tests(self) -> None:
+        self._health = ProviderHealthState()
+        self._feed_token_generation = 0
+        self._desired_feed_instruments = set()
+        self._subscribed_feed_instruments = set()
+        self._security_id_to_symbol = {}
+        self._dirty_quote_symbols = set()
+        self._snapshot_dirty = False
+        self._pcr_dirty = False
+
+    def get_provider_health(self) -> DhanProviderHealth:
+        credentials = dhan_credential_service.snapshot()
+        incident_reason = self._health.incident_reason
+        incident_message = self._health.incident_message
+        incident_open = self._health.incident_open
+
+        if not credentials.configured and not incident_reason:
+            incident_open = True
+            incident_reason = "DHAN_NOT_CONFIGURED"
+            incident_message = "Dhan credentials are missing"
+
+        return DhanProviderHealth(
+            configured=credentials.configured,
+            p0_status="critical" if incident_open else "ok",
+            incident_open=incident_open,
+            incident_reason=incident_reason,
+            incident_message=incident_message,
+            incident_since=self._health.incident_since,
+            token_source=credentials.token_source,
+            token_expires_at=credentials.expires_at,
+            last_token_refresh_at=credentials.last_refreshed_at,
+            last_profile_check_at=credentials.last_profile_checked_at,
+            last_rest_success_at=credentials.last_rest_success_at,
+            last_option_chain_success_at=self._health.last_option_chain_success_at,
+            last_feed_message_at=self._health.last_feed_message_at,
+            last_market_data_at=self._health.last_market_data_at,
+            last_error_at=self._health.last_error_at,
+            last_error_reason=self._health.last_error_reason,
+            last_error_message=self._health.last_error_message,
+            data_plan_status=credentials.data_plan_status,
+            data_valid_until=credentials.data_valid_until,
+            realtime_stale_after_seconds=max(settings.dhan_realtime_stale_seconds, settings.market_feed_reconnect_seconds * 2),
+            chain_stale_after_seconds=max(settings.dhan_rest_stale_seconds, settings.option_chain_refresh_seconds * 2),
+            renewal_lead_seconds=settings.dhan_token_renewal_lead_seconds,
+            feed_connected=bool(self._feed and self._feed.ws and not self._feed.ws.closed),
+            market_open=market_status() == "OPEN",
+            slack_configured=bool(settings.dhan_p0_slack_webhook_url),
+            totp_regeneration_enabled=credentials.totp_regeneration_enabled,
+        )
+
+    async def _ensure_runtime_ready(self, *, force_profile: bool = False) -> None:
+        rotated = await asyncio.to_thread(dhan_credential_service.ensure_token_fresh, force_profile)
+        credentials = dhan_credential_service.snapshot()
+        if rotated or credentials.generation != self._feed_token_generation:
+            await self._reset_feed()
+        self._feed_token_generation = credentials.generation
+
+    @staticmethod
+    def _seconds_since(value: datetime | None, *, now: datetime) -> int | None:
+        if value is None:
+            return None
+        return max(int((now - value).total_seconds()), 0)
+
+    async def _send_incident_alert(self, *, state: str, reason: str, message: str) -> None:
+        if not settings.dhan_p0_slack_webhook_url:
+            return
+        health = self.get_provider_health()
+        lines = [
+            f"environment: {settings.app_env}",
+            f"reason: {reason}",
+            f"message: {message}",
+            f"token_expires_at: {health.token_expires_at.isoformat() if health.token_expires_at else 'unknown'}",
+            f"last_token_refresh_at: {health.last_token_refresh_at.isoformat() if health.last_token_refresh_at else 'never'}",
+            f"last_profile_check_at: {health.last_profile_check_at.isoformat() if health.last_profile_check_at else 'never'}",
+            f"last_option_chain_success_at: {health.last_option_chain_success_at.isoformat() if health.last_option_chain_success_at else 'never'}",
+            f"last_feed_message_at: {health.last_feed_message_at.isoformat() if health.last_feed_message_at else 'never'}",
+            "health_path: /api/v1/market/provider-health",
+        ]
+        title = f"[{state}] Dhan market data"
+        await send_p0_slack_alert(title=title, lines=lines)
+
+    async def _open_incident(self, reason: str, message: str) -> None:
+        now = datetime.now(timezone.utc)
+        cooldown = timedelta(seconds=max(settings.dhan_incident_alert_cooldown_seconds, 60))
+        changed = (not self._health.incident_open) or self._health.incident_reason != reason or self._health.incident_message != message
+        should_alert = changed or not self._health.last_incident_alert_at or now - self._health.last_incident_alert_at >= cooldown
+
+        self._health.incident_open = True
+        if changed or not self._health.incident_since:
+            self._health.incident_since = now
+        self._health.incident_reason = reason
+        self._health.incident_message = message
+        self._health.last_error_at = now
+        self._health.last_error_reason = reason
+        self._health.last_error_message = message
+        self.snapshot["degraded"] = True
+        self.snapshot["degraded_reason"] = reason
+        self.snapshot["updated_at"] = now
+        self._snapshot_dirty = True
+
+        if should_alert:
+            self._health.last_incident_alert_at = now
+            await self._send_incident_alert(state="P0", reason=reason, message=message)
+
+    async def _close_incident(self, message: str = "Dhan market data recovered") -> None:
+        if not self._health.incident_open:
+            return
+        reason = self._health.incident_reason or "RECOVERED"
+        self._health.incident_open = False
+        self._health.incident_since = None
+        self._health.incident_reason = None
+        self._health.incident_message = None
+        self._health.last_recovery_alert_at = datetime.now(timezone.utc)
+        self.snapshot["degraded"] = False
+        self.snapshot["degraded_reason"] = None
+        self.snapshot["updated_at"] = datetime.now(timezone.utc)
+        self._snapshot_dirty = True
+        await self._send_incident_alert(state="RECOVERY", reason=reason, message=message)
+
+    async def _evaluate_provider_health(self) -> None:
+        now = datetime.now(timezone.utc)
+        credentials = dhan_credential_service.snapshot()
+        if not credentials.configured:
+            await self._open_incident("DHAN_NOT_CONFIGURED", "Dhan credentials are missing")
+            return
+
+        if credentials.data_plan_status and credentials.data_plan_status.lower() != "active":
+            await self._open_incident(
+                "DHAN_DATA_PLAN_INACTIVE",
+                f"Dhan data plan is {credentials.data_plan_status} and market data is unavailable",
+            )
+            return
+
+        chain_stale_after = timedelta(seconds=max(settings.dhan_rest_stale_seconds, settings.option_chain_refresh_seconds * 2))
+        if self._health.last_option_chain_success_at and now - self._health.last_option_chain_success_at > chain_stale_after:
+            age = self._seconds_since(self._health.last_option_chain_success_at, now=now)
+            await self._open_incident("OPTION_CHAIN_STALE", f"Last successful option-chain refresh is {age}s old")
+            return
+
+        if market_status() == "OPEN" and self._desired_feed_instruments:
+            realtime_stale_after = timedelta(seconds=max(settings.dhan_realtime_stale_seconds, settings.market_feed_reconnect_seconds * 2))
+            feed_age = self._seconds_since(self._health.last_feed_message_at, now=now)
+            if self._health.last_feed_message_at is None:
+                if self._health.last_option_chain_success_at and now - self._health.last_option_chain_success_at > realtime_stale_after:
+                    await self._open_incident(
+                        "REALTIME_FEED_STALE",
+                        "No Dhan realtime feed packets arrived after the latest option-chain refresh",
+                    )
+                    await self._reset_feed()
+                    return
+            elif feed_age is not None and timedelta(seconds=feed_age) > realtime_stale_after:
+                await self._open_incident("REALTIME_FEED_STALE", f"Last Dhan realtime feed packet is {feed_age}s old")
+                await self._reset_feed()
+                return
+
+        await self._close_incident()
+
     async def _snapshot_loop(self) -> None:
         interval = max(settings.option_chain_refresh_seconds, 1)
         while True:
             try:
                 await self.refresh()
+            except DhanApiError as exc:
+                await self._open_incident(exc.reason, exc.message)
             except Exception:  # noqa: BLE001
-                self.snapshot["degraded"] = True
-                self.snapshot["degraded_reason"] = "MARKET_REFRESH_FAILED"
-                self.snapshot["updated_at"] = datetime.now(timezone.utc)
-                self._snapshot_dirty = True
+                logger.exception("Unexpected Dhan market refresh failure")
+                await self._open_incident("MARKET_REFRESH_FAILED", "Unexpected exception while refreshing Dhan market data")
             await asyncio.sleep(interval)
 
     async def _flush_loop(self) -> None:
@@ -239,6 +419,7 @@ class MarketDataService:
                 if not self._desired_feed_instruments:
                     await asyncio.sleep(0.25)
                     continue
+                await self._ensure_runtime_ready(force_profile=not self._feed)
                 if not self._feed or not self._feed.ws or self._feed.ws.closed:
                     await self._connect_feed()
                 await self._sync_feed_subscriptions()
@@ -246,29 +427,37 @@ class MarketDataService:
                     # dhanhq exposes get_instrument_data() as an async recv wrapper; wait_for prevents a stuck socket.
                     payload = await asyncio.wait_for(self._feed.get_instrument_data(), timeout=5.0)
                 except asyncio.TimeoutError:
+                    await self._evaluate_provider_health()
                     continue
                 if payload:
                     self._handle_feed_packet(payload)
+                    await self._evaluate_provider_health()
             except asyncio.CancelledError:
                 raise
+            except DhanApiError as exc:
+                await self._open_incident(exc.reason, exc.message)
+                await self._reset_feed()
+                await asyncio.sleep(reconnect_delay)
             except Exception:  # noqa: BLE001
-                self.snapshot["degraded"] = True
-                self.snapshot["degraded_reason"] = "MARKET_FEED_DISCONNECTED"
-                self.snapshot["updated_at"] = datetime.now(timezone.utc)
-                self._snapshot_dirty = True
+                logger.exception("Unexpected Dhan feed disconnect")
+                await self._open_incident("MARKET_FEED_DISCONNECTED", "Dhan realtime feed disconnected unexpectedly")
                 await self._reset_feed()
                 await asyncio.sleep(reconnect_delay)
 
     async def _connect_feed(self) -> None:
+        credentials = dhan_credential_service.snapshot()
+        if not credentials.client_id or not credentials.access_token:
+            raise DhanApiError("DHAN_NOT_CONFIGURED", "Dhan credentials are missing for the realtime feed")
         instruments = self._sorted_instruments(self._desired_feed_instruments)
         self._feed = DhanFeed(
-            settings.dhan_client_id,
-            settings.dhan_access_token,
+            credentials.client_id,
+            credentials.access_token,
             instruments,
             version="v2",
         )
         await self._feed.connect()
         self._subscribed_feed_instruments = set(instruments)
+        self._feed_token_generation = credentials.generation
 
     async def _sync_feed_subscriptions(self) -> None:
         if not self._feed:
@@ -293,15 +482,19 @@ class MarketDataService:
 
     async def refresh(self) -> None:
         if not self._has_dhan():
-            self.snapshot["degraded"] = True
-            self.snapshot["degraded_reason"] = "DHAN_NOT_CONFIGURED"
-            self.snapshot["updated_at"] = datetime.now(timezone.utc)
+            await self._open_incident("DHAN_NOT_CONFIGURED", "Dhan credentials are missing")
             await self._broadcast_snapshot()
             return
 
+        await self._ensure_runtime_ready()
         now = datetime.now(timezone.utc)
         if not self.last_expiry_refresh or now - self.last_expiry_refresh > timedelta(minutes=10):
-            self.expiries = await asyncio.to_thread(self._fetch_expiries)
+            try:
+                self.expiries = await asyncio.to_thread(self._fetch_expiries)
+            except DhanApiError as exc:
+                await self._open_incident(exc.reason, exc.message)
+                await self._broadcast_snapshot()
+                return
             self.last_expiry_refresh = now
             if self.expiries and self.active_expiry not in self.expiries:
                 self.active_expiry = self.expiries[0]
@@ -319,37 +512,38 @@ class MarketDataService:
                 pass
 
         if not self.active_expiry:
-            self.snapshot["degraded"] = True
-            self.snapshot["degraded_reason"] = "NO_EXPIRIES"
-            self.snapshot["updated_at"] = now
+            await self._open_incident("NO_EXPIRIES", "Dhan did not return any tradable expiries")
             await self._broadcast_snapshot()
             return
 
-        chain = await asyncio.to_thread(self._fetch_option_chain, self.active_expiry)
+        try:
+            chain = await asyncio.to_thread(self._fetch_option_chain, self.active_expiry)
+        except DhanApiError as exc:
+            await self._open_incident(exc.reason, exc.message)
+            await self._broadcast_snapshot()
+            return
         if not chain:
             if self.option_rows:
-                self.snapshot["expiries"] = self.expiries
-                self.snapshot["active_expiry"] = self.active_expiry
-                self.snapshot["market_status"] = market_status()
-                self.snapshot["degraded"] = True
-                self.snapshot["degraded_reason"] = "OPTION_CHAIN_STALE"
-                self.snapshot["updated_at"] = now
+                await self._open_incident("OPTION_CHAIN_STALE", "Dhan option-chain refresh failed and the cached chain is now stale")
                 await self._broadcast_snapshot()
                 return
-            self.snapshot["degraded"] = True
-            self.snapshot["degraded_reason"] = "OPTION_CHAIN_UNAVAILABLE"
-            self.snapshot["updated_at"] = now
+            await self._open_incident("OPTION_CHAIN_UNAVAILABLE", "Dhan option-chain data is unavailable")
             await self._broadcast_snapshot()
             return
 
         self._apply_chain_payload(chain, expiry=self.active_expiry, now=now)
 
         if not self.last_vix_refresh or now - self.last_vix_refresh > timedelta(minutes=5):
-            vix = await asyncio.to_thread(self._fetch_vix)
-            if vix is not None:
-                self.snapshot["vix"] = vix
+            try:
+                vix = await asyncio.to_thread(self._fetch_vix)
+            except DhanApiError as exc:
+                logger.warning("Dhan VIX refresh failed: %s", exc.message)
+            else:
+                if vix is not None:
+                    self.snapshot["vix"] = vix
             self.last_vix_refresh = now
 
+        await self._evaluate_provider_health()
         await self._broadcast_snapshot()
         await self._broadcast_chain()
 
@@ -388,6 +582,8 @@ class MarketDataService:
         self.option_rows = chain["rows"]
         self.quotes = chain["quotes"]
         self._security_id_to_symbol = chain["security_id_to_symbol"]
+        self._health.last_option_chain_success_at = now
+        self._health.last_market_data_at = now
         self.snapshot.update(chain["snapshot"])
         self.snapshot["expiries"] = self.expiries
         self.snapshot["active_expiry"] = expiry
@@ -592,58 +788,58 @@ class MarketDataService:
         return live_price if live_price and live_price > 0 else None
 
     def _fetch_expiries(self) -> list[str]:
-        try:
-            result = self._client().expiry_list(
+        result = dhan_credential_service.call(
+            "expiry_list",
+            lambda client: client.expiry_list(
                 under_security_id=int(NIFTY_INDEX_SECURITY_ID),
                 under_exchange_segment=INDEX_EXCHANGE_SEGMENT,
-            )
-            payload = result.get("data", {}) if isinstance(result, dict) else {}
-            raw = payload.get("data", []) if isinstance(payload, dict) else []
-            expiries: list[str] = []
-            for item in raw:
-                candidate = None
-                if isinstance(item, dict):
-                    for key in ("expiry", "expiry_date", "expiryDate"):
-                        if item.get(key):
-                            candidate = str(item[key])
-                            break
-                elif item:
-                    candidate = str(item)
-                if candidate and re.fullmatch(r"\d{4}-\d{2}-\d{2}", candidate):
-                    expiries.append(candidate)
-            return expiries
-        except Exception:  # noqa: BLE001
-            return []
+            ),
+        )
+        payload = result if isinstance(result, dict) else {}
+        raw = payload.get("data", []) if isinstance(payload, dict) else []
+        expiries: list[str] = []
+        for item in raw:
+            candidate = None
+            if isinstance(item, dict):
+                for key in ("expiry", "expiry_date", "expiryDate"):
+                    if item.get(key):
+                        candidate = str(item[key])
+                        break
+            elif item:
+                candidate = str(item)
+            if candidate and re.fullmatch(r"\d{4}-\d{2}-\d{2}", candidate):
+                expiries.append(candidate)
+        return expiries
 
     def _fetch_vix(self) -> float | None:
-        try:
-            today = date.today()
-            from_date = (today - timedelta(days=10)).strftime("%Y-%m-%d")
-            to_date = today.strftime("%Y-%m-%d")
-            result = self._client().historical_daily_data(
+        today = date.today()
+        from_date = (today - timedelta(days=10)).strftime("%Y-%m-%d")
+        to_date = today.strftime("%Y-%m-%d")
+        result = dhan_credential_service.call(
+            "historical_daily_data.vix",
+            lambda client: client.historical_daily_data(
                 security_id=VIX_INDEX_SECURITY_ID,
                 exchange_segment=INDEX_EXCHANGE_SEGMENT,
                 instrument_type=INDEX_INSTRUMENT_TYPE,
                 from_date=from_date,
                 to_date=to_date,
-            )
-            payload = result.get("data", {}) if isinstance(result, dict) else {}
-            closes = payload.get("close", []) if isinstance(payload, dict) else []
-            return float(closes[-1]) if closes else None
-        except Exception:  # noqa: BLE001
-            return None
+            ),
+        )
+        payload = result if isinstance(result, dict) else {}
+        closes = payload.get("close", []) if isinstance(payload, dict) else []
+        return float(closes[-1]) if closes else None
 
     def _fetch_option_chain(self, expiry: str) -> dict[str, Any] | None:
-        try:
-            response = self._client().option_chain(
+        response = dhan_credential_service.call(
+            "option_chain",
+            lambda client: client.option_chain(
                 under_security_id=int(NIFTY_INDEX_SECURITY_ID),
                 under_exchange_segment=INDEX_EXCHANGE_SEGMENT,
                 expiry=expiry,
-            )
-        except Exception:  # noqa: BLE001
-            return None
+            ),
+        )
 
-        body = response.get("data", {}) if isinstance(response, dict) else {}
+        body = response if isinstance(response, dict) else {}
         if isinstance(body, dict) and "data" in body:
             body = body["data"]
         if not isinstance(body, dict):
@@ -814,15 +1010,12 @@ class MarketDataService:
         if not isinstance(payload, dict):
             return
 
-        if self.snapshot.get("degraded_reason") == "MARKET_FEED_DISCONNECTED":
-            self.snapshot["degraded"] = False
-            self.snapshot["degraded_reason"] = None
-            self.snapshot["updated_at"] = datetime.now(timezone.utc)
-            self._snapshot_dirty = True
-
         security_id = payload.get("security_id")
         if security_id is None:
             return
+        now = datetime.now(timezone.utc)
+        self._health.last_feed_message_at = now
+        self._health.last_market_data_at = now
 
         security_id_str = str(security_id)
         if security_id_str == "13":
@@ -971,6 +1164,8 @@ class MarketDataService:
             )
         except CandleQueryError:
             raise
+        except DhanApiError as exc:
+            raise CandleQueryError(status_code=503, detail=exc.reason) from exc
         except Exception:  # noqa: BLE001
             return {
                 "timeframe": timeframe,
@@ -990,17 +1185,19 @@ class MarketDataService:
         security_id: str | None = None,
     ) -> dict[str, Any]:
         target = self._resolve_candle_target(symbol=symbol, security_id=security_id)
-        client = self._client()
         lower_date, upper_date, oldest_date = self._history_window(timeframe, before)
         if timeframe in DAILY_HISTORY_TIMEFRAMES:
-            result = client.historical_daily_data(
-                security_id=target.security_id,
-                exchange_segment=target.exchange_segment,
-                instrument_type=target.instrument_type,
-                from_date=lower_date.strftime("%Y-%m-%d"),
-                to_date=upper_date.strftime("%Y-%m-%d"),
+            payload = dhan_credential_service.call(
+                "historical_daily_data",
+                lambda dhan_client: dhan_client.historical_daily_data(
+                    security_id=target.security_id,
+                    exchange_segment=target.exchange_segment,
+                    instrument_type=target.instrument_type,
+                    from_date=lower_date.strftime("%Y-%m-%d"),
+                    to_date=upper_date.strftime("%Y-%m-%d"),
+                ),
             )
-            payload = result.get("data", {}) if isinstance(result, dict) and isinstance(result.get("data"), dict) else {}
+            payload = payload if isinstance(payload, dict) else {}
             candles = self._aggregate_candles(self._map_candles(payload), timeframe)
             if before is None:
                 candles = self._overlay_live_price(
@@ -1025,15 +1222,18 @@ class MarketDataService:
             }
 
         interval = INTRADAY_INTERVALS.get(timeframe, INTRADAY_INTERVALS["15m"])
-        result = client.intraday_minute_data(
-            security_id=target.security_id,
-            exchange_segment=target.exchange_segment,
-            instrument_type=target.instrument_type,
-            from_date=lower_date.strftime("%Y-%m-%d"),
-            to_date=upper_date.strftime("%Y-%m-%d"),
-            interval=interval,
+        payload = dhan_credential_service.call(
+            "intraday_minute_data",
+            lambda dhan_client: dhan_client.intraday_minute_data(
+                security_id=target.security_id,
+                exchange_segment=target.exchange_segment,
+                instrument_type=target.instrument_type,
+                from_date=lower_date.strftime("%Y-%m-%d"),
+                to_date=upper_date.strftime("%Y-%m-%d"),
+                interval=interval,
+            ),
         )
-        payload = result.get("data", {}) if isinstance(result, dict) and isinstance(result.get("data"), dict) else {}
+        payload = payload if isinstance(payload, dict) else {}
         candles = self._filter_history_before(self._map_candles(payload), before)
         has_more = lower_date > oldest_date
         return {

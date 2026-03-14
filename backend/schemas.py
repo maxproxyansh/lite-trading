@@ -258,6 +258,36 @@ class OptionChainResponse(BaseModel):
     rows: list[OptionChainRow]
 
 
+class DhanProviderHealth(BaseModel):
+    provider: Literal["dhan"] = "dhan"
+    configured: bool
+    p0_status: Literal["ok", "critical"]
+    incident_open: bool = False
+    incident_reason: str | None = None
+    incident_message: str | None = None
+    incident_since: datetime | None = None
+    token_source: str | None = None
+    token_expires_at: datetime | None = None
+    last_token_refresh_at: datetime | None = None
+    last_profile_check_at: datetime | None = None
+    last_rest_success_at: datetime | None = None
+    last_option_chain_success_at: datetime | None = None
+    last_feed_message_at: datetime | None = None
+    last_market_data_at: datetime | None = None
+    last_error_at: datetime | None = None
+    last_error_reason: str | None = None
+    last_error_message: str | None = None
+    data_plan_status: str | None = None
+    data_valid_until: datetime | None = None
+    realtime_stale_after_seconds: int
+    chain_stale_after_seconds: int
+    renewal_lead_seconds: int
+    feed_connected: bool = False
+    market_open: bool = False
+    slack_configured: bool = False
+    totp_regeneration_enabled: bool = False
+
+
 class Candle(BaseModel):
     time: int
     open: float

@@ -15,6 +15,7 @@ from schemas import HealthResponse
 from services.alert_service import sync_alerts
 from services.market_data import market_data_service
 from services.auth_service import ensure_bootstrap_state
+from services.dhan_credential_service import dhan_credential_service
 from services.signal_adapter import signal_adapter
 from services.trading_service import process_open_orders_sync
 from services.webhook_service import run_webhook_dispatcher
@@ -78,6 +79,7 @@ async def lifespan(app: FastAPI):
         db.close()
     logger.info("Database initialized")
 
+    dhan_credential_service.initialize(force_reload=True)
     market_data_service.set_broadcast(broadcast_message)
     market_data_service.set_open_order_processor(_process_market_side_effects)
     signal_adapter.set_broadcast(broadcast_message)

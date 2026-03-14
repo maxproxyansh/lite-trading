@@ -43,6 +43,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "auth:signup",
+          "limit": 5,
+          "window_seconds": 60
         }
       }
     },
@@ -84,6 +89,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "auth:login",
+          "limit": 10,
+          "window_seconds": 60
         }
       }
     },
@@ -133,6 +143,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "auth:refresh",
+          "limit": 30,
+          "window_seconds": 60
         }
       }
     },
@@ -180,6 +195,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "auth:logout",
+          "limit": 30,
+          "window_seconds": 60
         }
       }
     },
@@ -384,6 +404,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "auth:create-agent-key",
+          "limit": 20,
+          "window_seconds": 60
         }
       },
       "get": {
@@ -589,6 +614,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "auth:revoke-agent-key",
+          "limit": 20,
+          "window_seconds": 60
         }
       }
     },
@@ -696,6 +726,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "admin:create-user",
+          "limit": 20,
+          "window_seconds": 60
         }
       }
     },
@@ -803,6 +838,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "admin:create-agent-key",
+          "limit": 20,
+          "window_seconds": 60
         }
       }
     },
@@ -1033,6 +1073,119 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/market/provider-health": {
+      "get": {
+        "tags": [
+          "market"
+        ],
+        "summary": "Provider Health",
+        "operationId": "provider_health_api_v1_market_provider_health_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Csrf-Token"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          },
+          {
+            "name": "lite_access",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lite Access"
+            }
+          },
+          {
+            "name": "lite_csrf",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lite Csrf"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DhanProviderHealth"
+                }
               }
             }
           },
@@ -3006,6 +3159,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "agent:bootstrap",
+          "limit": 10,
+          "window_seconds": 60
         }
       }
     },
@@ -3047,6 +3205,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "agent:signup",
+          "limit": 5,
+          "window_seconds": 60
         }
       }
     },
@@ -3155,6 +3318,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "agent:orders",
+          "limit": 120,
+          "window_seconds": 60
         }
       },
       "get": {
@@ -3361,6 +3529,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "agent:bracket-orders",
+          "limit": 60,
+          "window_seconds": 60
         }
       }
     },
@@ -3485,6 +3658,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "agent:modify-order",
+          "limit": 120,
+          "window_seconds": 60
         }
       }
     },
@@ -3605,6 +3783,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "agent:cancel",
+          "limit": 120,
+          "window_seconds": 60
         }
       }
     },
@@ -3711,6 +3894,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "agent:square-off-all",
+          "limit": 60,
+          "window_seconds": 60
         }
       }
     },
@@ -3786,6 +3974,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "agent:close",
+          "limit": 120,
+          "window_seconds": 60
         }
       }
     },
@@ -3861,6 +4054,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "agent:close-alias",
+          "limit": 120,
+          "window_seconds": 60
         }
       }
     },
@@ -4020,6 +4218,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "agent:alerts",
+          "limit": 120,
+          "window_seconds": 60
         }
       }
     },
@@ -4071,6 +4274,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "agent:alerts-delete",
+          "limit": 120,
+          "window_seconds": 60
         }
       }
     },
@@ -4181,6 +4389,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "agent:webhooks",
+          "limit": 60,
+          "window_seconds": 60
         }
       }
     },
@@ -4232,6 +4445,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "agent:webhooks-delete",
+          "limit": 60,
+          "window_seconds": 60
         }
       }
     },
@@ -4295,6 +4513,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "agent:events-claim",
+          "limit": 240,
+          "window_seconds": 60
         }
       }
     },
@@ -4353,6 +4576,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "agent:events-ack",
+          "limit": 240,
+          "window_seconds": 60
         }
       }
     },
@@ -4421,6 +4649,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "agent:events-fail",
+          "limit": 240,
+          "window_seconds": 60
         }
       }
     },
@@ -4686,6 +4919,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "agent:signals",
+          "limit": 120,
+          "window_seconds": 60
         }
       }
     },
@@ -4898,6 +5136,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "agent:dhan-orders",
+          "limit": 120,
+          "window_seconds": 60
         }
       }
     },
@@ -5012,6 +5255,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "agent:dhan-cancel",
+          "limit": 120,
+          "window_seconds": 60
         }
       }
     },
@@ -5070,6 +5318,11 @@
               }
             }
           }
+        },
+        "x-ratelimit": {
+          "bucket": "agent:dhan-exit",
+          "limit": 120,
+          "window_seconds": 60
         }
       }
     },
@@ -7155,6 +7408,260 @@
           "optionType"
         ],
         "title": "DhanPositionResponse"
+      },
+      "DhanProviderHealth": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "const": "dhan",
+            "title": "Provider",
+            "default": "dhan"
+          },
+          "configured": {
+            "type": "boolean",
+            "title": "Configured"
+          },
+          "p0_status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "critical"
+            ],
+            "title": "P0 Status"
+          },
+          "incident_open": {
+            "type": "boolean",
+            "title": "Incident Open",
+            "default": false
+          },
+          "incident_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incident Reason"
+          },
+          "incident_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incident Message"
+          },
+          "incident_since": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incident Since"
+          },
+          "token_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Source"
+          },
+          "token_expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Expires At"
+          },
+          "last_token_refresh_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Token Refresh At"
+          },
+          "last_profile_check_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Profile Check At"
+          },
+          "last_rest_success_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Rest Success At"
+          },
+          "last_option_chain_success_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Option Chain Success At"
+          },
+          "last_feed_message_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Feed Message At"
+          },
+          "last_market_data_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Market Data At"
+          },
+          "last_error_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error At"
+          },
+          "last_error_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error Reason"
+          },
+          "last_error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error Message"
+          },
+          "data_plan_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Plan Status"
+          },
+          "data_valid_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Valid Until"
+          },
+          "realtime_stale_after_seconds": {
+            "type": "integer",
+            "title": "Realtime Stale After Seconds"
+          },
+          "chain_stale_after_seconds": {
+            "type": "integer",
+            "title": "Chain Stale After Seconds"
+          },
+          "renewal_lead_seconds": {
+            "type": "integer",
+            "title": "Renewal Lead Seconds"
+          },
+          "feed_connected": {
+            "type": "boolean",
+            "title": "Feed Connected",
+            "default": false
+          },
+          "market_open": {
+            "type": "boolean",
+            "title": "Market Open",
+            "default": false
+          },
+          "slack_configured": {
+            "type": "boolean",
+            "title": "Slack Configured",
+            "default": false
+          },
+          "totp_regeneration_enabled": {
+            "type": "boolean",
+            "title": "Totp Regeneration Enabled",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "configured",
+          "p0_status",
+          "realtime_stale_after_seconds",
+          "chain_stale_after_seconds",
+          "renewal_lead_seconds"
+        ],
+        "title": "DhanProviderHealth"
       },
       "FundsResponse": {
         "properties": {
