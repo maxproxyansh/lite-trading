@@ -11,7 +11,7 @@ React 19 + Vite terminal UI for the Lite paper-trading platform.
 
 ## Local Development
 
-From `/Users/proxy/trading/lite/frontend`:
+From `frontend/`:
 
 ```bash
 npm install
@@ -55,4 +55,4 @@ npm run lint
 npm run build
 ```
 
-For full-stack verification, also run the backend checks listed in the root [README](/Users/proxy/trading/lite/README.md).
+For full-stack verification, also run the backend checks listed in the root [README](../README.md).

@@ -310,23 +310,6 @@ def handle_webhooks_delete(args: argparse.Namespace) -> Any:
     return {"deleted": True, "webhook_id": args.webhook_id}
 
 
-def handle_webhooks_list(args: argparse.Namespace) -> Any:
-    client, _, _ = make_client(args)
-    return client.webhooks()
-
-
-def handle_webhooks_create(args: argparse.Namespace) -> Any:
-    client, _, _ = make_client(args)
-    events = [event.strip() for event in args.events.split(",") if event.strip()]
-    return client.create_webhook(args.url, events)
-
-
-def handle_webhooks_delete(args: argparse.Namespace) -> Any:
-    client, _, _ = make_client(args)
-    client.delete_webhook(args.webhook_id)
-    return {"deleted": True, "webhook_id": args.webhook_id}
-
-
 def handle_analytics_detailed(args: argparse.Namespace) -> Any:
     client, _, _ = make_client(args)
     return client.detailed_analytics(date_from=args.date_from, date_to=args.date_to)

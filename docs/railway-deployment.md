@@ -15,8 +15,8 @@ This document is the deployment runbook for the Lite backend on Railway.
 ## Backend source layout
 
 - Railway service root: `backend`
-- Build/start config: [backend/nixpacks.toml](/Users/proxy/trading/lite/backend/nixpacks.toml)
-- App entrypoint: [backend/main.py](/Users/proxy/trading/lite/backend/main.py)
+- Build/start config: [backend/nixpacks.toml](../backend/nixpacks.toml)
+- App entrypoint: [backend/main.py](../backend/main.py)
 
 ## One-time Railway setup
 
@@ -24,7 +24,7 @@ This document is the deployment runbook for the Lite backend on Railway.
 2. Add a PostgreSQL service to the project.
 3. Add the backend service from the GitHub repository.
 4. Set the backend root directory to `backend`.
-5. Ensure Railway uses the Nixpacks config from [backend/nixpacks.toml](/Users/proxy/trading/lite/backend/nixpacks.toml).
+5. Ensure Railway uses the Nixpacks config from [backend/nixpacks.toml](../backend/nixpacks.toml).
 
 ## Railway CLI
 
@@ -183,7 +183,7 @@ If Dhan market data starts failing:
    - `/api/v1/market/chain`
    - `/api/v1/market/candles`
 
-For the deeper incident workflow, see [docs/dhan-p0-runbook.md](/Users/proxy/trading/lite/docs/dhan-p0-runbook.md).
+For the deeper incident workflow, see [docs/dhan-p0-runbook.md](dhan-p0-runbook.md).
 
 ## Hosted signal ingestion
 

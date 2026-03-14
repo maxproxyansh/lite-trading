@@ -73,7 +73,7 @@ Key fields in `provider-health`:
 ## Railway commands
 
 ```bash
-cd /Users/proxy/trading/lite/backend
+cd backend
 railway variable list --json
 railway variable set DHAN_ACCESS_TOKEN="<fresh token>"
 railway redeploy

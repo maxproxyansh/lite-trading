@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
+from fastapi import Request, Response
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
@@ -37,7 +38,7 @@ os.environ["BOOTSTRAP_AGENT_NAME"] = "bootstrap-agent"
 from database import Base, SessionLocal, engine  # noqa: E402
 from main import _process_market_side_effects, app  # noqa: E402
 from models import ServiceCredential  # noqa: E402
-from rate_limit import _rate_buckets  # noqa: E402
+from rate_limit import _rate_buckets, _rate_windows, rate_limit  # noqa: E402
 from routers.websocket import broadcast_message  # noqa: E402
 from services.alert_service import sync_alerts  # noqa: E402
 from services.auth_service import ensure_bootstrap_state  # noqa: E402
@@ -165,6 +166,7 @@ def client():
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     _rate_buckets.clear()
+    _rate_windows.clear()
     dhan_credential_service.reset_runtime_state()
     dhan_credential_service.initialize(force_reload=True)
     market_data_service.reset_runtime_state_for_tests()
@@ -1137,6 +1139,7 @@ def test_rate_limited_endpoints_emit_headers_on_success_and_429(client: TestClie
         assert header in success.headers
 
     _rate_buckets["agent:bootstrap:ip:testclient"] = [time.time()] * 10
+    _rate_windows["agent:bootstrap:ip:testclient"] = 60
     limited = client.post(
         "/api/v1/agent/bootstrap",
         json={
@@ -1150,6 +1153,36 @@ def test_rate_limited_endpoints_emit_headers_on_success_and_429(client: TestClie
     assert limited.headers["X-RateLimit-Limit"] == "10"
     assert limited.headers["X-RateLimit-Remaining"] == "0"
     assert limited.headers["X-RateLimit-Reset"]
+
+
+def test_rate_limit_does_not_prune_longer_window_buckets() -> None:
+    _rate_buckets.clear()
+    _rate_windows.clear()
+
+    now = time.time()
+    _rate_buckets["long-window:ip:testclient"] = [now - 120]
+    _rate_windows["long-window:ip:testclient"] = 3600
+
+    dependency = rate_limit("short-window", 5, 60)
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/rate-test",
+            "headers": [],
+            "client": ("testclient", 50000),
+            "scheme": "http",
+            "server": ("testserver", 80),
+            "root_path": "",
+            "query_string": b"",
+            "http_version": "1.1",
+        }
+    )
+    response = Response()
+
+    dependency(request, response)
+
+    assert _rate_buckets["long-window:ip:testclient"] == [now - 120]
 
 
 def test_agent_webhooks_register_and_deliver_signed_events(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1432,6 +1465,28 @@ def test_unauthenticated_market_access_rejected(client: TestClient) -> None:
     for path in ["/api/v1/market/snapshot", "/api/v1/market/expiries", "/api/v1/market/chain", "/api/v1/market/candles", "/api/v1/market/depth/NIFTY"]:
         resp = client.get(path)
         assert resp.status_code == 401, f"{path} should reject unauthenticated requests, got {resp.status_code}"
+
+
+def test_refresh_and_logout_require_csrf(client: TestClient) -> None:
+    login = client.post("/api/v1/auth/login", json={"email": "admin@lite.trade", "password": "lite-admin-123"})
+    assert login.status_code == 200, login.text
+
+    refresh = client.post("/api/v1/auth/refresh")
+    assert refresh.status_code == 403, refresh.text
+    assert refresh.json()["detail"] == "CSRF validation failed"
+
+    csrf_token = client.cookies.get("lite_csrf")
+    assert csrf_token
+
+    refreshed = client.post("/api/v1/auth/refresh", headers={"X-CSRF-Token": csrf_token})
+    assert refreshed.status_code == 200, refreshed.text
+
+    logout_without_csrf = client.post("/api/v1/auth/logout")
+    assert logout_without_csrf.status_code == 403, logout_without_csrf.text
+    assert logout_without_csrf.json()["detail"] == "CSRF validation failed"
+
+    logout = client.post("/api/v1/auth/logout", headers={"X-CSRF-Token": client.cookies.get("lite_csrf") or ""})
+    assert logout.status_code == 200, logout.text
 
 
 def test_human_sell_and_close_releases_margin(client: TestClient) -> None:
@@ -1732,7 +1787,7 @@ def test_websocket_requires_auth_and_streams_events(client: TestClient) -> None:
     assert exc.value.code == 4401
 
     admin_headers = _login(client, "admin@lite.trade", "lite-admin-123")
-    with client.websocket_connect("/api/v1/ws") as websocket:
+    with client.websocket_connect("/api/v1/ws", headers={"origin": "http://localhost:5173"}) as websocket:
         asyncio.run(broadcast_message("market.snapshot", {"spot": 22510}))
         message = websocket.receive_json()
         assert message["type"] == "market.snapshot"
@@ -1756,6 +1811,15 @@ def test_websocket_requires_auth_and_streams_events(client: TestClient) -> None:
         message = websocket.receive_json()
         assert message["type"] == "market.snapshot"
         assert message["payload"]["spot"] == 22525
+
+
+def test_websocket_rejects_untrusted_browser_origin(client: TestClient) -> None:
+    _login(client, "admin@lite.trade", "lite-admin-123")
+
+    with pytest.raises(WebSocketDisconnect) as exc:
+        with client.websocket_connect("/api/v1/ws", headers={"origin": "https://evil.example"}) as websocket:
+            websocket.receive_text()
+    assert exc.value.code == 4403
 
 
 def test_websocket_pushes_triggered_alerts_immediately(client: TestClient) -> None:

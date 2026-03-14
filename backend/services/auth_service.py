@@ -41,6 +41,14 @@ STARTING_CASH = 500_000.0
 PORTFOLIO_KINDS = ("manual", "agent")
 
 
+def _ensure_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 def _portfolio_kind(portfolio: Portfolio) -> str:
     if portfolio.kind in PORTFOLIO_KINDS:
         return portfolio.kind
@@ -300,7 +308,9 @@ def rotate_refresh_token(db: Session, raw_token: str) -> tuple[User, str, int, s
     token_hash = hash_secret(raw_token)
     token = db.query(RefreshToken).filter(RefreshToken.token_hash == token_hash).first()
     now = datetime.now(timezone.utc)
-    if not token or token.revoked_at or token.expires_at <= now:
+    revoked_at = _ensure_utc(token.revoked_at) if token else None
+    expires_at = _ensure_utc(token.expires_at) if token else None
+    if not token or revoked_at or not expires_at or expires_at <= now:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token expired")
 
     user = db.query(User).filter(User.id == token.user_id, User.is_active.is_(True)).first()

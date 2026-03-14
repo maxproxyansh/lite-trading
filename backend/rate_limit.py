@@ -10,6 +10,7 @@ from fastapi import HTTPException, Request, Response, status
 
 
 _rate_buckets: dict[str, list[float]] = defaultdict(list)
+_rate_windows: dict[str, int] = {}
 _rate_lock = Lock()
 
 
@@ -38,15 +39,18 @@ def rate_limit(bucket: str, max_requests: int, window_seconds: int) -> Callable:
         now = time.time()
         key = f"{bucket}:{_rate_subject(request)}"
         with _rate_lock:
+            _rate_windows[key] = window_seconds
             expired: list[str] = []
             for bucket_key, values in list(_rate_buckets.items()):
-                fresh = [stamp for stamp in values if now - stamp < window_seconds]
+                bucket_window = _rate_windows.get(bucket_key, window_seconds)
+                fresh = [stamp for stamp in values if now - stamp < bucket_window]
                 if fresh:
                     _rate_buckets[bucket_key] = fresh
                 else:
                     expired.append(bucket_key)
             for bucket_key in expired:
                 _rate_buckets.pop(bucket_key, None)
+                _rate_windows.pop(bucket_key, None)
 
             timestamps = [stamp for stamp in _rate_buckets[key] if now - stamp < window_seconds]
             if len(timestamps) >= max_requests:

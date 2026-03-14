@@ -54,18 +54,18 @@ Lite is a private, options-only paper-trading terminal built to feel broker-grad
 
 ## Agent quickstart
 
-- Agent platform guide: [docs/agent-platform.md](/Users/proxy/trading/lite/docs/agent-platform.md)
-- Python SDK: [backend/agent_sdk.py](/Users/proxy/trading/lite/backend/agent_sdk.py)
-- CLI: [backend/scripts/lite_agent.py](/Users/proxy/trading/lite/backend/scripts/lite_agent.py)
+- Agent platform guide: [docs/agent-platform.md](docs/agent-platform.md)
+- Python SDK: [backend/agent_sdk.py](backend/agent_sdk.py)
+- CLI: [backend/scripts/lite_agent.py](backend/scripts/lite_agent.py)
 
 Example bootstrap:
 
 ```bash
-python3 /Users/proxy/trading/lite/backend/scripts/lite_agent.py \
+python3 backend/scripts/lite_agent.py \
   --base-url http://127.0.0.1:8000 \
   bootstrap \
-  --email admin@lite.trade \
-  --password lite-admin-123 \
+  --email admin@example.com \
+  --password '<admin-password>' \
   --agent-name night-desk
 ```
 
@@ -73,9 +73,9 @@ python3 /Users/proxy/trading/lite/backend/scripts/lite_agent.py \
 
 - Frontend target: Vercel project slug `lite-options-terminal`
 - Backend target: Railway service slug `lite-options-api`
-- Railway backend deployment runbook: [docs/railway-deployment.md](/Users/proxy/trading/lite/docs/railway-deployment.md)
-- Vercel SPA rewrites and security headers live in [frontend/vercel.json](/Users/proxy/trading/lite/frontend/vercel.json)
-- Railway backend boot configuration lives in [backend/nixpacks.toml](/Users/proxy/trading/lite/backend/nixpacks.toml)
+- Railway backend deployment runbook: [docs/railway-deployment.md](docs/railway-deployment.md)
+- Vercel SPA rewrites and security headers live in [frontend/vercel.json](frontend/vercel.json)
+- Railway backend boot configuration lives in [backend/nixpacks.toml](backend/nixpacks.toml)
 
 ### Current hosted endpoints
 
@@ -132,8 +132,3 @@ python3 /Users/proxy/trading/lite/backend/scripts/lite_agent.py \
 - Backend import check: `python3 -m compileall backend`
 - Frontend lint: `cd frontend && npm run lint`
 - Frontend build: `cd frontend && npm run build`
-
-## Review notes
-
-- Detailed hardening notes live in [docs/hardening-review.md](/Users/proxy/trading/lite/docs/hardening-review.md)
-- Final repository audit for March 11, 2026 lives in [docs/final-audit-2026-03-11.md](/Users/proxy/trading/lite/docs/final-audit-2026-03-11.md)
