@@ -1,0 +1,45 @@
+name: Frontend Checks
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - "vercel.json"
+      - ".github/workflows/frontend-checks.yml"
+  pull_request:
+    paths:
+      - "frontend/**"
+      - "vercel.json"
+      - ".github/workflows/frontend-checks.yml"
+
+concurrency:
+  group: frontend-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Type-check & build frontend
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm --prefix frontend ci
+
+      - name: Type-check & build
+        run: npm --prefix frontend run build
+
+      - name: Deployment ownership
+        run: |
+          {
+            echo "Frontend production deploys are owned by Vercel Git integration."
+            echo "GitHub Actions validates the build only."
+          } >> "$GITHUB_STEP_SUMMARY"
