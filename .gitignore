@@ -1,6 +1,8 @@
 node_modules/
 dist/
 .env
+.env.local
+.env*.local
 *.db
 __pycache__/
 *.pyc
@@ -9,4 +11,9 @@ venv/
 .DS_Store
 data/
 *.log
+.playwright-cli/
+.pytest_cache/
+.claude/
+logs/
+output/
 .vercel

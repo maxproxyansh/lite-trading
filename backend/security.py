@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -68,3 +69,14 @@ def make_agent_secret() -> str:
 
 def key_prefix(secret: str) -> str:
     return secret[:12]
+
+
+def is_allowed_browser_origin(origin: str | None) -> bool:
+    if not origin:
+        return False
+    candidate = origin.rstrip("/")
+    if candidate == settings.frontend_origin.rstrip("/"):
+        return True
+    if settings.frontend_origin_regex:
+        return re.fullmatch(settings.frontend_origin_regex, candidate) is not None
+    return False

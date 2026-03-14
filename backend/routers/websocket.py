@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from config import get_settings
 from database import SessionLocal
 from models import AgentApiKey, Portfolio, User
-from security import decode_access_token, hash_secret
+from security import decode_access_token, hash_secret, is_allowed_browser_origin
 
 
 settings = get_settings()
@@ -88,13 +88,21 @@ def _bearer_token(value: str | None) -> str | None:
 
 @router.websocket(f"{settings.api_prefix}/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    origin = websocket.headers.get("origin")
+    cookie_token = websocket.cookies.get(settings.access_cookie_name)
+    bearer_token = _bearer_token(websocket.headers.get("authorization"))
+    api_key = websocket.headers.get("x-api-key")
+    if origin and not is_allowed_browser_origin(origin):
+        await websocket.close(code=4403)
+        return
+    if cookie_token and not origin and not bearer_token and not api_key:
+        await websocket.close(code=4403)
+        return
+
     db: Session = SessionLocal()
     user_id: str | None = None
     agent_key_id: str | None = None
     try:
-        cookie_token = websocket.cookies.get(settings.access_cookie_name)
-        bearer_token = _bearer_token(websocket.headers.get("authorization"))
-        api_key = websocket.headers.get("x-api-key")
         authorized = False
         portfolio_ids: set[str] = set()
         if cookie_token or bearer_token:

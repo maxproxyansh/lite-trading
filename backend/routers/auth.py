@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from config import get_settings
 from database import get_db
-from dependencies import get_current_user, get_refresh_cookie, require_role
+from dependencies import get_current_user, get_refresh_cookie, require_csrf, require_role
 from rate_limit import rate_limit
 from schemas import AgentKeyResponse, CreateAgentKeyRequest, CreateUserRequest, LoginRequest, SignupRequest, TokenEnvelope, UserSummary
 from services.agent_service import serialize_agent_key
@@ -111,8 +111,9 @@ def login(
 def refresh(
     response: Response,
     refresh_token: str = Depends(get_refresh_cookie),
+    _: None = Depends(require_csrf),
     db: Session = Depends(get_db),
-    _: None = Depends(rate_limit("auth:refresh", 30, 60)),
+    __: None = Depends(rate_limit("auth:refresh", 30, 60)),
 ):
     _prepare_auth_response(response)
     user, access_token, expires_in, next_refresh, csrf_token = rotate_refresh_token(db, refresh_token)
@@ -126,8 +127,9 @@ def refresh(
 def logout(
     response: Response,
     refresh_token: str | None = Depends(get_refresh_cookie),
+    _: None = Depends(require_csrf),
     db: Session = Depends(get_db),
-    _: None = Depends(rate_limit("auth:logout", 30, 60)),
+    __: None = Depends(rate_limit("auth:logout", 30, 60)),
 ):
     _prepare_auth_response(response)
     revoke_refresh_token(db, refresh_token)

@@ -14,6 +14,27 @@ from security import decode_access_token, hash_secret
 
 
 settings = get_settings()
+SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+
+def enforce_csrf(
+    request: Request,
+    *,
+    csrf_cookie: str | None,
+    csrf_header: str | None,
+) -> None:
+    if request.method.upper() in SAFE_METHODS:
+        return
+    if not csrf_cookie or not csrf_header or csrf_cookie != csrf_header:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="CSRF validation failed")
+
+
+def require_csrf(
+    request: Request,
+    csrf_cookie: str | None = Cookie(default=None, alias=settings.csrf_cookie_name),
+    csrf_header: str | None = Header(default=None, alias=settings.csrf_header_name),
+) -> None:
+    enforce_csrf(request, csrf_cookie=csrf_cookie, csrf_header=csrf_header)
 
 
 def get_current_user(
@@ -34,8 +55,7 @@ def get_current_user(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing access token")
 
     if using_cookie_auth and request.method.upper() not in {"GET", "HEAD", "OPTIONS"}:
-        if not csrf_cookie or not csrf_header or csrf_cookie != csrf_header:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="CSRF validation failed")
+        enforce_csrf(request, csrf_cookie=csrf_cookie, csrf_header=csrf_header)
 
     try:
         payload = decode_access_token(token)

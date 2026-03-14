@@ -15,6 +15,7 @@ from config import get_settings
 from models import Fill, Order, Portfolio, Position
 from schemas import BracketOrderRequest, FundsResponse, OrderModifyRequest, OrderRequest
 from services.audit import log_audit
+from services.dhan_credential_service import DhanApiError, dhan_credential_service
 from services.market_data import market_data_service
 from services.webhook_service import enqueue_webhook_event
 
@@ -85,24 +86,24 @@ def _fallback_short_margin(price: float, quantity: int) -> float:
 
 
 def _margin_from_dhan(security_id: str | None, side: str, quantity: int, price: float, product: str) -> float | None:
-    if side != "SELL" or not security_id or not settings.dhan_client_id or not settings.dhan_access_token:
+    snapshot = dhan_credential_service.snapshot()
+    if side != "SELL" or not security_id or not snapshot.configured:
         return None
     try:
-        from dhanhq import dhanhq as Dhanhq
-
-        client = Dhanhq(settings.dhan_client_id, settings.dhan_access_token)
-        response = client.margin_calculator(
-            security_id=security_id,
-            exchange_segment="NSE_FNO",
-            transaction_type=side,
-            quantity=quantity,
-            product_type="INTRA" if product == "MIS" else "MARGIN",
-            price=price,
+        payload = dhan_credential_service.call(
+            "margin_calculator",
+            lambda client: client.margin_calculator(
+                security_id=security_id,
+                exchange_segment="NSE_FNO",
+                transaction_type=side,
+                quantity=quantity,
+                product_type="INTRA" if product == "MIS" else "MARGIN",
+                price=price,
+            ),
         )
-    except Exception:  # noqa: BLE001
+    except DhanApiError:
         return None
 
-    payload = response.get("data", {}) if isinstance(response, dict) else {}
     if isinstance(payload, list):
         payload = payload[0] if payload else {}
     for key in ("total_margin", "totalMarginRequired", "margin_required", "required_margin", "margin"):
