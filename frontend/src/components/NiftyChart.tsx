@@ -264,7 +264,7 @@ export default function NiftyChart() {
   const dragStateRef = useRef<DragState | null>(null)
   const dragCleanupRef = useRef<(() => void) | null>(null)
   const [loading, setLoading] = useState(true)
-  const [loadingMoreHistory, setLoadingMoreHistory] = useState(false)
+  const [, setLoadingMoreHistory] = useState(false)
   const [candleCount, setCandleCount] = useState(0)
   const [hoveredAlertAnchor, setHoveredAlertAnchor] = useState<ChartAnchor | null>(null)
   const [selectedAlertAnchor, setSelectedAlertAnchor] = useState<ChartAnchor | null>(null)
@@ -912,7 +912,6 @@ export default function NiftyChart() {
 
   const chartAlerts = alerts.filter((alert) => alert.symbol === alertSymbol)
   const activeAlerts = chartAlerts.filter((alert) => alert.status === 'ACTIVE')
-  const triggeredAlerts = chartAlerts.filter((alert) => alert.status === 'TRIGGERED')
   const editingAlert = alertModal?.mode === 'edit'
     ? chartAlerts.find((alert) => alert.id === alertModal.alertId) ?? null
     : null
