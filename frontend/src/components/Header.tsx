@@ -21,14 +21,18 @@ export default function Header() {
     wsStatus,
     portfolios,
     selectedPortfolioId,
+    optionChartSymbol,
     setSelectedPortfolioId,
+    setOptionChartSymbol,
     user,
   } = useStore(useShallow((state) => ({
     snapshot: state.snapshot,
     wsStatus: state.wsStatus,
     portfolios: state.portfolios,
     selectedPortfolioId: state.selectedPortfolioId,
+    optionChartSymbol: state.optionChartSymbol,
     setSelectedPortfolioId: state.setSelectedPortfolioId,
+    setOptionChartSymbol: state.setOptionChartSymbol,
     user: state.user,
   })))
 
@@ -40,13 +44,17 @@ export default function Header() {
           <Logo size={20} />
           <span className="text-[13px] font-semibold text-text-primary tracking-wide">lite</span>
         </div>
-        <div className="flex items-center gap-1">
+        <div
+          className={`flex items-center gap-1 rounded px-1 py-0.5 transition-colors ${optionChartSymbol ? 'cursor-pointer hover:bg-bg-hover' : ''}`}
+          onClick={optionChartSymbol ? () => setOptionChartSymbol(null) : undefined}
+          title={optionChartSymbol ? 'Back to NIFTY chart' : undefined}
+        >
           <span className="text-[12px] text-text-muted">NIFTY 50</span>
           <span className={`text-[15px] font-semibold tabular-nums ${snapshot && snapshot.spot > 0 && snapshot.change >= 0 ? 'text-profit' : snapshot && snapshot.spot > 0 ? 'text-loss' : 'text-text-primary'}`}>
             {snapshot && snapshot.spot > 0 ? snapshot.spot.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '--'}
           </span>
           {snapshot && snapshot.spot > 0 && (snapshot.change !== 0 || snapshot.change_pct !== 0) && (
-            <span className={`hidden md:inline text-[12px] tabular-nums ${snapshot.change >= 0 ? 'text-profit' : 'text-loss'}`}>
+            <span className={`text-[11px] md:text-[12px] tabular-nums ${snapshot.change >= 0 ? 'text-profit' : 'text-loss'}`}>
               {snapshot.change >= 0 ? '+' : ''}{snapshot.change.toFixed(2)} ({snapshot.change_pct.toFixed(2)}%)
             </span>
           )}
@@ -98,7 +106,7 @@ export default function Header() {
         <select
           value={selectedPortfolioId}
           onChange={(e) => setSelectedPortfolioId(e.target.value)}
-          className="hidden md:block cursor-pointer border-none bg-transparent text-[11px] text-text-secondary outline-none"
+          className="cursor-pointer border-none bg-transparent text-[11px] text-text-secondary outline-none"
         >
           {portfolios.map((p) => (
             <option key={p.id} value={p.id} className="bg-bg-primary">{p.kind === 'manual' ? 'Manual' : p.kind === 'agent' ? 'Agent' : p.name}</option>

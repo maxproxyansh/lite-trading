@@ -47,7 +47,7 @@ export default function OptionsPanel() {
       return true
     }
     if (chainFilter === 'ATM') {
-      return Math.abs(row.strike - atm) <= 150
+      return Math.abs(row.strike - atm) <= 300
     }
     if (chainFilter === 'ITM') {
       return row.strike < atm

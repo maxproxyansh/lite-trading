@@ -7,11 +7,11 @@ export default defineConfig({
   server: {
     proxy: {
       '/api/v1/ws': {
-        target: 'ws://localhost:8000',
+        target: 'wss://lite-options-api-production.up.railway.app',
         ws: true,
       },
       '/api': {
-        target: 'http://localhost:8000',
+        target: 'https://lite-options-api-production.up.railway.app',
         changeOrigin: true,
       },
     },

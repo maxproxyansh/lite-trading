@@ -210,14 +210,18 @@ export default function OptionsChainExpanded({ rows, maxOI, activeExpiry }: Prop
     openOrderModal: state.openOrderModal,
   })))
   const atmRef = useRef<HTMLDivElement>(null)
-  const scrolledExpiryRef = useRef<string | null>(null)
+  const lastScrollKeyRef = useRef<string | null>(null)
 
   useEffect(() => {
-    if (!atmRef.current || !activeExpiry || scrolledExpiryRef.current === activeExpiry) {
+    if (!atmRef.current || !activeExpiry) {
+      return
+    }
+    const scrollKey = `${activeExpiry}:${rows.length}`
+    if (lastScrollKeyRef.current === scrollKey) {
       return
     }
     atmRef.current.scrollIntoView({ block: 'center', behavior: 'smooth' })
-    scrolledExpiryRef.current = activeExpiry
+    lastScrollKeyRef.current = scrollKey
   }, [activeExpiry, rows])
 
   return (

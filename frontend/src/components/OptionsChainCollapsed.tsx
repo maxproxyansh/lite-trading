@@ -18,6 +18,7 @@ function formatLTP(ltp: number) {
 const OptionsChainCollapsedRow = memo(function OptionsChainCollapsedRow({
   row,
   maxOI,
+  atmStrike,
   selectedQuoteSymbol,
   activeChartSymbol,
   onSelectQuote,
@@ -27,9 +28,10 @@ const OptionsChainCollapsedRow = memo(function OptionsChainCollapsedRow({
 }: {
   row: OptionChainRow
   maxOI: number
+  atmStrike: number
   selectedQuoteSymbol: string | null
   activeChartSymbol: string | null
-  onSelectQuote: (quote: OptionQuote) => void
+  onSelectQuote: (quote: OptionQuote | null) => void
   onOrder: (quote: OptionQuote, side: 'BUY' | 'SELL') => void
   onViewChart: (quote: OptionQuote) => void
   rowRef?: Ref<HTMLDivElement>
@@ -43,40 +45,49 @@ const OptionsChainCollapsedRow = memo(function OptionsChainCollapsedRow({
   const putOI = (row.put as Record<string, unknown>).oi_lakhs as number | null
   const callOIWidth = callOI != null ? Math.min((callOI / maxOI) * 100, 100) : 0
   const putOIWidth = putOI != null ? Math.min((putOI / maxOI) * 100, 100) : 0
-  const oiOpacity = isATM ? 0.35 : 0.25
+  const oiOpacity = isATM ? 0.55 : 0.4
+
+  const callIsITM = !isATM && row.strike < atmStrike
+  const putIsITM = !isATM && row.strike > atmStrike
+
+  // Which quote is active for mobile action bar
+  const activeQuote = activeCall ? row.call : activePut ? row.put : null
+  const activeSide = activeCall ? 'CE' : activePut ? 'PE' : null
 
   return (
     <div ref={rowRef}>
+      {/* Main row — taller on mobile for tap targets */}
       <div
         className={`group grid border-b border-[#222] px-2 transition-colors ${
           isATM
-            ? 'border-l-2 border-l-[rgba(229,83,75,0.4)] bg-[rgba(229,83,75,0.05)]'
+            ? 'border-l-2 border-l-[#e53935] bg-[rgba(229,83,75,0.05)]'
             : 'hover:bg-bg-hover'
         }`}
-        style={{ gridTemplateColumns: '1fr 56px 1fr', height: '24px' }}
+        style={{ gridTemplateColumns: '1fr 52px 1fr' }}
       >
+        {/* CE cell */}
         <div
-          className={`group/ce relative flex cursor-pointer items-center justify-end px-1 ${
+          className={`group/ce relative flex cursor-pointer items-center justify-end px-1 h-[44px] md:h-[36px] ${
             activeCall ? 'bg-profit/15' : ''
           }`}
-          onClick={() => onSelectQuote(row.call)}
+          onClick={() => onSelectQuote(activeCall ? null : row.call)}
         >
           <span
-            className={`tabular-nums text-[11px] group-hover/ce:opacity-40 ${
-              isATM ? 'font-medium text-[#e0e0e0]' : 'text-[#b0b0b0]'
+            className={`tabular-nums text-[13px] md:text-[13px] leading-none md:group-hover/ce:opacity-40 ${
+              isATM ? 'font-semibold text-[#e8e8e8]' : callIsITM ? 'text-[#888]' : 'text-[#b8b8b8]'
             }`}
-            style={{ fontVariantNumeric: 'tabular-nums' }}
           >
             {formatLTP(row.call.ltp)}
           </span>
-          <div className="absolute inset-0 hidden items-center justify-center gap-0.5 group-hover/ce:flex">
+          {/* Desktop hover buttons — hidden on mobile */}
+          <div className="absolute inset-0 hidden items-center justify-center gap-1 md:group-hover/ce:flex">
             <button
               onClick={(event) => {
                 event.stopPropagation()
                 onViewChart(row.call)
               }}
-              className={`flex h-[18px] w-[18px] items-center justify-center rounded-sm text-white ${
-                chartingCall ? 'bg-brand text-bg-primary' : 'bg-[#2b2b2b] text-[#d0d0d0]'
+              className={`flex h-[20px] w-[20px] items-center justify-center rounded ${
+                chartingCall ? 'bg-brand text-bg-primary' : 'bg-[#2b2b2b] text-[#d0d0d0] hover:bg-[#383838]'
               }`}
               title="View CE chart"
             >
@@ -87,7 +98,7 @@ const OptionsChainCollapsedRow = memo(function OptionsChainCollapsedRow({
                 event.stopPropagation()
                 onOrder(row.call, 'BUY')
               }}
-              className="h-[18px] w-[18px] rounded-sm bg-btn-buy text-[9px] font-bold text-white"
+              className="h-[20px] w-[20px] rounded bg-btn-buy text-[9px] font-bold text-white hover:brightness-110"
             >
               B
             </button>
@@ -96,46 +107,55 @@ const OptionsChainCollapsedRow = memo(function OptionsChainCollapsedRow({
                 event.stopPropagation()
                 onOrder(row.call, 'SELL')
               }}
-              className="h-[18px] w-[18px] rounded-sm bg-btn-sell text-[9px] font-bold text-white"
+              className="h-[20px] w-[20px] rounded bg-btn-sell text-[9px] font-bold text-white hover:brightness-110"
             >
               S
             </button>
           </div>
         </div>
 
-        <div className="flex items-center justify-center gap-0.5 px-1">
+        {/* Strike column — dark background spine, not clickable */}
+        <div
+          className={`flex items-center justify-center ${
+            isATM
+              ? 'bg-[rgba(229,83,75,0.12)]'
+              : 'bg-[#1a1a1a]'
+          }`}
+        >
           <span
-            className={`text-[10px] tabular-nums ${
-              isATM ? 'font-bold text-[#e53935]' : 'font-medium text-[#666]'
+            className={`tabular-nums leading-none ${
+              isATM
+                ? 'text-[11px] font-bold text-[#ff6b6b]'
+                : 'text-[10.5px] font-medium text-[#5a5a5a]'
             }`}
-            style={{ fontVariantNumeric: 'tabular-nums' }}
           >
             {row.strike}
           </span>
         </div>
 
+        {/* PE cell */}
         <div
-          className={`group/pe relative flex cursor-pointer items-center justify-start px-1 ${
+          className={`group/pe relative flex cursor-pointer items-center justify-start px-1 h-[44px] md:h-[36px] ${
             activePut ? 'bg-loss/15' : ''
           }`}
-          onClick={() => onSelectQuote(row.put)}
+          onClick={() => onSelectQuote(activePut ? null : row.put)}
         >
           <span
-            className={`tabular-nums text-[11px] group-hover/pe:opacity-40 ${
-              isATM ? 'font-medium text-[#e0e0e0]' : 'text-[#b0b0b0]'
+            className={`tabular-nums text-[13px] md:text-[13px] leading-none md:group-hover/pe:opacity-40 ${
+              isATM ? 'font-semibold text-[#e8e8e8]' : putIsITM ? 'text-[#888]' : 'text-[#b8b8b8]'
             }`}
-            style={{ fontVariantNumeric: 'tabular-nums' }}
           >
             {formatLTP(row.put.ltp)}
           </span>
-          <div className="absolute inset-0 hidden items-center justify-center gap-0.5 group-hover/pe:flex">
+          {/* Desktop hover buttons — hidden on mobile */}
+          <div className="absolute inset-0 hidden items-center justify-center gap-1 md:group-hover/pe:flex">
             <button
               onClick={(event) => {
                 event.stopPropagation()
                 onViewChart(row.put)
               }}
-              className={`flex h-[18px] w-[18px] items-center justify-center rounded-sm text-white ${
-                chartingPut ? 'bg-brand text-bg-primary' : 'bg-[#2b2b2b] text-[#d0d0d0]'
+              className={`flex h-[20px] w-[20px] items-center justify-center rounded ${
+                chartingPut ? 'bg-brand text-bg-primary' : 'bg-[#2b2b2b] text-[#d0d0d0] hover:bg-[#383838]'
               }`}
               title="View PE chart"
             >
@@ -146,7 +166,7 @@ const OptionsChainCollapsedRow = memo(function OptionsChainCollapsedRow({
                 event.stopPropagation()
                 onOrder(row.put, 'BUY')
               }}
-              className="h-[18px] w-[18px] rounded-sm bg-btn-buy text-[9px] font-bold text-white"
+              className="h-[20px] w-[20px] rounded bg-btn-buy text-[9px] font-bold text-white hover:brightness-110"
             >
               B
             </button>
@@ -155,7 +175,7 @@ const OptionsChainCollapsedRow = memo(function OptionsChainCollapsedRow({
                 event.stopPropagation()
                 onOrder(row.put, 'SELL')
               }}
-              className="h-[18px] w-[18px] rounded-sm bg-btn-sell text-[9px] font-bold text-white"
+              className="h-[20px] w-[20px] rounded bg-btn-sell text-[9px] font-bold text-white hover:brightness-110"
             >
               S
             </button>
@@ -163,7 +183,8 @@ const OptionsChainCollapsedRow = memo(function OptionsChainCollapsedRow({
         </div>
       </div>
 
-      <div className="grid" style={{ gridTemplateColumns: '1fr 56px 1fr', height: '2px' }}>
+      {/* Thin OI bars below row */}
+      <div className="grid px-2" style={{ gridTemplateColumns: '1fr 52px 1fr', height: '3px' }}>
         <div className="relative overflow-hidden">
           <div
             className="absolute right-0 top-0 h-full"
@@ -184,6 +205,43 @@ const OptionsChainCollapsedRow = memo(function OptionsChainCollapsedRow({
           />
         </div>
       </div>
+
+      {/* Mobile action bar — slides in when a CE or PE is tapped */}
+      {activeQuote && (
+        <div className="flex items-center gap-2 border-b border-[#222] bg-[#1a1a1a] px-3 py-1.5 md:hidden">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <div className={`h-5 w-0.5 rounded-full ${activeSide === 'CE' ? 'bg-profit' : 'bg-loss'}`} />
+            <div className="flex flex-col">
+              <span className="text-[12px] font-semibold tabular-nums text-text-primary leading-tight">
+                {row.strike} {activeSide}
+              </span>
+              <span className="text-[9px] tabular-nums text-text-muted leading-tight">
+                LTP {formatLTP(activeQuote.ltp)}
+              </span>
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => onViewChart(activeQuote)}
+              className="flex h-[30px] w-[30px] items-center justify-center rounded-md bg-[#2a2a2a] text-[#aaa] active:bg-[#383838]"
+            >
+              <LineChart size={14} />
+            </button>
+            <button
+              onClick={() => onOrder(activeQuote, 'BUY')}
+              className="flex h-[30px] items-center rounded-md bg-btn-buy px-4 text-[11px] font-bold text-white active:brightness-90"
+            >
+              Buy
+            </button>
+            <button
+              onClick={() => onOrder(activeQuote, 'SELL')}
+              className="flex h-[30px] items-center rounded-md bg-btn-sell px-4 text-[11px] font-bold text-white active:brightness-90"
+            >
+              Sell
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 })
@@ -197,23 +255,28 @@ export default function OptionsChainCollapsed({ rows, maxOI, activeExpiry }: Pro
     openOrderModal: state.openOrderModal,
   })))
   const atmRef = useRef<HTMLDivElement>(null)
-  const scrolledExpiryRef = useRef<string | null>(null)
+  const lastScrollKeyRef = useRef<string | null>(null)
+  const atmStrike = rows.find((r) => r.is_atm)?.strike ?? 0
 
   useEffect(() => {
-    if (!atmRef.current || !activeExpiry || scrolledExpiryRef.current === activeExpiry) {
+    if (!atmRef.current || !activeExpiry) {
+      return
+    }
+    const scrollKey = `${activeExpiry}:${rows.length}`
+    if (lastScrollKeyRef.current === scrollKey) {
       return
     }
     atmRef.current.scrollIntoView({ block: 'center', behavior: 'smooth' })
-    scrolledExpiryRef.current = activeExpiry
+    lastScrollKeyRef.current = scrollKey
   }, [activeExpiry, rows])
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       <div className="sticky top-0 z-10 border-b border-[#222] bg-bg-secondary">
-        <div className="grid px-2" style={{ gridTemplateColumns: '1fr 56px 1fr' }}>
-          <div className="px-2 py-[6px] text-right text-[9px] font-semibold uppercase tracking-[0.5px] text-[#555]">CE</div>
-          <div className="px-2 py-[6px] text-center text-[9px] font-semibold uppercase tracking-[0.5px] text-[#555]">Strike</div>
-          <div className="px-2 py-[6px] text-left text-[9px] font-semibold uppercase tracking-[0.5px] text-[#555]">PE</div>
+        <div className="grid px-2" style={{ gridTemplateColumns: '1fr 52px 1fr' }}>
+          <div className="px-1 py-[5px] text-right text-[9px] font-semibold uppercase tracking-[0.5px] text-[#555]">CE</div>
+          <div className="flex items-center justify-center bg-[#1a1a1a] py-[5px] text-[9px] font-semibold uppercase tracking-[0.5px] text-[#555]">Strike</div>
+          <div className="px-1 py-[5px] text-left text-[9px] font-semibold uppercase tracking-[0.5px] text-[#555]">PE</div>
         </div>
       </div>
 
@@ -223,6 +286,7 @@ export default function OptionsChainCollapsed({ rows, maxOI, activeExpiry }: Pro
             key={row.strike}
             row={row}
             maxOI={maxOI}
+            atmStrike={atmStrike}
             selectedQuoteSymbol={selectedQuoteSymbol}
             activeChartSymbol={optionChartSymbol}
             onSelectQuote={setSelectedQuote}

@@ -70,10 +70,11 @@ async function fetchMetaConfig() {
       }
 
       const payload = await response.json() as ApiMetaResponse
-      const apiBaseUrl = typeof payload.base_url === 'string' ? normalizeHttpUrl(payload.base_url) : null
+      // Only extract wsUrl from meta — API calls must stay same-origin
+      // (Vercel proxy) to avoid cross-origin cookie issues on mobile Safari.
       const wsUrl = typeof payload.websocket?.url === 'string' ? normalizeWsUrl(payload.websocket.url) : null
-      if (apiBaseUrl || wsUrl) {
-        return buildConfig(apiBaseUrl, wsUrl)
+      if (wsUrl) {
+        return buildConfig(null, wsUrl)
       }
     } catch {
       // Ignore metadata fetch failures and fall back to env or same-origin defaults.

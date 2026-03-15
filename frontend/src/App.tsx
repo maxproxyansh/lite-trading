@@ -64,7 +64,7 @@ function ProtectedLayout() {
 
   return (
     <ErrorBoundary>
-      <div className="flex h-screen flex-col bg-bg-primary text-text-primary">
+      <div className="flex h-dvh flex-col bg-bg-primary text-text-primary">
         <Header />
         <div className="flex flex-1 overflow-hidden pb-14 md:pb-0">
           <Sidebar />
@@ -81,7 +81,6 @@ function ProtectedLayout() {
           </main>
         </div>
         <MobileNav />
-        <Toast />
         <TriggeredAlertModal />
         <OrderModal />
       </div>
@@ -321,9 +320,12 @@ export default function App() {
   }, [addToast, setAlerts, user])
 
   return (
-    <Routes>
-      <Route path="/login" element={<Login />} />
-      <Route path="/*" element={<ProtectedLayout />} />
-    </Routes>
+    <>
+      <Toast />
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/*" element={<ProtectedLayout />} />
+      </Routes>
+    </>
   )
 }

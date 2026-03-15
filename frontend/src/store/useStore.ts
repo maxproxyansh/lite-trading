@@ -69,6 +69,7 @@ interface AppState {
   latestSignal: SignalResponse | null
   alerts: AlertSummary[]
   triggeredAlertQueue: AlertSummary[]
+  chartTimeframe: '1m' | '5m' | '15m' | '1h' | 'D' | 'W' | 'M'
   chainView: 'collapsed' | 'expanded'
   chainFilter: 'ALL' | 'ITM' | 'ATM' | 'OTM'
   chainPanelOpen: boolean
@@ -76,6 +77,7 @@ interface AppState {
   portfolioRefreshNonce: number
   toasts: Toast[]
   orderModal: { isOpen: boolean; quote: OptionQuote; side: 'BUY' | 'SELL' } | null
+  setChartTimeframe: (tf: AppState['chartTimeframe']) => void
   setChainView: (view: AppState['chainView']) => void
   setChainFilter: (filter: AppState['chainFilter']) => void
   setChainPanelOpen: (open: boolean) => void
@@ -389,10 +391,12 @@ function syncSelectedQuote(
 
 export const useStore = create<AppState>((set) => ({
   ...initialUserScopedState(),
+  chartTimeframe: 'D',
   chainView: 'collapsed',
   chainFilter: 'ATM',
   chainPanelOpen: true,
   toasts: [],
+  setChartTimeframe: (chartTimeframe) => set({ chartTimeframe }),
   setChainView: (chainView) => set({ chainView }),
   setChainFilter: (chainFilter) => set({ chainFilter }),
   setChainPanelOpen: (chainPanelOpen) => set({ chainPanelOpen }),

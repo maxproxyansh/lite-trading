@@ -2,7 +2,7 @@ import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import { Bell, Plus, Trash2, X } from 'lucide-react'
 import { createChart } from 'lightweight-charts'
-import type { CandlestickData, IChartApi, ISeriesApi, LogicalRange, MouseEventParams, Time } from 'lightweight-charts'
+import type { CandlestickData, HistogramData, IChartApi, ISeriesApi, LogicalRange, MouseEventParams, Time } from 'lightweight-charts'
 import { useShallow } from 'zustand/react/shallow'
 
 import {
@@ -13,6 +13,7 @@ import {
   updateAlert,
   type AlertSummary,
   type Candle,
+  type CandleResponse,
 } from '../lib/api'
 import { useStore } from '../store/useStore'
 
@@ -73,6 +74,14 @@ function getChartColors() {
   const bullColor = styles.getPropertyValue('--color-candle-bull').trim() || '#4caf50'
   const bearColor = styles.getPropertyValue('--color-candle-bear').trim() || '#e53935'
   return { bgPrimary, bgSecondary, textMuted, borderPrimary, bullColor, bearColor }
+}
+
+function toVolumeData(candles: Candle[], bullColor: string, bearColor: string): HistogramData<Time>[] {
+  return candles.map((candle) => ({
+    time: candle.time as Time,
+    value: candle.volume,
+    color: candle.close >= candle.open ? `${bullColor}55` : `${bearColor}55`,
+  }))
 }
 
 function nextBarBoundary(time: number, timeframe: (typeof TIMEFRAMES)[number]) {
@@ -206,7 +215,9 @@ export default function NiftyChart() {
     optionChartSymbol,
     removeAlert,
     setOptionChartSymbol,
+    setTimeframe,
     spot,
+    timeframe,
     upsertAlert,
   } = useStore(useShallow((state) => ({
     addToast: state.addToast,
@@ -217,8 +228,11 @@ export default function NiftyChart() {
     removeAlert: state.removeAlert,
     setOptionChartSymbol: state.setOptionChartSymbol,
     spot: state.snapshot?.spot ?? null,
+    timeframe: state.chartTimeframe,
+    setTimeframe: state.setChartTimeframe,
     upsertAlert: state.upsertAlert,
   })))
+  /* timeframe & setTimeframe are now from the store, not local state */
   const chartQuote = optionChartSymbol && chain
     ? (() => {
         const location = chainIndex[optionChartSymbol]
@@ -238,7 +252,9 @@ export default function NiftyChart() {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
+  const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null)
   const candlesRef = useRef<CandlestickData<Time>[]>([])
+  const rawCandlesRef = useRef<Candle[]>([])
   const lastBarRef = useRef<CandlestickData<Time> | null>(null)
   const nextBeforeRef = useRef<number | null>(null)
   const hasMoreHistoryRef = useRef(false)
@@ -247,7 +263,6 @@ export default function NiftyChart() {
   const hoveredCandleTimeRef = useRef<number | null>(null)
   const dragStateRef = useRef<DragState | null>(null)
   const dragCleanupRef = useRef<(() => void) | null>(null)
-  const [timeframe, setTimeframe] = useState<(typeof TIMEFRAMES)[number]>('D')
   const [loading, setLoading] = useState(true)
   const [loadingMoreHistory, setLoadingMoreHistory] = useState(false)
   const [candleCount, setCandleCount] = useState(0)
@@ -258,6 +273,9 @@ export default function NiftyChart() {
   const [alertMutation, setAlertMutation] = useState<AlertMutation>(null)
   const [dragPreview, setDragPreview] = useState<{ alertId: string; price: number } | null>(null)
   const [alertsPanelOpen, setAlertsPanelOpen] = useState(false)
+  const [showVolume, setShowVolume] = useState(() => {
+    try { return localStorage.getItem('chart:showVolume') !== 'false' } catch { return true }
+  })
   const [hoveredCandleStats, setHoveredCandleStats] = useState<HoveredCandleStats | null>(null)
   const [hasCoarsePointer, setHasCoarsePointer] = useState(false)
   const [, setOverlayRevision] = useState(0)
@@ -340,21 +358,23 @@ export default function NiftyChart() {
     }
 
     const lastBar = lastBarRef.current
-    const nextBoundary = nextBarBoundary(Number(lastBar.time), timeframe)
     const now = Math.floor(Date.now() / 1000)
 
+    const nextBoundary = nextBarBoundary(Number(lastBar.time), timeframe)
     if (now >= nextBoundary) {
-      const nextBar: CandlestickData<Time> = {
+      // Create exactly one new bar at the current time boundary.
+      // Note: intentionally NOT calling setCandleCount here — that would re-trigger
+      // this effect, causing an infinite loop when many boundaries have been missed.
+      const newBar: CandlestickData<Time> = {
         time: nextBoundary as Time,
         open: lastBar.close,
         high: price,
         low: price,
         close: price,
       }
-      lastBarRef.current = nextBar
-      candlesRef.current = [...candlesRef.current, nextBar]
-      setCandleCount(candlesRef.current.length)
-      seriesRef.current.update(nextBar)
+      lastBarRef.current = newBar
+      candlesRef.current = [...candlesRef.current, newBar]
+      seriesRef.current.update(newBar)
       syncHoveredCandleStats()
       setOverlayRevision((value) => value + 1)
       return
@@ -575,10 +595,21 @@ export default function NiftyChart() {
       width: container.clientWidth,
       height: container.clientHeight,
       layout: { background: { color: colors.bgPrimary }, textColor: colors.textMuted },
-      grid: { vertLines: { color: colors.bgSecondary }, horzLines: { color: colors.bgSecondary } },
-      crosshair: { mode: 0 },
-      rightPriceScale: { borderColor: colors.borderPrimary },
-      timeScale: { borderColor: colors.borderPrimary, timeVisible: true, secondsVisible: false },
+      grid: {
+        vertLines: { color: 'rgba(255,255,255,0.03)', style: 1 },
+        horzLines: { color: 'rgba(255,255,255,0.05)', style: 1 },
+      },
+      crosshair: {
+        mode: 0,
+        vertLine: { color: 'rgba(255,255,255,0.2)', style: 2, width: 1, labelBackgroundColor: colors.bgSecondary },
+        horzLine: { color: 'rgba(255,255,255,0.2)', style: 2, width: 1, labelBackgroundColor: colors.bgSecondary },
+      },
+      rightPriceScale: {
+        borderColor: colors.borderPrimary,
+        autoScale: true,
+        scaleMargins: { top: 0.08, bottom: 0.18 },
+      },
+      timeScale: { borderColor: colors.borderPrimary, timeVisible: true, secondsVisible: false, rightOffset: 4 },
     })
     const series = chart.addCandlestickSeries({
       upColor: colors.bullColor,
@@ -588,8 +619,16 @@ export default function NiftyChart() {
       wickUpColor: colors.bullColor,
       wickDownColor: colors.bearColor,
     })
+    const volumeSeries = chart.addHistogramSeries({
+      priceFormat: { type: 'volume' },
+      priceScaleId: 'volume',
+    })
+    chart.priceScale('volume').applyOptions({
+      scaleMargins: { top: 0.85, bottom: 0 },
+    })
     chartRef.current = chart
     seriesRef.current = series
+    volumeSeriesRef.current = volumeSeries
 
     const handleClick = (param: MouseEventParams<Time>) => {
       if (!param.point) {
@@ -628,6 +667,7 @@ export default function NiftyChart() {
       observer.disconnect()
       chartRef.current = null
       seriesRef.current = null
+      volumeSeriesRef.current = null
       chart.remove()
     }
   }, [])
@@ -659,31 +699,61 @@ export default function NiftyChart() {
     historySessionRef.current += 1
     const session = historySessionRef.current
     setLoading(true)
+    chartRef.current?.applyOptions({
+      watermark: {
+        visible: true,
+        text: chartLabel,
+        fontSize: 48,
+        color: 'rgba(255, 255, 255, 0.04)',
+        horzAlign: 'center',
+        vertAlign: 'center',
+      },
+    })
     hoveredCandleTimeRef.current = null
     setHoveredCandleStats(null)
     candlesRef.current = []
+    rawCandlesRef.current = []
     lastBarRef.current = null
     nextBeforeRef.current = null
     hasMoreHistoryRef.current = false
     loadingMoreHistoryRef.current = false
     setLoadingMoreHistory(false)
 
-    fetchCandles({
-      timeframe,
-      symbol: chartSymbol,
-      securityId: chartSecurityId,
-    })
+    const params = { timeframe, symbol: chartSymbol, securityId: chartSecurityId }
+
+    // Retry once on 503 — Dhan upstream errors are often transient
+    const fetchWithRetry = () =>
+      fetchCandles(params).catch((error) => {
+        if (error instanceof ApiError && error.status === 503) {
+          return new Promise<CandleResponse>((resolve) => setTimeout(resolve, 800))
+            .then(() => fetchCandles(params))
+        }
+        throw error
+      })
+
+    fetchWithRetry()
       .then((response) => {
         if (!active || historySessionRef.current !== session) {
           return
         }
         const candles = toChartCandles(response.candles)
         candlesRef.current = candles
+        rawCandlesRef.current = response.candles
         lastBarRef.current = candles.at(-1) ?? null
         nextBeforeRef.current = response.next_before ?? null
         hasMoreHistoryRef.current = response.has_more
         seriesRef.current?.setData(candles)
-        chartRef.current?.timeScale().fitContent()
+        const colors = getChartColors()
+        volumeSeriesRef.current?.setData(toVolumeData(response.candles, colors.bullColor, colors.bearColor))
+        const chart = chartRef.current
+        if (chart && candles.length > 0) {
+          // Use consistent bar spacing (~7px) for all data, scroll to latest
+          const containerWidth = containerRef.current?.clientWidth ?? 390
+          const usableWidth = Math.max(containerWidth - 60, 200)
+          const barSpacing = Math.max(4, Math.min(usableWidth / Math.min(candles.length, Math.floor(usableWidth / 7)), 12))
+          chart.timeScale().applyOptions({ barSpacing })
+          chart.timeScale().scrollToRealTime()
+        }
         setCandleCount(candles.length)
         syncHoveredCandleStats(null)
         syncLiveChartPrice()
@@ -698,10 +768,11 @@ export default function NiftyChart() {
         nextBeforeRef.current = null
         hasMoreHistoryRef.current = false
         seriesRef.current?.setData([])
+        volumeSeriesRef.current?.setData([])
         setCandleCount(0)
         setHoveredCandleStats(null)
         setOverlayRevision((value) => value + 1)
-        if (optionChartSymbol && error instanceof ApiError && [400, 404, 503].includes(error.status)) {
+        if (optionChartSymbol && error instanceof ApiError && [400, 404].includes(error.status)) {
           setOptionChartSymbol(null)
           addToast('error', 'Option chart unavailable. Switched back to NIFTY 50.')
           return
@@ -717,7 +788,7 @@ export default function NiftyChart() {
     return () => {
       active = false
     }
-  }, [addToast, chartSecurityId, chartSymbol, optionChartSymbol, setOptionChartSymbol, timeframe])
+  }, [addToast, chartLabel, chartSecurityId, chartSymbol, optionChartSymbol, setOptionChartSymbol, timeframe])
 
   useEffect(() => {
     const chart = chartRef.current
@@ -762,11 +833,15 @@ export default function NiftyChart() {
         const merged = mergeCandles(toChartCandles(response.candles), candlesRef.current)
         const addedCount = merged.length - previousLength
 
+        const mergedRaw = [...response.candles, ...rawCandlesRef.current].sort((a, b) => a.time - b.time)
         candlesRef.current = merged
+        rawCandlesRef.current = mergedRaw
         lastBarRef.current = merged.at(-1) ?? null
         nextBeforeRef.current = response.next_before ?? null
         hasMoreHistoryRef.current = response.has_more
         series.setData(merged)
+        const mergeColors = getChartColors()
+        volumeSeriesRef.current?.setData(toVolumeData(mergedRaw, mergeColors.bullColor, mergeColors.bearColor))
         setCandleCount(merged.length)
         syncHoveredCandleStats()
         setOverlayRevision((value) => value + 1)
@@ -781,7 +856,10 @@ export default function NiftyChart() {
         if (historySessionRef.current === session) {
           hasMoreHistoryRef.current = false
           nextBeforeRef.current = null
-          addToast('error', error instanceof Error ? error.message : 'Failed to load older chart history')
+          // Don't show toast for 503 on option history — limited data is expected
+          if (!(optionChartSymbol && error instanceof ApiError && error.status === 503)) {
+            addToast('error', error instanceof Error ? error.message : 'Failed to load older chart history')
+          }
         }
       } finally {
         if (historySessionRef.current === session) {
@@ -808,6 +886,22 @@ export default function NiftyChart() {
   useEffect(() => {
     syncLiveChartPrice()
   }, [candleCount, chartPrice, chartSymbol, timeframe])
+
+  useEffect(() => {
+    const chart = chartRef.current
+    const volumeSeries = volumeSeriesRef.current
+    if (!chart || !volumeSeries) return
+    try { localStorage.setItem('chart:showVolume', String(showVolume)) } catch { /* noop */ }
+    if (showVolume) {
+      const colors = getChartColors()
+      volumeSeries.setData(toVolumeData(rawCandlesRef.current, colors.bullColor, colors.bearColor))
+      chart.priceScale('right').applyOptions({ scaleMargins: { top: 0.08, bottom: 0.18 } })
+      chart.priceScale('volume').applyOptions({ scaleMargins: { top: 0.85, bottom: 0 } })
+    } else {
+      volumeSeries.setData([])
+      chart.priceScale('right').applyOptions({ scaleMargins: { top: 0.08, bottom: 0.02 } })
+    }
+  }, [showVolume])
 
   useEffect(() => {
     if (alertModal?.mode === 'edit' && !alerts.some((alert) => alert.id === alertModal.alertId)) {
@@ -895,25 +989,94 @@ export default function NiftyChart() {
 
   return (
     <div className="relative flex h-full flex-col bg-bg-primary">
-      <div className={`flex flex-wrap items-center gap-x-2 gap-y-1 border-b px-3 py-1 ${chartQuote ? 'border-brand/30 bg-brand/5' : 'border-border-secondary'}`}>
-        <span className={`mr-2 text-[11px] ${chartQuote ? 'font-medium text-brand' : 'text-text-muted'}`}>{chartLabel}</span>
-        {chartQuote && (
-          <div className="mr-2 flex items-center gap-1">
-            <span className="text-[10px] text-text-muted">{chartQuote.expiry}</span>
+      <div className={`border-b ${chartQuote ? 'border-brand/30 bg-brand/5' : 'border-border-secondary'}`}>
+        {/* Row 1: Symbol + OHLC inline */}
+        <div className="flex min-w-0 items-center gap-2 px-3 py-1">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className={`shrink-0 text-[12px] font-medium ${chartQuote ? 'text-brand' : 'text-text-primary'}`}>{chartLabel}</span>
+            {chartQuote && (
+              <>
+                <span className="shrink-0 text-[10px] text-text-muted">{chartQuote.expiry}</span>
+                <button
+                  onClick={() => setOptionChartSymbol(null)}
+                  className="shrink-0 rounded-sm border border-border-primary bg-bg-secondary px-1.5 py-0.5 text-[10px] text-text-muted transition-colors hover:border-text-muted hover:text-text-primary"
+                >
+                  Back to NIFTY
+                </button>
+              </>
+            )}
+            <div className="hidden md:block h-3 w-px bg-border-primary opacity-40" />
+            {hoveredCandleStats ? (
+              <div className="hidden md:flex min-w-0 items-center gap-2.5 overflow-hidden whitespace-nowrap text-[11px] tabular-nums">
+                <span><span className="text-text-muted">O</span> <span className={hoveredCandleStats.close >= hoveredCandleStats.open ? 'text-profit' : 'text-loss'}>{formatPrice(hoveredCandleStats.open)}</span></span>
+                <span><span className="text-text-muted">H</span> <span className={hoveredCandleStats.close >= hoveredCandleStats.open ? 'text-profit' : 'text-loss'}>{formatPrice(hoveredCandleStats.high)}</span></span>
+                <span><span className="text-text-muted">L</span> <span className={hoveredCandleStats.close >= hoveredCandleStats.open ? 'text-profit' : 'text-loss'}>{formatPrice(hoveredCandleStats.low)}</span></span>
+                <span><span className="text-text-muted">C</span> <span className={hoveredCandleStats.close >= hoveredCandleStats.open ? 'text-profit' : 'text-loss'}>{formatPrice(hoveredCandleStats.close)}</span></span>
+                {hoveredCandleStats.change != null && hoveredCandleStats.changePct != null ? (
+                  <span className={hoverChangeTone}>
+                    {formatSignedPrice(hoveredCandleStats.change)} ({formatSignedPercent(hoveredCandleStats.changePct)})
+                  </span>
+                ) : null}
+              </div>
+            ) : chartPrice ? (
+              <span className="hidden md:inline text-[11px] tabular-nums text-text-secondary">
+                {chartQuote ? 'LTP' : 'Spot'} ₹{chartPrice.toFixed(2)}
+              </span>
+            ) : null}
+          </div>
+
+          <div className="ml-auto flex shrink-0 items-center gap-0.5">
+            {TIMEFRAMES.map((tf) => (
+              <button
+                key={tf}
+                onClick={() => {
+                  setLoading(true)
+                  setTimeframe(tf)
+                }}
+                className={`px-1.5 md:px-2 py-0.5 text-[11px] transition-colors ${
+                  timeframe === tf
+                    ? 'rounded-sm bg-brand text-bg-primary'
+                    : 'text-text-muted hover:text-text-secondary'
+                }`}
+              >
+                {tf}
+              </button>
+            ))}
+            <div className="mx-1 h-3 w-px bg-border-primary opacity-50" />
             <button
-              onClick={() => setOptionChartSymbol(null)}
-              className="ml-1 rounded-sm border border-border-primary bg-bg-secondary px-1.5 py-0.5 text-[10px] text-text-muted transition-colors hover:border-text-muted hover:text-text-primary"
+              onClick={() => setShowVolume((v) => !v)}
+              className={`px-1.5 py-0.5 text-[11px] rounded-sm transition-colors ${
+                showVolume
+                  ? 'text-text-secondary hover:text-text-primary'
+                  : 'text-text-muted line-through opacity-50 hover:opacity-75'
+              }`}
+              title={showVolume ? 'Hide volume' : 'Show volume'}
             >
-              Back to NIFTY
+              Vol
+            </button>
+            <div className="mx-1 h-3 w-px bg-border-primary opacity-50" />
+            <button
+              onClick={() => setAlertsPanelOpen((open) => !open)}
+              className={`flex items-center gap-1.5 rounded-sm border px-1.5 py-0.5 text-[11px] transition-colors ${
+                alertsPanelOpen
+                  ? 'border-signal/60 bg-signal/10 text-text-primary'
+                  : 'border-border-primary text-text-muted hover:text-text-primary'
+              }`}
+              title={alertsPanelOpen ? 'Hide alerts' : 'Show alerts'}
+            >
+              <Bell size={11} className="text-signal" />
+              <span>{activeAlerts.length} active</span>
             </button>
           </div>
-        )}
+        </div>
+
+        {/* OHLC on mobile — separate row since inline won't fit */}
         {hoveredCandleStats ? (
-          <div className="mr-3 flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-[11px] tabular-nums text-text-secondary">
-            <span>O {formatPrice(hoveredCandleStats.open)}</span>
-            <span>H {formatPrice(hoveredCandleStats.high)}</span>
-            <span>L {formatPrice(hoveredCandleStats.low)}</span>
-            <span>C {formatPrice(hoveredCandleStats.close)}</span>
+          <div className="flex md:hidden min-w-0 items-center gap-2.5 overflow-hidden whitespace-nowrap px-3 pb-1 text-[10px] tabular-nums">
+            <span><span className="text-text-muted">O</span> <span className={hoveredCandleStats.close >= hoveredCandleStats.open ? 'text-profit' : 'text-loss'}>{formatPrice(hoveredCandleStats.open)}</span></span>
+            <span><span className="text-text-muted">H</span> <span className={hoveredCandleStats.close >= hoveredCandleStats.open ? 'text-profit' : 'text-loss'}>{formatPrice(hoveredCandleStats.high)}</span></span>
+            <span><span className="text-text-muted">L</span> <span className={hoveredCandleStats.close >= hoveredCandleStats.open ? 'text-profit' : 'text-loss'}>{formatPrice(hoveredCandleStats.low)}</span></span>
+            <span><span className="text-text-muted">C</span> <span className={hoveredCandleStats.close >= hoveredCandleStats.open ? 'text-profit' : 'text-loss'}>{formatPrice(hoveredCandleStats.close)}</span></span>
             {hoveredCandleStats.change != null && hoveredCandleStats.changePct != null ? (
               <span className={hoverChangeTone}>
                 {formatSignedPrice(hoveredCandleStats.change)} ({formatSignedPercent(hoveredCandleStats.changePct)})
@@ -921,44 +1084,12 @@ export default function NiftyChart() {
             ) : null}
           </div>
         ) : chartPrice ? (
-          <span className="mr-3 text-[11px] tabular-nums text-text-secondary">
-            {chartQuote ? 'LTP' : 'Spot'} ₹{chartPrice.toFixed(2)}
-          </span>
+          <div className="md:hidden px-3 pb-1">
+            <span className="text-[10px] tabular-nums text-text-secondary">
+              {chartQuote ? 'LTP' : 'Spot'} ₹{chartPrice.toFixed(2)}
+            </span>
+          </div>
         ) : null}
-        <div className="flex items-center gap-0.5">
-          {TIMEFRAMES.map((tf) => (
-            <button
-              key={tf}
-              onClick={() => {
-                setLoading(true)
-                setTimeframe(tf)
-              }}
-              className={`px-2 py-0.5 text-[11px] transition-colors ${
-                timeframe === tf
-                  ? 'rounded-sm bg-brand text-bg-primary'
-                  : 'text-text-muted hover:text-text-secondary'
-              }`}
-            >
-              {tf}
-            </button>
-          ))}
-        </div>
-        <div className="ml-auto flex items-center gap-2 text-[11px] text-text-muted">
-          {loadingMoreHistory ? <span>Loading older…</span> : null}
-          <button
-            onClick={() => setAlertsPanelOpen((open) => !open)}
-            className={`flex items-center gap-2 rounded-sm border px-2 py-1 transition-colors ${
-              alertsPanelOpen
-                ? 'border-signal/60 bg-signal/10 text-text-primary'
-                : 'border-border-primary text-text-muted hover:text-text-primary'
-            }`}
-            title={alertsPanelOpen ? 'Hide alerts' : 'Show alerts'}
-          >
-            <Bell size={12} className="text-signal" />
-            <span>{activeAlerts.length} active</span>
-            {triggeredAlerts.length ? <span>{triggeredAlerts.length} triggered</span> : null}
-          </button>
-        </div>
       </div>
 
       <div
