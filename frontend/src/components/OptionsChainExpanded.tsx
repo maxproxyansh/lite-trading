@@ -22,6 +22,7 @@ function formatOI(oi: number | null) {
 const OptionsChainExpandedRow = memo(function OptionsChainExpandedRow({
   row,
   maxOI,
+  atmStrike,
   selectedQuoteSymbol,
   activeChartSymbol,
   onSelectQuote,
@@ -31,9 +32,10 @@ const OptionsChainExpandedRow = memo(function OptionsChainExpandedRow({
 }: {
   row: OptionChainRow
   maxOI: number
+  atmStrike: number
   selectedQuoteSymbol: string | null
   activeChartSymbol: string | null
-  onSelectQuote: (quote: OptionQuote) => void
+  onSelectQuote: (quote: OptionQuote | null) => void
   onOrder: (quote: OptionQuote, side: 'BUY' | 'SELL') => void
   onViewChart: (quote: OptionQuote) => void
   rowRef?: Ref<HTMLDivElement>
@@ -47,155 +49,183 @@ const OptionsChainExpandedRow = memo(function OptionsChainExpandedRow({
   const putOI = (row.put as Record<string, unknown>).oi_lakhs as number | null ?? null
   const callOIPct = Math.min(100, callOI != null && maxOI > 0 ? (callOI / maxOI) * 100 : 0)
   const putOIPct = Math.min(100, putOI != null && maxOI > 0 ? (putOI / maxOI) * 100 : 0)
-  const rowHeight = isATM ? 28 : 26
-  const oiBgOpacity = isATM ? 0.2 : 0.15
+  const oiBgOpacity = isATM ? 0.55 : 0.4
+
+  const callIsITM = !isATM && row.strike < atmStrike
+  const putIsITM = !isATM && row.strike > atmStrike
 
   return (
-    <div
-      ref={rowRef}
-      className={`group grid border-b border-[#222] transition-colors ${
-        isATM
-          ? 'border-l-2 border-l-[rgba(229,83,75,0.4)] bg-[rgba(229,83,75,0.05)]'
-          : 'hover:bg-bg-hover'
-      }`}
-      style={{ gridTemplateColumns: '44px 38px 1fr 50px 1fr 38px 44px', height: rowHeight }}
-    >
-      <div className="relative flex items-center justify-end overflow-hidden" style={{ borderRadius: 1 }}>
-        <div
-          className="absolute inset-y-0 right-0"
-          style={{
-            width: `${callOIPct}%`,
-            background: `rgba(229,83,75,${oiBgOpacity})`,
-          }}
-        />
-        <span className="relative z-10 pr-[3px] text-[9px] tabular-nums text-[#555]">
-          {formatOI(callOI)}
-        </span>
-      </div>
-
-      <div className="flex items-center justify-center text-[9px] tabular-nums text-[#555]">
-        {row.call.iv != null ? row.call.iv.toFixed(1) : '--'}
-      </div>
-
+    <div ref={rowRef}>
       <div
-        className={`group/ce relative flex cursor-pointer items-center justify-end pr-1 ${
-          activeCall ? 'bg-profit/15' : ''
-        }`}
-        onClick={() => onSelectQuote(row.call)}
-      >
-        <span
-          className={`tabular-nums group-hover/ce:opacity-40 ${
-            isATM ? 'text-[11px] font-semibold text-[#e0e0e0]' : 'text-[11px] text-[#b0b0b0]'
-          }`}
-        >
-          {formatLTP(row.call.ltp)}
-        </span>
-        <div className="absolute inset-0 hidden items-center justify-center gap-0.5 group-hover/ce:flex">
-          <button
-            onClick={(event) => {
-              event.stopPropagation()
-              onViewChart(row.call)
-            }}
-            className={`flex h-[18px] w-[18px] items-center justify-center rounded-sm ${
-              chartingCall ? 'bg-brand text-bg-primary' : 'bg-[#2b2b2b] text-[#d0d0d0]'
-            }`}
-            title="View CE chart"
-          >
-            <LineChart size={10} />
-          </button>
-          <button
-            onClick={(event) => {
-              event.stopPropagation()
-              onOrder(row.call, 'BUY')
-            }}
-            className="h-[18px] w-[18px] rounded-sm bg-btn-buy text-[9px] font-bold text-white"
-          >
-            B
-          </button>
-          <button
-            onClick={(event) => {
-              event.stopPropagation()
-              onOrder(row.call, 'SELL')
-            }}
-            className="h-[18px] w-[18px] rounded-sm bg-btn-sell text-[9px] font-bold text-white"
-          >
-            S
-          </button>
-        </div>
-      </div>
-
-      <div
-        className={`flex items-center justify-center tabular-nums ${
+        className={`group grid border-b border-[#222] transition-colors ${
           isATM
-            ? 'bg-[rgba(229,83,75,0.08)] text-[10px] font-bold text-[#e53935]'
-            : 'bg-[#232323] text-[10px] font-semibold text-[#666]'
+            ? 'border-l-2 border-l-[#e53935] bg-[rgba(229,83,75,0.05)]'
+            : 'hover:bg-bg-hover'
         }`}
+        style={{ gridTemplateColumns: '44px 38px 1fr 52px 1fr 38px 44px', height: 36 }}
       >
-        <span>{row.strike}</span>
-      </div>
+        <div className="relative flex items-center justify-end overflow-hidden" style={{ borderRadius: 1 }}>
+          <div
+            className="absolute inset-y-0 right-0"
+            style={{
+              width: `${callOIPct}%`,
+              background: `rgba(229,83,75,${oiBgOpacity})`,
+            }}
+          />
+          <span className="relative z-10 pr-[3px] text-[9px] tabular-nums text-[#555]">
+            {formatOI(callOI)}
+          </span>
+        </div>
 
-      <div
-        className={`group/pe relative flex cursor-pointer items-center justify-start pl-1 ${
-          activePut ? 'bg-loss/15' : ''
-        }`}
-        onClick={() => onSelectQuote(row.put)}
-      >
-        <span
-          className={`tabular-nums group-hover/pe:opacity-40 ${
-            isATM ? 'text-[11px] font-semibold text-[#e0e0e0]' : 'text-[11px] text-[#b0b0b0]'
+        <div className="flex items-center justify-center text-[9px] tabular-nums text-[#555]">
+          {row.call.iv != null ? row.call.iv.toFixed(1) : '--'}
+        </div>
+
+        <div
+          className={`group/ce relative flex cursor-pointer items-center justify-end pr-1 ${
+            activeCall ? 'bg-profit/15' : ''
+          }`}
+          onClick={() => onSelectQuote(activeCall ? null : row.call)}
+        >
+          <span
+            className={`tabular-nums text-[13px] leading-none md:group-hover/ce:opacity-40 ${
+              isATM ? 'font-semibold text-[#e8e8e8]' : callIsITM ? 'text-[#888]' : 'text-[#b8b8b8]'
+            }`}
+          >
+            {formatLTP(row.call.ltp)}
+          </span>
+          <div className="absolute inset-0 hidden items-center justify-center gap-1 md:group-hover/ce:flex">
+            <button
+              onClick={(event) => {
+                event.stopPropagation()
+                onViewChart(row.call)
+              }}
+              className={`flex h-[20px] w-[20px] items-center justify-center rounded ${
+                chartingCall ? 'bg-brand text-bg-primary' : 'bg-[#2b2b2b] text-[#d0d0d0] hover:bg-[#383838]'
+              }`}
+              title="View CE chart"
+            >
+              <LineChart size={10} />
+            </button>
+            <button
+              onClick={(event) => {
+                event.stopPropagation()
+                onOrder(row.call, 'BUY')
+              }}
+              className="h-[20px] w-[20px] rounded bg-btn-buy text-[9px] font-bold text-white hover:brightness-110"
+            >
+              B
+            </button>
+            <button
+              onClick={(event) => {
+                event.stopPropagation()
+                onOrder(row.call, 'SELL')
+              }}
+              className="h-[20px] w-[20px] rounded bg-btn-sell text-[9px] font-bold text-white hover:brightness-110"
+            >
+              S
+            </button>
+          </div>
+        </div>
+
+        <div
+          className={`flex items-center justify-center tabular-nums ${
+            isATM
+              ? 'bg-[rgba(229,83,75,0.12)] text-[11px] font-bold text-[#ff6b6b]'
+              : 'bg-[#1a1a1a] text-[10.5px] font-medium text-[#5a5a5a]'
           }`}
         >
-          {formatLTP(row.put.ltp)}
-        </span>
-        <div className="absolute inset-0 hidden items-center justify-center gap-0.5 group-hover/pe:flex">
-          <button
-            onClick={(event) => {
-              event.stopPropagation()
-              onViewChart(row.put)
-            }}
-            className={`flex h-[18px] w-[18px] items-center justify-center rounded-sm ${
-              chartingPut ? 'bg-brand text-bg-primary' : 'bg-[#2b2b2b] text-[#d0d0d0]'
+          <span>{row.strike}</span>
+        </div>
+
+        <div
+          className={`group/pe relative flex cursor-pointer items-center justify-start pl-1 ${
+            activePut ? 'bg-loss/15' : ''
+          }`}
+          onClick={() => onSelectQuote(activePut ? null : row.put)}
+        >
+          <span
+            className={`tabular-nums text-[13px] leading-none md:group-hover/pe:opacity-40 ${
+              isATM ? 'font-semibold text-[#e8e8e8]' : putIsITM ? 'text-[#888]' : 'text-[#b8b8b8]'
             }`}
-            title="View PE chart"
           >
-            <LineChart size={10} />
-          </button>
-          <button
-            onClick={(event) => {
-              event.stopPropagation()
-              onOrder(row.put, 'BUY')
+            {formatLTP(row.put.ltp)}
+          </span>
+          <div className="absolute inset-0 hidden items-center justify-center gap-1 md:group-hover/pe:flex">
+            <button
+              onClick={(event) => {
+                event.stopPropagation()
+                onViewChart(row.put)
+              }}
+              className={`flex h-[20px] w-[20px] items-center justify-center rounded ${
+                chartingPut ? 'bg-brand text-bg-primary' : 'bg-[#2b2b2b] text-[#d0d0d0] hover:bg-[#383838]'
+              }`}
+              title="View PE chart"
+            >
+              <LineChart size={10} />
+            </button>
+            <button
+              onClick={(event) => {
+                event.stopPropagation()
+                onOrder(row.put, 'BUY')
+              }}
+              className="h-[20px] w-[20px] rounded bg-btn-buy text-[9px] font-bold text-white hover:brightness-110"
+            >
+              B
+            </button>
+            <button
+              onClick={(event) => {
+                event.stopPropagation()
+                onOrder(row.put, 'SELL')
+              }}
+              className="h-[20px] w-[20px] rounded bg-btn-sell text-[9px] font-bold text-white hover:brightness-110"
+            >
+              S
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-center text-[9px] tabular-nums text-[#555]">
+          {row.put.iv != null ? row.put.iv.toFixed(1) : '--'}
+        </div>
+
+        <div className="relative flex items-center justify-start overflow-hidden" style={{ borderRadius: 1 }}>
+          <div
+            className="absolute inset-y-0 left-0"
+            style={{
+              width: `${putOIPct}%`,
+              background: `rgba(76,175,80,${oiBgOpacity})`,
             }}
-            className="h-[18px] w-[18px] rounded-sm bg-btn-buy text-[9px] font-bold text-white"
-          >
-            B
-          </button>
-          <button
-            onClick={(event) => {
-              event.stopPropagation()
-              onOrder(row.put, 'SELL')
-            }}
-            className="h-[18px] w-[18px] rounded-sm bg-btn-sell text-[9px] font-bold text-white"
-          >
-            S
-          </button>
+          />
+          <span className="relative z-10 pl-[3px] text-[9px] tabular-nums text-[#555]">
+            {formatOI(putOI)}
+          </span>
         </div>
       </div>
 
-      <div className="flex items-center justify-center text-[9px] tabular-nums text-[#555]">
-        {row.put.iv != null ? row.put.iv.toFixed(1) : '--'}
-      </div>
-
-      <div className="relative flex items-center justify-start overflow-hidden" style={{ borderRadius: 1 }}>
-        <div
-          className="absolute inset-y-0 left-0"
-          style={{
-            width: `${putOIPct}%`,
-            background: `rgba(76,175,80,${oiBgOpacity})`,
-          }}
-        />
-        <span className="relative z-10 pl-[3px] text-[9px] tabular-nums text-[#555]">
-          {formatOI(putOI)}
-        </span>
+      {/* Thin OI bars below row — matches collapsed view */}
+      <div className="grid" style={{ gridTemplateColumns: '82px 1fr 52px 1fr 82px', height: '3px' }}>
+        <div />
+        <div className="relative overflow-hidden">
+          <div
+            className="absolute right-0 top-0 h-full"
+            style={{
+              width: `${callOIPct}%`,
+              backgroundColor: `rgba(229,83,75,${oiBgOpacity})`,
+            }}
+          />
+        </div>
+        <div />
+        <div className="relative overflow-hidden">
+          <div
+            className="absolute left-0 top-0 h-full"
+            style={{
+              width: `${putOIPct}%`,
+              backgroundColor: `rgba(76,175,80,${oiBgOpacity})`,
+            }}
+          />
+        </div>
+        <div />
       </div>
     </div>
   )
@@ -211,6 +241,7 @@ export default function OptionsChainExpanded({ rows, maxOI, activeExpiry }: Prop
   })))
   const atmRef = useRef<HTMLDivElement>(null)
   const lastScrollKeyRef = useRef<string | null>(null)
+  const atmStrike = rows.find((r) => r.is_atm)?.strike ?? 0
 
   useEffect(() => {
     if (!atmRef.current || !activeExpiry) {
@@ -225,36 +256,41 @@ export default function OptionsChainExpanded({ rows, maxOI, activeExpiry }: Prop
   }, [activeExpiry, rows])
 
   return (
-    <div className="flex-1 overflow-auto">
-      <div
-        className="sticky top-0 z-10 grid items-center border-b border-[#2a2a2a] bg-bg-secondary"
-        style={{ gridTemplateColumns: '44px 38px 1fr 50px 1fr 38px 44px' }}
-      >
-        <div className="py-[4px] text-center text-[8px] font-semibold uppercase tracking-[0.4px] text-[#555]">OI</div>
-        <div className="py-[4px] text-center text-[8px] font-semibold uppercase tracking-[0.4px] text-[#555]">IV</div>
-        <div className="py-[4px] pr-1 text-right text-[8px] font-semibold uppercase tracking-[0.4px] text-[#555]">CE</div>
-        <div className="py-[4px] text-center text-[8px] font-semibold uppercase tracking-[0.4px] text-[#555]">Strike</div>
-        <div className="py-[4px] pl-1 text-left text-[8px] font-semibold uppercase tracking-[0.4px] text-[#555]">PE</div>
-        <div className="py-[4px] text-center text-[8px] font-semibold uppercase tracking-[0.4px] text-[#555]">IV</div>
-        <div className="py-[4px] text-center text-[8px] font-semibold uppercase tracking-[0.4px] text-[#555]">OI</div>
+    <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="sticky top-0 z-10 border-b border-[#222] bg-bg-secondary">
+        <div
+          className="grid"
+          style={{ gridTemplateColumns: '44px 38px 1fr 52px 1fr 38px 44px' }}
+        >
+          <div className="py-[5px] text-center text-[9px] font-semibold uppercase tracking-[0.5px] text-[#555]">OI</div>
+          <div className="py-[5px] text-center text-[9px] font-semibold uppercase tracking-[0.5px] text-[#555]">IV</div>
+          <div className="px-1 py-[5px] text-right text-[9px] font-semibold uppercase tracking-[0.5px] text-[#555]">CE</div>
+          <div className="flex items-center justify-center bg-[#1a1a1a] py-[5px] text-[9px] font-semibold uppercase tracking-[0.5px] text-[#555]">Strike</div>
+          <div className="px-1 py-[5px] text-left text-[9px] font-semibold uppercase tracking-[0.5px] text-[#555]">PE</div>
+          <div className="py-[5px] text-center text-[9px] font-semibold uppercase tracking-[0.5px] text-[#555]">IV</div>
+          <div className="py-[5px] text-center text-[9px] font-semibold uppercase tracking-[0.5px] text-[#555]">OI</div>
+        </div>
       </div>
 
-      {rows.map((row) => (
-        <OptionsChainExpandedRow
-          key={row.strike}
-          row={row}
-          maxOI={maxOI}
-          selectedQuoteSymbol={selectedQuoteSymbol}
-          activeChartSymbol={optionChartSymbol}
-          onSelectQuote={setSelectedQuote}
-          onViewChart={(quote) => {
-            setSelectedQuote(quote)
-            setOptionChartSymbol(optionChartSymbol === quote.symbol ? null : quote.symbol)
-          }}
-          onOrder={openOrderModal}
-          rowRef={row.is_atm ? atmRef : undefined}
-        />
-      ))}
+      <div className="flex-1 overflow-y-auto">
+        {rows.map((row) => (
+          <OptionsChainExpandedRow
+            key={row.strike}
+            row={row}
+            maxOI={maxOI}
+            atmStrike={atmStrike}
+            selectedQuoteSymbol={selectedQuoteSymbol}
+            activeChartSymbol={optionChartSymbol}
+            onSelectQuote={setSelectedQuote}
+            onViewChart={(quote) => {
+              setSelectedQuote(quote)
+              setOptionChartSymbol(optionChartSymbol === quote.symbol ? null : quote.symbol)
+            }}
+            onOrder={openOrderModal}
+            rowRef={row.is_atm ? atmRef : undefined}
+          />
+        ))}
+      </div>
     </div>
   )
 }
