@@ -856,7 +856,7 @@ class MarketDataService:
 
     def _fetch_vix(self) -> float | None:
         today = date.today()
-        from_date = (today - timedelta(days=3)).strftime("%Y-%m-%d")
+        from_date = (today - timedelta(days=5)).strftime("%Y-%m-%d")
         to_date = today.strftime("%Y-%m-%d")
         result = dhan_credential_service.call(
             "historical_daily_data.vix",
@@ -1260,54 +1260,14 @@ class MarketDataService:
         target = self._resolve_candle_target(symbol=symbol, security_id=security_id)
         lower_date, upper_date, oldest_date = self._history_window(timeframe, before)
 
-        # --- candle cache lookup ---
+        # --- candle cache lookup / fetch ---
         cache_key = (target.security_id, timeframe, lower_date.isoformat(), upper_date.isoformat())
         ttl = CANDLE_CACHE_TTL.get(timeframe, 60)
+        now = time.monotonic()
         cached = self._candle_cache.get(cache_key)
-        if cached is not None:
-            cached_ts, cached_payload = cached
-            if time.monotonic() - cached_ts < ttl:
-                payload = cached_payload
-                # Still apply live overlay and filtering on cached raw payload
-                if timeframe in DAILY_HISTORY_TIMEFRAMES:
-                    candles = self._aggregate_candles(self._map_candles(payload), timeframe)
-                    if before is None:
-                        live_price, day_high, day_low = self._live_ohlc_for_target(target)
-                        candles = self._overlay_live_price(
-                            candles,
-                            timeframe=timeframe,
-                            live_price=live_price,
-                            day_high=day_high,
-                            day_low=day_low,
-                        )
-                    candles = self._filter_history_before(candles, before)
-                    has_more = lower_date > oldest_date
-                    return {
-                        "timeframe": timeframe,
-                        "candles": candles,
-                        "source": "dhan",
-                        "degraded": not candles,
-                        "has_more": has_more,
-                        "next_before": self._next_history_cursor(
-                            candles, lower_date=lower_date, oldest_date=oldest_date, has_more=has_more,
-                        ),
-                    }
-                else:
-                    candles = self._filter_history_before(self._map_candles(payload), before)
-                    has_more = lower_date > oldest_date
-                    return {
-                        "timeframe": timeframe,
-                        "candles": candles,
-                        "source": "dhan",
-                        "degraded": not candles,
-                        "has_more": has_more,
-                        "next_before": self._next_history_cursor(
-                            candles, lower_date=lower_date, oldest_date=oldest_date, has_more=has_more,
-                        ),
-                    }
-        # --- end cache lookup ---
-
-        if timeframe in DAILY_HISTORY_TIMEFRAMES:
+        if cached is not None and now - cached[0] < ttl:
+            payload = cached[1]
+        elif timeframe in DAILY_HISTORY_TIMEFRAMES:
             payload = dhan_credential_service.call(
                 "historical_daily_data",
                 lambda dhan_client: dhan_client.historical_daily_data(
@@ -1319,7 +1279,31 @@ class MarketDataService:
                 ),
             )
             payload = payload if isinstance(payload, dict) else {}
-            self._candle_cache[cache_key] = (time.monotonic(), payload)
+            self._candle_cache[cache_key] = (now, payload)
+        else:
+            interval = INTRADAY_INTERVALS.get(timeframe, INTRADAY_INTERVALS["15m"])
+            payload = dhan_credential_service.call(
+                "intraday_minute_data",
+                lambda dhan_client: dhan_client.intraday_minute_data(
+                    security_id=target.security_id,
+                    exchange_segment=target.exchange_segment,
+                    instrument_type=target.instrument_type,
+                    from_date=lower_date.strftime("%Y-%m-%d"),
+                    to_date=upper_date.strftime("%Y-%m-%d"),
+                    interval=interval,
+                ),
+            )
+            payload = payload if isinstance(payload, dict) else {}
+            self._candle_cache[cache_key] = (now, payload)
+
+        # Evict stale cache entries (> 2x max TTL)
+        if len(self._candle_cache) > 50:
+            stale = [k for k, (ts, _) in self._candle_cache.items() if now - ts > 600]
+            for k in stale:
+                del self._candle_cache[k]
+
+        # --- process candles ---
+        if timeframe in DAILY_HISTORY_TIMEFRAMES:
             candles = self._aggregate_candles(self._map_candles(payload), timeframe)
             if before is None:
                 live_price, day_high, day_low = self._live_ohlc_for_target(target)
@@ -1330,37 +1314,10 @@ class MarketDataService:
                     day_high=day_high,
                     day_low=day_low,
                 )
-            candles = self._filter_history_before(candles, before)
-            has_more = lower_date > oldest_date
-            return {
-                "timeframe": timeframe,
-                "candles": candles,
-                "source": "dhan",
-                "degraded": not candles,
-                "has_more": has_more,
-                "next_before": self._next_history_cursor(
-                    candles,
-                    lower_date=lower_date,
-                    oldest_date=oldest_date,
-                    has_more=has_more,
-                ),
-            }
+        else:
+            candles = self._map_candles(payload)
 
-        interval = INTRADAY_INTERVALS.get(timeframe, INTRADAY_INTERVALS["15m"])
-        payload = dhan_credential_service.call(
-            "intraday_minute_data",
-            lambda dhan_client: dhan_client.intraday_minute_data(
-                security_id=target.security_id,
-                exchange_segment=target.exchange_segment,
-                instrument_type=target.instrument_type,
-                from_date=lower_date.strftime("%Y-%m-%d"),
-                to_date=upper_date.strftime("%Y-%m-%d"),
-                interval=interval,
-            ),
-        )
-        payload = payload if isinstance(payload, dict) else {}
-        self._candle_cache[cache_key] = (time.monotonic(), payload)
-        candles = self._filter_history_before(self._map_candles(payload), before)
+        candles = self._filter_history_before(candles, before)
         has_more = lower_date > oldest_date
         return {
             "timeframe": timeframe,
