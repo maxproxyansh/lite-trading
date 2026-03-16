@@ -35,10 +35,17 @@ export const OVERLAY_INDICATORS: IndicatorType[] = ['ema', 'sma', 'bb', 'vwap', 
 export const OSCILLATOR_INDICATORS: IndicatorType[] = ['rsi', 'macd', 'adx']
 
 export const DEFAULT_DRAWING_STYLE: DrawingStyle = {
-  color: 'rgba(255,255,255,0.45)',
+  color: '#ffffff',
   lineWidth: 1,
   lineStyle: 'solid',
-  fillOpacity: 0.08,
+  fillOpacity: 0.12,
+}
+
+export const CHANNEL_DEFAULT_STYLE: DrawingStyle = {
+  color: '#e53935',
+  lineWidth: 1,
+  lineStyle: 'solid',
+  fillOpacity: 0.12,
 }
 
 export const DEFAULT_INDICATOR_CONFIGS: IndicatorConfig[] = [

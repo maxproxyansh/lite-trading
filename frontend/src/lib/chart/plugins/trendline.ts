@@ -27,15 +27,17 @@ export class TrendlinePlugin extends BaseDrawingPlugin {
     ctx.lineTo(px2.x, px2.y)
     ctx.stroke()
 
-    // Small circles at endpoints
-    ctx.fillStyle = color
+    // Hollow anchor circles at endpoints (TradingView style)
     ctx.setLineDash([])
-    ctx.beginPath()
-    ctx.arc(px1.x, px1.y, 3, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.beginPath()
-    ctx.arc(px2.x, px2.y, 3, 0, Math.PI * 2)
-    ctx.fill()
+    ctx.strokeStyle = color
+    ctx.lineWidth = 1.5
+    ctx.fillStyle = '#1a1a1a'
+    for (const p of [px1, px2]) {
+      ctx.beginPath()
+      ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.stroke()
+    }
 
     ctx.restore()
   }

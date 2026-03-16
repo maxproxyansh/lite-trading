@@ -1,57 +1,27 @@
-import type { Drawing } from '../types'
 import { BaseDrawingPlugin } from './base-drawing'
 
-// 3 points: p1 & p2 define the baseline, p3 defines the parallel offset channel line
+// 3 points: p1 & p2 define the baseline, p3 defines the parallel offset
 export class ChannelPlugin extends BaseDrawingPlugin {
-  constructor(drawing: Drawing) {
-    super(drawing)
-  }
-
   drawOnCanvas(ctx: CanvasRenderingContext2D, _width: number, _height: number): void {
     const [p1, p2, p3] = this.drawing.points
     if (!p1 || !p2 || !p3) return
 
     const px1 = this.pointToPixel(p1)
     const px2 = this.pointToPixel(p2)
-    // p3 defines the price offset — use same x-coords as p1/p2 but shifted y
-    const offsetY = this.priceToY(p3.price)
-    const baseY1 = this.priceToY(p1.price)
-    const baseY2 = this.priceToY(p2.price)
+    if (!px1 || !px2) return
 
-    if (!px1 || !px2 || offsetY === null || baseY1 === null || baseY2 === null) return
-
+    // Compute the parallel line by shifting each baseline point by the price offset
     const priceDiff = p3.price - p1.price
-    const y3 = px1.y + (this.priceToY(p1.price + priceDiff) !== null
-      ? (this.priceToY(p1.price + priceDiff)! - px1.y)
-      : 0)
-    const y4 = px2.y + (this.priceToY(p2.price + priceDiff) !== null
-      ? (this.priceToY(p2.price + priceDiff)! - px2.y)
-      : 0)
+    const y3 = this.priceToY(p1.price + priceDiff)
+    const y4 = this.priceToY(p2.price + priceDiff)
+    if (y3 === null || y4 === null) return
 
-    const { color, lineWidth, fillOpacity = 0.1 } = this.drawing.style
-    const dash = this.getLineDash()
+    const { color, lineWidth, fillOpacity = 0.12 } = this.drawing.style
 
     ctx.save()
-    ctx.strokeStyle = color
-    ctx.lineWidth = lineWidth
-    if (dash.length) ctx.setLineDash(dash)
-
-    // Baseline
-    ctx.beginPath()
-    ctx.moveTo(px1.x, px1.y)
-    ctx.lineTo(px2.x, px2.y)
-    ctx.stroke()
-
-    // Parallel offset line
-    ctx.beginPath()
-    ctx.moveTo(px1.x, y3)
-    ctx.lineTo(px2.x, y4)
-    ctx.stroke()
 
     // Fill between the two lines
-    ctx.setLineDash([])
-    const fillColor = hexToRgba(color, fillOpacity)
-    ctx.fillStyle = fillColor
+    ctx.fillStyle = colorWithAlpha(color, fillOpacity)
     ctx.beginPath()
     ctx.moveTo(px1.x, px1.y)
     ctx.lineTo(px2.x, px2.y)
@@ -60,13 +30,66 @@ export class ChannelPlugin extends BaseDrawingPlugin {
     ctx.closePath()
     ctx.fill()
 
+    // Baseline (solid)
+    ctx.strokeStyle = color
+    ctx.lineWidth = lineWidth
+    ctx.setLineDash([])
+    ctx.beginPath()
+    ctx.moveTo(px1.x, px1.y)
+    ctx.lineTo(px2.x, px2.y)
+    ctx.stroke()
+
+    // Parallel line (solid)
+    ctx.beginPath()
+    ctx.moveTo(px1.x, y3)
+    ctx.lineTo(px2.x, y4)
+    ctx.stroke()
+
+    // Midline (dashed)
+    const midY1 = (px1.y + y3) / 2
+    const midY2 = (px2.y + y4) / 2
+    ctx.strokeStyle = colorWithAlpha(color, 0.5)
+    ctx.lineWidth = Math.max(lineWidth - 0.5, 0.5)
+    ctx.setLineDash([6, 4])
+    ctx.beginPath()
+    ctx.moveTo(px1.x, midY1)
+    ctx.lineTo(px2.x, midY2)
+    ctx.stroke()
+
+    // Anchor dots at endpoints
+    ctx.setLineDash([])
+    ctx.strokeStyle = color
+    ctx.lineWidth = 1.5
+    ctx.fillStyle = '#1a1a1a'
+    for (const [x, y] of [[px1.x, px1.y], [px2.x, px2.y], [px1.x, y3], [px2.x, y4]] as [number, number][]) {
+      ctx.beginPath()
+      ctx.arc(x, y, 3.5, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.stroke()
+    }
+
     ctx.restore()
   }
 }
 
-function hexToRgba(hex: string, alpha: number): string {
-  const r = parseInt(hex.slice(1, 3), 16)
-  const g = parseInt(hex.slice(3, 5), 16)
-  const b = parseInt(hex.slice(5, 7), 16)
-  return `rgba(${r},${g},${b},${alpha})`
+function colorWithAlpha(color: string, alpha: number): string {
+  // Handle rgba() format
+  if (color.startsWith('rgba')) {
+    return color.replace(/[\d.]+\)$/, `${alpha})`)
+  }
+  // Handle rgb() format
+  if (color.startsWith('rgb(')) {
+    return color.replace('rgb(', 'rgba(').replace(')', `,${alpha})`)
+  }
+  // Handle hex
+  if (color.startsWith('#')) {
+    const hex = color.length === 4
+      ? `#${color[1]}${color[1]}${color[2]}${color[2]}${color[3]}${color[3]}`
+      : color
+    const r = parseInt(hex.slice(1, 3), 16)
+    const g = parseInt(hex.slice(3, 5), 16)
+    const b = parseInt(hex.slice(5, 7), 16)
+    return `rgba(${r},${g},${b},${alpha})`
+  }
+  return color
 }

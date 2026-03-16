@@ -22,7 +22,7 @@ import { IndicatorPanel } from './chart/IndicatorPanel'
 import { OscillatorPane } from './chart/OscillatorPane'
 import { DrawingManager } from '../lib/chart/drawing-manager'
 import { IndicatorManager } from '../lib/chart/indicator-manager'
-import { DEFAULT_DRAWING_STYLE, OSCILLATOR_INDICATORS } from '../lib/chart/types'
+import { CHANNEL_DEFAULT_STYLE, DEFAULT_DRAWING_STYLE, OSCILLATOR_INDICATORS } from '../lib/chart/types'
 import type { DrawingType } from '../lib/chart/types'
 import { computeRSI, computeMACD, computeADX } from '../lib/chart/indicators'
 
@@ -552,9 +552,10 @@ export default function NiftyChart() {
         const offset = Math.max(priceDiff * 0.3, 10)
         finalPoints = [...next, { time: next[1].time, price: next[1].price + offset }]
       }
+      const style = activeTool === 'channel' ? { ...CHANNEL_DEFAULT_STYLE } : { ...DEFAULT_DRAWING_STYLE }
       addDrawing(symbol, {
         id: crypto.randomUUID(), type: activeTool, points: finalPoints,
-        style: { ...DEFAULT_DRAWING_STYLE }, createdAt: Date.now(),
+        style, createdAt: Date.now(),
       })
       setDrawingInProgress(null)
       cursorPointRef.current = null

@@ -11,7 +11,7 @@ interface Props {
   onClose: () => void
 }
 
-const COLORS = ['rgba(255,255,255,0.45)', '#6366f1', '#f59e0b', '#4caf50', '#e53935', '#06b6d4', '#ec4899', '#8b5cf6']
+const COLORS = ['#ffffff', '#e53935', '#4caf50', '#6366f1', '#f59e0b', '#06b6d4', '#ec4899', '#8b5cf6']
 const WIDTHS: (1 | 2 | 3 | 4)[] = [1, 2, 3, 4]
 
 export const DrawingContextMenu = memo(function DrawingContextMenu({ x, y, style, onChangeStyle, onDelete, onClose }: Props) {
