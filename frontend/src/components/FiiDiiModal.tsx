@@ -74,29 +74,6 @@ function combinedStance(data: ParticipantPositions, prev: ParticipantPositions |
   return stanceLabel(posScore * 0.6 + actScore * 0.4)
 }
 
-/* ── Score bar (replaces net futures bar chart) ──────────────── */
-
-function ScoreBar({ score }: { score: number }) {
-  // Score 0–1 mapped to a bar: 0.5 = center, >0.5 = right (bullish), <0.5 = left (bearish)
-  const pct = Math.abs(score - 0.5) * 2 * 45 // max 45% width
-  const bullish = score >= 0.5
-  const c = bullish ? GREEN : RED
-  return (
-    <div className="relative h-5 rounded bg-[#1e1e1e] overflow-hidden">
-      <div className="absolute left-1/2 top-0 h-full w-px bg-[#2a2a2a]" />
-      {pct > 0 && (
-        <div
-          className="absolute top-0 h-full rounded-sm"
-          style={{
-            background: `linear-gradient(${bullish ? '90deg' : '270deg'}, ${c}50, ${c})`,
-            ...(bullish ? { left: '50%', width: `${pct}%` } : { right: '50%', width: `${pct}%` }),
-          }}
-        />
-      )}
-    </div>
-  )
-}
-
 /* ── Metric cell ─────────────────────────────────────────────── */
 
 function Metric({ label, value, change, colorFn }: {
@@ -178,9 +155,6 @@ function FiiLongShortRatio({ data }: { data: ParticipantSnapshot[] }) {
   // Chart dimensions
   const W = 100
   const H = 60
-  const padL = 0 // y-axis labels drawn outside viewBox via text
-  const padB = 0
-
   const points = ratios
     .map((v, i) => {
       const x = (i / (ratios.length - 1)) * W
