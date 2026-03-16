@@ -4,6 +4,7 @@ import { useShallow } from 'zustand/react/shallow'
 
 import ErrorBoundary from './components/ErrorBoundary'
 import Header from './components/Header'
+import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal'
 import MobileNav from './components/MobileNav'
 import OrderModal from './components/OrderModal'
 import Sidebar from './components/Sidebar'
@@ -90,7 +91,7 @@ function ProtectedLayout() {
 
 export default function App() {
   useWebSocket()
-  useKeyboardShortcuts()
+  const { shortcutsModalOpen, setShortcutsModalOpen } = useKeyboardShortcuts()
   const navigate = useNavigate()
   const {
     accessToken,
@@ -322,6 +323,7 @@ export default function App() {
   return (
     <>
       <Toast />
+      {shortcutsModalOpen && <KeyboardShortcutsModal onClose={() => setShortcutsModalOpen(false)} />}
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/*" element={<ProtectedLayout />} />

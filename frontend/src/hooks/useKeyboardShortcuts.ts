@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useStore } from '../store/useStore'
 
 const TIMEFRAME_MAP: Record<string, '1m' | '5m' | '15m' | '1h' | 'D' | 'W' | 'M'> = {
@@ -11,6 +11,7 @@ const TIMEFRAME_MAP: Record<string, '1m' | '5m' | '15m' | '1h' | 'D' | 'W' | 'M'
 const CHORD_TIMEOUT = 300
 
 export default function useKeyboardShortcuts() {
+  const [shortcutsModalOpen, setShortcutsModalOpen] = useState(false)
   const chordRef = useRef<{ key: string; timer: ReturnType<typeof setTimeout> } | null>(null)
 
   useEffect(() => {
@@ -84,6 +85,13 @@ export default function useKeyboardShortcuts() {
 
       // Don't trigger shortcuts when typing in inputs
       if (isInput) return
+
+      // ? — toggle shortcuts help (before modifier check since ? = Shift+/)
+      if (e.key === '?') {
+        setShortcutsModalOpen((v) => !v)
+        e.preventDefault()
+        return
+      }
 
       // Don't trigger on modifier combos (Cmd+C, Ctrl+V, etc.)
       if (e.metaKey || e.ctrlKey || e.altKey) return
@@ -239,4 +247,6 @@ export default function useKeyboardShortcuts() {
       clearChord()
     }
   }, [])
+
+  return { shortcutsModalOpen, setShortcutsModalOpen }
 }

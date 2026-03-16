@@ -1,6 +1,8 @@
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useShallow } from 'zustand/react/shallow'
 
+import { Keyboard } from 'lucide-react'
+
 import Logo from '../components/Logo'
 import { logout } from '../lib/api'
 import { useStore } from '../store/useStore'
@@ -122,6 +124,15 @@ export default function Header() {
           </div>
           <span className="hidden md:inline text-[11px] text-text-secondary">{user?.display_name ?? 'Guest'}</span>
         </div>
+
+        {/* Shortcuts help */}
+        <button
+          onClick={() => window.dispatchEvent(new KeyboardEvent('keydown', { key: '?', bubbles: true }))}
+          className="hidden md:flex items-center justify-center text-[#555] transition-colors hover:text-text-secondary"
+          title="Keyboard shortcuts (?)"
+        >
+          <Keyboard size={14} />
+        </button>
 
         {/* Logout */}
         <button
