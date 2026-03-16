@@ -251,6 +251,8 @@ export default function NiftyChart() {
     setIndicatorPanelOpen,
     toggleIndicator,
     setOscillatorPaneExpanded,
+    overlayVisible,
+    toggleOverlayVisible,
   } = useStore(useShallow((state) => ({
     addToast: state.addToast,
     alerts: state.alerts,
