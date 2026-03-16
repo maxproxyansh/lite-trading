@@ -292,19 +292,16 @@ class MarketDataService:
     async def _open_incident(self, reason: str, message: str) -> None:
         now = datetime.now(timezone.utc)
         cooldown = timedelta(seconds=max(settings.dhan_incident_alert_cooldown_seconds, 60))
-        # Alert only when degradation first starts or the cooldown has elapsed.
-        # Reason/message changes within an ongoing incident (e.g. OPTION_CHAIN_STALE
-        # ↔ DHAN_UPSTREAM_FAILED flipping, or age counter incrementing) are NOT
-        # treated as new incidents — the cooldown still applies.
-        new_incident = not self._health.incident_open
-        cooldown_elapsed = (
-            not self._health.last_incident_alert_at
-            or now - self._health.last_incident_alert_at >= cooldown
+        # Suppress alerts from flapping (rapid P0 → RECOVERY → P0 cycles).
+        # A "new" incident only counts if we haven't alerted recently.
+        recently_alerted = (
+            self._health.last_incident_alert_at
+            and now - self._health.last_incident_alert_at < cooldown
         )
-        should_alert = new_incident or cooldown_elapsed
+        should_alert = not recently_alerted
 
         self._health.incident_open = True
-        if new_incident or not self._health.incident_since:
+        if not self._health.incident_since:
             self._health.incident_since = now
         self._health.incident_reason = reason
         self._health.incident_message = message
@@ -323,17 +320,30 @@ class MarketDataService:
     async def _close_incident(self, message: str = "Dhan market data recovered") -> None:
         if not self._health.incident_open:
             return
+        now = datetime.now(timezone.utc)
         reason = self._health.incident_reason or "RECOVERED"
+        # Only send RECOVERY alert if the incident lasted longer than the
+        # cooldown period.  Short-lived blips (flapping) are silently cleared.
+        incident_duration = (
+            now - self._health.incident_since
+            if self._health.incident_since
+            else timedelta(0)
+        )
+        cooldown = timedelta(seconds=max(settings.dhan_incident_alert_cooldown_seconds, 60))
+        should_alert = incident_duration >= cooldown
+
         self._health.incident_open = False
         self._health.incident_since = None
         self._health.incident_reason = None
         self._health.incident_message = None
-        self._health.last_recovery_alert_at = datetime.now(timezone.utc)
+        self._health.last_recovery_alert_at = now
         self.snapshot["degraded"] = False
         self.snapshot["degraded_reason"] = None
-        self.snapshot["updated_at"] = datetime.now(timezone.utc)
+        self.snapshot["updated_at"] = now
         self._snapshot_dirty = True
-        await self._send_incident_alert(state="RECOVERY", reason=reason, message=message)
+
+        if should_alert:
+            await self._send_incident_alert(state="RECOVERY", reason=reason, message=message)
 
     async def _evaluate_provider_health(self) -> None:
         now = datetime.now(timezone.utc)
