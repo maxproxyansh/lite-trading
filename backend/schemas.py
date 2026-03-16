@@ -222,6 +222,8 @@ class OptionQuote(BaseModel):
     oi: float | None = None
     oi_lakhs: float | None = None
     volume: float | None = None
+    day_high: float | None = None
+    day_low: float | None = None
     delta: float | None = None
     gamma: float | None = None
     theta: float | None = None

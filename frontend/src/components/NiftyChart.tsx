@@ -252,6 +252,9 @@ export default function NiftyChart() {
   const chartSecurityId = chartQuote?.security_id ?? null
   const chartLabel = chartQuote ? `NIFTY ${chartQuote.strike} ${chartQuote.option_type}` : 'NIFTY 50'
   const chartPrice = chartQuote?.ltp ?? spot
+  // Use option quote's day high/low when viewing an option chart
+  const effectiveDayHigh = chartQuote?.day_high ?? dayHigh
+  const effectiveDayLow = chartQuote?.day_low ?? dayLow
   const alertSymbol = chartQuote?.symbol ?? 'NIFTY 50'
   const alertInstrumentLabel = chartQuote ? `${chartQuote.strike} ${chartQuote.option_type} · ${chartQuote.expiry}` : 'NIFTY 50 spot'
   const containerRef = useRef<HTMLDivElement>(null)
@@ -385,11 +388,11 @@ export default function NiftyChart() {
       return
     }
 
-    // For NIFTY daily candle only, incorporate day high/low from the Dhan feed
+    // For daily candles, incorporate day high/low from the Dhan feed
     let high = Math.max(lastBar.high, price)
     let low = Math.min(lastBar.low, price)
-    if (!optionChartSymbol && timeframe === 'D' && dayHigh && dayHigh > 0) high = Math.max(high, dayHigh)
-    if (!optionChartSymbol && timeframe === 'D' && dayLow && dayLow > 0) low = Math.min(low, dayLow)
+    if (timeframe === 'D' && effectiveDayHigh && effectiveDayHigh > 0) high = Math.max(high, effectiveDayHigh)
+    if (timeframe === 'D' && effectiveDayLow && effectiveDayLow > 0) low = Math.min(low, effectiveDayLow)
 
     const nextBar: CandlestickData<Time> = {
       ...lastBar,
@@ -715,7 +718,7 @@ export default function NiftyChart() {
       watermark: {
         visible: true,
         text: chartLabel,
-        fontSize: 48,
+        fontSize: 64,
         color: 'rgba(255, 255, 255, 0.04)',
         horzAlign: 'center',
         vertAlign: 'center',
@@ -1045,23 +1048,25 @@ export default function NiftyChart() {
           </div>
 
           <div className="ml-auto flex shrink-0 items-center gap-0.5">
-            {TIMEFRAMES.map((tf) => (
-              <button
-                key={tf}
-                onClick={() => {
-                  setLoading(true)
-                  setTimeframe(tf)
-                }}
-                className={`px-1.5 md:px-2 py-0.5 text-[11px] transition-colors ${
-                  timeframe === tf
-                    ? 'rounded-sm bg-brand text-bg-primary'
-                    : 'text-text-muted hover:text-text-secondary'
-                }`}
-              >
-                {tf}
-              </button>
-            ))}
-            <div className="mx-1 h-3 w-px bg-border-primary opacity-50" />
+            <div className="max-[600px]:hidden flex items-center gap-0.5">
+              {TIMEFRAMES.map((tf) => (
+                <button
+                  key={tf}
+                  onClick={() => {
+                    setLoading(true)
+                    setTimeframe(tf)
+                  }}
+                  className={`px-1.5 md:px-2 py-0.5 text-[11px] transition-colors ${
+                    timeframe === tf
+                      ? 'rounded-sm bg-brand text-bg-primary'
+                      : 'text-text-muted hover:text-text-secondary'
+                  }`}
+                >
+                  {tf}
+                </button>
+              ))}
+              <div className="mx-1 h-3 w-px bg-border-primary opacity-50" />
+            </div>
             <button
               onClick={() => setShowVolume((v) => !v)}
               className={`px-1.5 py-0.5 text-[11px] rounded-sm transition-colors ${
@@ -1087,6 +1092,26 @@ export default function NiftyChart() {
               <span>{activeAlerts.length} active</span>
             </button>
           </div>
+        </div>
+
+        {/* Timeframe buttons on mobile — separate row for < 600px */}
+        <div className="min-[601px]:hidden flex items-center gap-0.5 px-3 pb-1">
+          {TIMEFRAMES.map((tf) => (
+            <button
+              key={tf}
+              onClick={() => {
+                setLoading(true)
+                setTimeframe(tf)
+              }}
+              className={`px-2 py-0.5 text-[11px] transition-colors ${
+                timeframe === tf
+                  ? 'rounded-sm bg-brand text-bg-primary'
+                  : 'text-text-muted hover:text-text-secondary'
+              }`}
+            >
+              {tf}
+            </button>
+          ))}
         </div>
 
         {/* OHLC on mobile — separate row since inline won't fit */}
