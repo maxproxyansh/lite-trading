@@ -211,26 +211,24 @@ export default function useKeyboardShortcuts() {
         return
       }
 
-      // Drawing tool shortcuts (only when drawing toolbar is open)
-      if (state.drawingToolbar) {
-        // - key → horizontal line
-        if (e.key === '-') {
-          state.setActiveTool(state.activeTool === 'hline' ? null : 'hline')
-          e.preventDefault()
-          return
-        }
-        // | key (Shift+\) → vertical line
-        if (e.key === '|') {
-          state.setActiveTool(state.activeTool === 'vline' ? null : 'vline')
-          e.preventDefault()
-          return
-        }
-        // T key → trendline
-        if (key === 't') {
-          state.setActiveTool(state.activeTool === 'trendline' ? null : 'trendline')
-          e.preventDefault()
-          return
-        }
+      // Drawing tool shortcuts — always active, auto-opens toolbar
+      if (e.key === '-') {
+        if (!state.drawingToolbar) state.setDrawingToolbar(true)
+        state.setActiveTool(state.activeTool === 'hline' ? null : 'hline')
+        e.preventDefault()
+        return
+      }
+      if (e.key === '|') {
+        if (!state.drawingToolbar) state.setDrawingToolbar(true)
+        state.setActiveTool(state.activeTool === 'vline' ? null : 'vline')
+        e.preventDefault()
+        return
+      }
+      if (key === 't') {
+        if (!state.drawingToolbar) state.setDrawingToolbar(true)
+        state.setActiveTool(state.activeTool === 'trendline' ? null : 'trendline')
+        e.preventDefault()
+        return
       }
     }
 
