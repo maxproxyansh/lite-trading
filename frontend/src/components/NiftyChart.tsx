@@ -700,6 +700,7 @@ export default function NiftyChart() {
     historySessionRef.current += 1
     const session = historySessionRef.current
     setLoading(true)
+    const isIntraday = !['D', 'W', 'M'].includes(timeframe)
     chartRef.current?.applyOptions({
       watermark: {
         visible: true,
@@ -710,6 +711,7 @@ export default function NiftyChart() {
         vertAlign: 'center',
       },
     })
+    chartRef.current?.timeScale().applyOptions({ timeVisible: isIntraday })
     hoveredCandleTimeRef.current = null
     setHoveredCandleStats(null)
     candlesRef.current = []
