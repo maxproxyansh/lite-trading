@@ -6,13 +6,11 @@ import { createDrawingPlugin } from './plugins'
 const LINE_STYLE_MAP = { solid: 0, dashed: 2, dotted: 3 } as const
 
 export class DrawingManager {
-  private _chart: IChartApi
   private _series: ISeriesApi<'Candlestick'>
   private _plugins: Map<string, BaseDrawingPlugin> = new Map()
   private _priceLines: Map<string, IPriceLine> = new Map()
 
-  constructor(chart: IChartApi, series: ISeriesApi<'Candlestick'>) {
-    this._chart = chart
+  constructor(_chart: IChartApi, series: ISeriesApi<'Candlestick'>) {
     this._series = series
   }
 

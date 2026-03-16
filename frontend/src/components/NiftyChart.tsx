@@ -23,7 +23,6 @@ import { OscillatorPane } from './chart/OscillatorPane'
 import { DrawingManager } from '../lib/chart/drawing-manager'
 import { IndicatorManager } from '../lib/chart/indicator-manager'
 import { CHANNEL_DEFAULT_STYLE, DEFAULT_DRAWING_STYLE, OSCILLATOR_INDICATORS } from '../lib/chart/types'
-import type { DrawingType } from '../lib/chart/types'
 import { computeRSI, computeMACD, computeADX } from '../lib/chart/indicators'
 
 const TIMEFRAMES = ['1m', '5m', '15m', '1h', 'D', 'W', 'M'] as const
