@@ -23,6 +23,9 @@ export type FundsResponse = components['schemas']['FundsResponse']
 export type SignalResponse = components['schemas']['SignalResponse']
 export type AnalyticsPoint = components['schemas']['AnalyticsPoint']
 export type AnalyticsResponse = components['schemas']['AnalyticsResponse']
+export type DetailedAnalyticsResponse = components['schemas']['DetailedAnalyticsResponse']
+export type DetailedTradeSummary = components['schemas']['DetailedTradeSummary']
+export type AnalyticsAttribution = components['schemas']['AnalyticsAttribution']
 export type OrderPayload = components['schemas']['OrderRequest']
 export type CreateAgentKeyPayload = components['schemas']['CreateAgentKeyRequest']
 export type AgentKeyResponse = components['schemas']['AgentKeyResponse']
@@ -271,6 +274,40 @@ export async function fetchAnalytics(portfolioId: string) {
   return rawFetch<AnalyticsResponse>(`/api/v1/analytics?portfolio_id=${encodeURIComponent(portfolioId)}`)
 }
 
+export async function fetchDetailedAnalytics(portfolioId: string) {
+  return rawFetch<DetailedAnalyticsResponse>(`/api/v1/analytics/detailed?portfolio_id=${encodeURIComponent(portfolioId)}`)
+}
+
+export type EnrichedAnalyticsResponse = {
+  portfolio_id: string
+  total_closed_trades: number
+  realized_pnl: number
+  unrealized_pnl: number
+  total_equity: number
+  win_rate: number
+  expectancy: number
+  risk_reward: number
+  profit_factor: number
+  sharpe_ratio: number
+  sortino_ratio: number
+  max_drawdown: number
+  biggest_win: number
+  biggest_loss: number
+  max_consecutive_wins: number
+  max_consecutive_losses: number
+  avg_hold_seconds: number
+  avg_win_hold_seconds: number
+  avg_loss_hold_seconds: number
+  equity_curve: AnalyticsPoint[]
+  pnl_by_day: AnalyticsPoint[]
+  drawdown_curve: AnalyticsPoint[]
+  closed_trades: DetailedTradeSummary[]
+}
+
+export async function fetchEnrichedAnalytics(portfolioId: string) {
+  return rawFetch<EnrichedAnalyticsResponse>(`/api/v1/analytics/enriched?portfolio_id=${encodeURIComponent(portfolioId)}`)
+}
+
 export async function fetchSignals() {
   return rawFetch<SignalResponse[]>('/api/v1/signals')
 }
@@ -304,4 +341,34 @@ export async function createUser(payload: CreateUserPayload) {
     method: 'POST',
     body: JSON.stringify(payload),
   })
+}
+
+export type ParticipantPositions = {
+  fut_long: number
+  fut_short: number
+  net_futures: number
+  opt_call_long: number
+  opt_call_short: number
+  opt_put_long: number
+  opt_put_short: number
+}
+
+export type ParticipantSnapshot = {
+  date: string
+  fii: ParticipantPositions
+  dii: ParticipantPositions
+  pro: ParticipantPositions
+  client: ParticipantPositions
+}
+
+export type ParticipantHistoryResponse = {
+  snapshots: ParticipantSnapshot[]
+}
+
+export async function fetchParticipantsToday() {
+  return rawFetch<ParticipantSnapshot>('/api/v1/participants/today')
+}
+
+export async function fetchParticipantsHistory(days = 30) {
+  return rawFetch<ParticipantHistoryResponse>(`/api/v1/participants/history?days=${days}`)
 }

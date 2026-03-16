@@ -109,6 +109,17 @@ def _run_migrations(eng) -> None:
                 conn.execute(text("CREATE INDEX IF NOT EXISTS ix_alerts_creator_agent_key_id ON alerts (creator_agent_key_id)"))
                 logger.info("Migration: added alerts.creator_agent_key_id column")
 
+    # Add market context columns to fills
+    if "fills" in inspector.get_table_names():
+        fill_columns = [c["name"] for c in inspector.get_columns("fills")]
+        with eng.begin() as conn:
+            if "spot_at_fill" not in fill_columns:
+                conn.execute(text("ALTER TABLE fills ADD COLUMN spot_at_fill NUMERIC(14,2)"))
+                logger.info("Migration: added fills.spot_at_fill column")
+            if "vix_at_fill" not in fill_columns:
+                conn.execute(text("ALTER TABLE fills ADD COLUMN vix_at_fill NUMERIC(8,2)"))
+                logger.info("Migration: added fills.vix_at_fill column")
+
     # Migrate Float columns to Numeric(14,2) for financial precision
     # PostgreSQL supports ALTER COLUMN TYPE; SQLite ignores column types anyway
     dialect = eng.dialect.name

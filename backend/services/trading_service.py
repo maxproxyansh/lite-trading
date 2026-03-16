@@ -777,6 +777,13 @@ def _fill_order(db: Session, order: Order, *, fill_price: float, actor_type: str
     order.filled_at = _utcnow()
     order.updated_at = _utcnow()
 
+    snapshot = market_data_service.snapshot
+    spot_at_fill = snapshot.get("spot") or None
+    vix_at_fill = snapshot.get("vix") or None
+    # Zero spot means no data loaded yet — treat as None
+    if spot_at_fill is not None and float(spot_at_fill) == 0.0:
+        spot_at_fill = None
+
     fill = Fill(
         order_id=order.id,
         portfolio_id=order.portfolio_id,
@@ -785,6 +792,8 @@ def _fill_order(db: Session, order: Order, *, fill_price: float, actor_type: str
         quantity=order.quantity,
         price=fill_price,
         charges=order.charges,
+        spot_at_fill=spot_at_fill,
+        vix_at_fill=vix_at_fill,
     )
     db.add(fill)
 

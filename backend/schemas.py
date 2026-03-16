@@ -715,10 +715,22 @@ class DetailedTradeSummary(BaseModel):
     option_type: Literal["CE", "PE"]
     direction: Literal["LONG", "SHORT"]
     quantity: int
+    lots: int
     entry_time: datetime
     exit_time: datetime
     hold_seconds: float
+    hold_days: int
     realized_pnl: float
+    entry_price: float
+    exit_price: float
+    expiry_date: str
+    days_to_expiry_at_entry: int
+    days_to_expiry_at_exit: int
+    spot_at_entry: float | None = None
+    spot_at_exit: float | None = None
+    vix_at_entry: float | None = None
+    vix_at_exit: float | None = None
+    atm_distance: int | None = None
 
 
 class AnalyticsAttribution(BaseModel):
@@ -750,9 +762,57 @@ class DetailedAnalyticsResponse(BaseModel):
     max_consecutive_losses: int
 
 
+class EnrichedAnalyticsResponse(BaseModel):
+    portfolio_id: str
+    total_closed_trades: int
+    realized_pnl: float
+    unrealized_pnl: float
+    total_equity: float
+    win_rate: float
+    expectancy: float
+    risk_reward: float
+    profit_factor: float
+    sharpe_ratio: float
+    sortino_ratio: float
+    max_drawdown: float
+    biggest_win: float
+    biggest_loss: float
+    max_consecutive_wins: int
+    max_consecutive_losses: int
+    avg_hold_seconds: float
+    avg_win_hold_seconds: float
+    avg_loss_hold_seconds: float
+    equity_curve: list[AnalyticsPoint]
+    pnl_by_day: list[AnalyticsPoint]
+    drawdown_curve: list[AnalyticsPoint]
+    closed_trades: list[DetailedTradeSummary]
+
+
 class WebsocketEnvelope(BaseModel):
     type: str
     payload: dict[str, Any]
+
+
+class ParticipantPositions(BaseModel):
+    fut_long: int
+    fut_short: int
+    net_futures: int
+    opt_call_long: int
+    opt_call_short: int
+    opt_put_long: int
+    opt_put_short: int
+
+
+class ParticipantSnapshot(BaseModel):
+    date: date
+    fii: ParticipantPositions
+    dii: ParticipantPositions
+    pro: ParticipantPositions
+    client: ParticipantPositions
+
+
+class ParticipantHistoryResponse(BaseModel):
+    snapshots: list[ParticipantSnapshot]
 
 
 AgentProfileResponse.model_rebuild()

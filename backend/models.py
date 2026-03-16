@@ -121,6 +121,8 @@ class Fill(Base, BaseModelMixin):
     quantity = Column(Integer, nullable=False)
     price = Column(Numeric(14, 2), nullable=False)
     charges = Column(Numeric(14, 2), nullable=False, default=0.0)
+    spot_at_fill = Column(Numeric(14, 2), nullable=True)
+    vix_at_fill = Column(Numeric(8, 2), nullable=True)
     executed_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
 
 

@@ -7,6 +7,7 @@ from math import sqrt
 
 from sqlalchemy.orm import Session
 
+from config import get_settings
 from models import Fill, Order, Portfolio, Position
 from schemas import (
     AnalyticsAttribution,
@@ -14,6 +15,7 @@ from schemas import (
     AnalyticsResponse,
     DetailedAnalyticsResponse,
     DetailedTradeSummary,
+    EnrichedAnalyticsResponse,
 )
 from services.trading_service import _position_unrealized, _refresh_position_mark, funds_summary
 
@@ -22,8 +24,33 @@ def _money(value: float | int | Decimal) -> Decimal:
     return Decimal(str(value)).quantize(Decimal("0.01"))
 
 
+def _expiry_from_symbol(symbol: str) -> str:
+    """Extract expiry date string (YYYY-MM-DD) from NIFTY_YYYY-MM-DD_STRIKE_CE/PE."""
+    try:
+        return symbol.split("_")[1]
+    except IndexError:
+        return ""
+
+
+def _safe_date(date_str: str) -> date | None:
+    """Parse YYYY-MM-DD string to date, return None on failure."""
+    try:
+        return date.fromisoformat(date_str)
+    except (ValueError, TypeError):
+        return None
+
+
+def _days_between(d1: date | None, d2: date | None) -> int:
+    if d1 is None or d2 is None:
+        return 0
+    return (d1 - d2).days
+
+
 def _build_closed_trades(fills: list[Fill]) -> list[DetailedTradeSummary]:
-    open_lots: dict[tuple[str, str], list[dict[str, Decimal | int | str | datetime]]] = defaultdict(list)
+    settings = get_settings()
+    lot_size = settings.nifty_lot_size
+
+    open_lots: dict[tuple[str, str], list[dict]] = defaultdict(list)
     closed_trades: list[DetailedTradeSummary] = []
 
     for fill in fills:
@@ -35,6 +62,9 @@ def _build_closed_trades(fills: list[Fill]) -> list[DetailedTradeSummary]:
         opposite_bucket = open_lots[opposite_key]
         charge_per_unit = (fill_charges / Decimal(fill.quantity)) if fill.quantity else Decimal("0.00")
 
+        fill_spot = float(fill.spot_at_fill) if fill.spot_at_fill is not None else None
+        fill_vix = float(fill.vix_at_fill) if fill.vix_at_fill is not None else None
+
         if fill.side == "BUY":
             while remaining > 0 and opposite_bucket:
                 open_lot = opposite_bucket[0]
@@ -43,17 +73,40 @@ def _build_closed_trades(fills: list[Fill]) -> list[DetailedTradeSummary]:
                 entry_charge = open_lot["charge_per_unit"] * Decimal(close_qty)
                 exit_charge = charge_per_unit * Decimal(close_qty)
                 pnl = (_money(open_lot["price"]) - fill_price) * Decimal(close_qty) - entry_charge - exit_charge
+
+                strike = int(open_lot["strike"])
+                expiry_str = str(open_lot["expiry_date"])
+                expiry_d = _safe_date(expiry_str)
+                entry_date = open_lot["executed_at"].date() if hasattr(open_lot["executed_at"], "date") else None
+                exit_date = fill.executed_at.date()
+                spot_entry = open_lot.get("spot")
+                spot_exit = fill_spot
+                vix_entry = open_lot.get("vix")
+                vix_exit = fill_vix
+
                 closed_trades.append(
                     DetailedTradeSummary(
                         symbol=fill.symbol,
-                        strike=int(open_lot["strike"]),
+                        strike=strike,
                         option_type=str(open_lot["option_type"]),
                         direction="SHORT",
                         quantity=close_qty,
+                        lots=close_qty // lot_size,
                         entry_time=open_lot["executed_at"],
                         exit_time=fill.executed_at,
                         hold_seconds=max((fill.executed_at - open_lot["executed_at"]).total_seconds(), 0.0),
+                        hold_days=(exit_date - entry_date).days if entry_date and exit_date else 0,
                         realized_pnl=float(pnl),
+                        entry_price=float(open_lot["price"]),
+                        exit_price=float(fill_price),
+                        expiry_date=expiry_str,
+                        days_to_expiry_at_entry=_days_between(expiry_d, entry_date),
+                        days_to_expiry_at_exit=_days_between(expiry_d, exit_date),
+                        spot_at_entry=spot_entry,
+                        spot_at_exit=spot_exit,
+                        vix_at_entry=vix_entry,
+                        vix_at_exit=vix_exit,
+                        atm_distance=(strike - int(spot_entry)) if spot_entry is not None else None,
                     )
                 )
                 open_qty -= close_qty
@@ -70,7 +123,10 @@ def _build_closed_trades(fills: list[Fill]) -> list[DetailedTradeSummary]:
                         "charge_per_unit": charge_per_unit,
                         "strike": _strike_from_symbol(fill.symbol),
                         "option_type": _option_type_from_symbol(fill.symbol),
+                        "expiry_date": _expiry_from_symbol(fill.symbol),
                         "executed_at": fill.executed_at,
+                        "spot": fill_spot,
+                        "vix": fill_vix,
                     }
                 )
         else:
@@ -81,17 +137,40 @@ def _build_closed_trades(fills: list[Fill]) -> list[DetailedTradeSummary]:
                 entry_charge = open_lot["charge_per_unit"] * Decimal(close_qty)
                 exit_charge = charge_per_unit * Decimal(close_qty)
                 pnl = (fill_price - _money(open_lot["price"])) * Decimal(close_qty) - entry_charge - exit_charge
+
+                strike = int(open_lot["strike"])
+                expiry_str = str(open_lot["expiry_date"])
+                expiry_d = _safe_date(expiry_str)
+                entry_date = open_lot["executed_at"].date() if hasattr(open_lot["executed_at"], "date") else None
+                exit_date = fill.executed_at.date()
+                spot_entry = open_lot.get("spot")
+                spot_exit = fill_spot
+                vix_entry = open_lot.get("vix")
+                vix_exit = fill_vix
+
                 closed_trades.append(
                     DetailedTradeSummary(
                         symbol=fill.symbol,
-                        strike=int(open_lot["strike"]),
+                        strike=strike,
                         option_type=str(open_lot["option_type"]),
                         direction="LONG",
                         quantity=close_qty,
+                        lots=close_qty // lot_size,
                         entry_time=open_lot["executed_at"],
                         exit_time=fill.executed_at,
                         hold_seconds=max((fill.executed_at - open_lot["executed_at"]).total_seconds(), 0.0),
+                        hold_days=(exit_date - entry_date).days if entry_date and exit_date else 0,
                         realized_pnl=float(pnl),
+                        entry_price=float(open_lot["price"]),
+                        exit_price=float(fill_price),
+                        expiry_date=expiry_str,
+                        days_to_expiry_at_entry=_days_between(expiry_d, entry_date),
+                        days_to_expiry_at_exit=_days_between(expiry_d, exit_date),
+                        spot_at_entry=spot_entry,
+                        spot_at_exit=spot_exit,
+                        vix_at_entry=vix_entry,
+                        vix_at_exit=vix_exit,
+                        atm_distance=(strike - int(spot_entry)) if spot_entry is not None else None,
                     )
                 )
                 open_qty -= close_qty
@@ -108,7 +187,10 @@ def _build_closed_trades(fills: list[Fill]) -> list[DetailedTradeSummary]:
                         "charge_per_unit": charge_per_unit,
                         "strike": _strike_from_symbol(fill.symbol),
                         "option_type": _option_type_from_symbol(fill.symbol),
+                        "expiry_date": _expiry_from_symbol(fill.symbol),
                         "executed_at": fill.executed_at,
+                        "spot": fill_spot,
+                        "vix": fill_vix,
                     }
                 )
 
@@ -192,6 +274,26 @@ def _risk_ratios(trades: list[DetailedTradeSummary], starting_cash: float) -> tu
     total_return = (float(equity) - starting_cash) / max(starting_cash, 1.0)
     calmar = total_return / (max_drawdown / max(starting_cash, 1.0)) if max_drawdown > 0 else 0.0
     return round(sharpe, 4), round(sortino, 4), round(calmar, 4), equity_curve, drawdown_curve
+
+
+def _consecutive_streaks(trades: list[DetailedTradeSummary]) -> tuple[int, int]:
+    max_wins = 0
+    max_losses = 0
+    current_wins = 0
+    current_losses = 0
+    for trade in sorted(trades, key=lambda item: item.exit_time):
+        if trade.realized_pnl > 0:
+            current_wins += 1
+            current_losses = 0
+        elif trade.realized_pnl < 0:
+            current_losses += 1
+            current_wins = 0
+        else:
+            current_wins = 0
+            current_losses = 0
+        max_wins = max(max_wins, current_wins)
+        max_losses = max(max_losses, current_losses)
+    return max_wins, max_losses
 
 
 def analytics_summary(db: Session, portfolio_id: str) -> AnalyticsResponse:
@@ -338,22 +440,7 @@ def detailed_analytics_summary(
         if closed_trades
         else 0.0
     )
-    max_consecutive_wins = 0
-    max_consecutive_losses = 0
-    current_wins = 0
-    current_losses = 0
-    for trade in sorted(closed_trades, key=lambda item: item.exit_time):
-        if trade.realized_pnl > 0:
-            current_wins += 1
-            current_losses = 0
-        elif trade.realized_pnl < 0:
-            current_losses += 1
-            current_wins = 0
-        else:
-            current_wins = 0
-            current_losses = 0
-        max_consecutive_wins = max(max_consecutive_wins, current_wins)
-        max_consecutive_losses = max(max_consecutive_losses, current_losses)
+    max_consecutive_wins, max_consecutive_losses = _consecutive_streaks(closed_trades)
 
     return DetailedAnalyticsResponse(
         portfolio_id=portfolio_id,
@@ -373,4 +460,82 @@ def detailed_analytics_summary(
         average_hold_seconds=round(average_hold_seconds, 2),
         max_consecutive_wins=max_consecutive_wins,
         max_consecutive_losses=max_consecutive_losses,
+    )
+
+
+def enriched_analytics_summary(db: Session, portfolio_id: str) -> EnrichedAnalyticsResponse:
+    portfolio = db.query(Portfolio).filter(Portfolio.id == portfolio_id).first()
+    if not portfolio:
+        raise ValueError("Portfolio not found")
+
+    fills = db.query(Fill).filter(Fill.portfolio_id == portfolio_id).order_by(Fill.executed_at.asc()).all()
+    funds = funds_summary(db, portfolio_id)
+
+    closed_trades = _build_closed_trades(fills)
+
+    # Reuse _risk_ratios for sharpe, sortino, equity_curve, drawdown_curve
+    sharpe, sortino, _calmar, equity_curve, drawdown_curve = _risk_ratios(closed_trades, float(portfolio.starting_cash))
+    max_drawdown = max((p.value for p in drawdown_curve), default=0.0)
+
+    # Reuse analytics_summary logic for pnl_by_day
+    basic = analytics_summary(db, portfolio_id)
+    pnl_by_day = basic.pnl_by_day
+
+    # Win/loss classification
+    wins = [t for t in closed_trades if t.realized_pnl > 0]
+    losses = [t for t in closed_trades if t.realized_pnl < 0]
+    total = len(closed_trades)
+
+    win_rate = round((len(wins) / total) * 100, 2) if total else 0.0
+
+    total_win_pnl = sum(t.realized_pnl for t in wins)
+    total_loss_pnl = sum(t.realized_pnl for t in losses)
+    avg_win = total_win_pnl / len(wins) if wins else 0.0
+    avg_loss = abs(total_loss_pnl / len(losses)) if losses else 0.0
+
+    # Expectancy: avg_win * win_prob - avg_loss * loss_prob
+    win_prob = len(wins) / total if total else 0.0
+    loss_prob = len(losses) / total if total else 0.0
+    expectancy = round(avg_win * win_prob - avg_loss * loss_prob, 2)
+
+    # Risk/reward: avg_win / avg_loss
+    risk_reward = round(avg_win / avg_loss, 4) if avg_loss > 0 else 0.0
+
+    # Profit factor: gross_wins / gross_losses
+    profit_factor = round(total_win_pnl / abs(total_loss_pnl), 4) if total_loss_pnl != 0 else 0.0
+
+    biggest_win = max((t.realized_pnl for t in closed_trades), default=0.0)
+    biggest_loss = min((t.realized_pnl for t in closed_trades), default=0.0)
+
+    max_consecutive_wins, max_consecutive_losses = _consecutive_streaks(closed_trades)
+
+    # Hold time stats
+    avg_hold_seconds = round(sum(t.hold_seconds for t in closed_trades) / total, 2) if total else 0.0
+    avg_win_hold_seconds = round(sum(t.hold_seconds for t in wins) / len(wins), 2) if wins else 0.0
+    avg_loss_hold_seconds = round(sum(t.hold_seconds for t in losses) / len(losses), 2) if losses else 0.0
+
+    return EnrichedAnalyticsResponse(
+        portfolio_id=portfolio_id,
+        total_closed_trades=total,
+        realized_pnl=round(sum(t.realized_pnl for t in closed_trades), 2),
+        unrealized_pnl=round(funds.unrealized_pnl, 2),
+        total_equity=round(funds.total_equity, 2),
+        win_rate=win_rate,
+        expectancy=expectancy,
+        risk_reward=risk_reward,
+        profit_factor=profit_factor,
+        sharpe_ratio=sharpe,
+        sortino_ratio=sortino,
+        max_drawdown=round(max_drawdown, 2),
+        biggest_win=round(biggest_win, 2),
+        biggest_loss=round(biggest_loss, 2),
+        max_consecutive_wins=max_consecutive_wins,
+        max_consecutive_losses=max_consecutive_losses,
+        avg_hold_seconds=avg_hold_seconds,
+        avg_win_hold_seconds=avg_win_hold_seconds,
+        avg_loss_hold_seconds=avg_loss_hold_seconds,
+        equity_curve=equity_curve,
+        pnl_by_day=pnl_by_day,
+        drawdown_curve=drawdown_curve,
+        closed_trades=closed_trades,
     )
