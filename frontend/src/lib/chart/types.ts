@@ -7,7 +7,7 @@ export type DrawingPoint = {
 
 export type DrawingStyle = {
   color: string           // hex e.g. '#6366f1'
-  lineWidth: 1 | 2 | 3
+  lineWidth: 1 | 2 | 3 | 4
   lineStyle: 'solid' | 'dashed' | 'dotted'
   fillOpacity?: number    // 0-1, for rect/channel/fib zones
 }
@@ -35,10 +35,10 @@ export const OVERLAY_INDICATORS: IndicatorType[] = ['ema', 'sma', 'bb', 'vwap', 
 export const OSCILLATOR_INDICATORS: IndicatorType[] = ['rsi', 'macd', 'adx']
 
 export const DEFAULT_DRAWING_STYLE: DrawingStyle = {
-  color: '#6366f1',
+  color: 'rgba(255,255,255,0.45)',
   lineWidth: 1,
   lineStyle: 'solid',
-  fillOpacity: 0.1,
+  fillOpacity: 0.08,
 }
 
 export const DEFAULT_INDICATOR_CONFIGS: IndicatorConfig[] = [

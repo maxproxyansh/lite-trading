@@ -88,6 +88,7 @@ interface AppState {
   indicatorPanelOpen: boolean
   indicators: IndicatorConfig[]
   oscillatorPaneState: Record<string, boolean>
+  overlayVisible: boolean
   setChartTimeframe: (tf: AppState['chartTimeframe']) => void
   setChainView: (view: AppState['chainView']) => void
   setChainFilter: (filter: AppState['chainFilter']) => void
@@ -134,6 +135,7 @@ interface AppState {
   setIndicatorPanelOpen: (open: boolean) => void
   toggleIndicator: (id: string) => void
   setOscillatorPaneExpanded: (id: string, expanded: boolean) => void
+  toggleOverlayVisible: () => void
 }
 
 function initialUserScopedState(): Pick<
@@ -427,6 +429,7 @@ export const useStore = create<AppState>((set, get) => ({
   indicatorPanelOpen: false,
   indicators: loadIndicatorConfigs(),
   oscillatorPaneState: {},
+  overlayVisible: true,
   setChartTimeframe: (chartTimeframe) => set({ chartTimeframe }),
   setChainView: (chainView) => set({ chainView }),
   setChainFilter: (chainFilter) => set({ chainFilter }),
@@ -676,4 +679,5 @@ export const useStore = create<AppState>((set, get) => ({
   setOscillatorPaneExpanded: (id, expanded) => {
     set({ oscillatorPaneState: { ...get().oscillatorPaneState, [id]: expanded } })
   },
+  toggleOverlayVisible: () => set({ overlayVisible: !get().overlayVisible }),
 }))

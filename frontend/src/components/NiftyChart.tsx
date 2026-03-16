@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
-import { BarChart2, Bell, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { BarChart2, Bell, Eye, EyeOff, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { createChart } from 'lightweight-charts'
 import type { CandlestickData, HistogramData, IChartApi, ISeriesApi, LogicalRange, MouseEventParams, Time } from 'lightweight-charts'
 import { useShallow } from 'zustand/react/shallow'
@@ -285,6 +285,8 @@ export default function NiftyChart() {
     setIndicatorPanelOpen: state.setIndicatorPanelOpen,
     toggleIndicator: state.toggleIndicator,
     setOscillatorPaneExpanded: state.setOscillatorPaneExpanded,
+    overlayVisible: state.overlayVisible,
+    toggleOverlayVisible: state.toggleOverlayVisible,
   })))
   /* timeframe & setTimeframe are now from the store, not local state */
   const chartQuote = optionChartSymbol && chain
@@ -322,6 +324,7 @@ export default function NiftyChart() {
   const dragCleanupRef = useRef<(() => void) | null>(null)
   const drawingManagerRef = useRef<DrawingManager | null>(null)
   const indicatorManagerRef = useRef<IndicatorManager | null>(null)
+  const drawingDragRef = useRef<{ drawingId: string; symbol: string; startY: number; startX: number; startPrice: number; startTime: number; type: 'hline' | 'vline'; moved: boolean } | null>(null)
   const [loading, setLoading] = useState(true)
   const [candleRevision, setCandleRevision] = useState(0)
   const [visibleLogicalRange, setVisibleLogicalRange] = useState<LogicalRange | null>(null)
@@ -1029,14 +1032,18 @@ export default function NiftyChart() {
 
   useEffect(() => {
     const symbol = chartQuote?.symbol ?? 'NIFTY 50'
-    const symbolDrawings = drawings[symbol] ?? []
+    const symbolDrawings = overlayVisible ? (drawings[symbol] ?? []) : []
     drawingManagerRef.current?.sync(symbolDrawings)
-  }, [drawings, chartQuote?.symbol])
+  }, [drawings, chartQuote?.symbol, overlayVisible])
 
   useEffect(() => {
     if (!indicatorManagerRef.current) return
+    if (!overlayVisible) {
+      indicatorManagerRef.current.update([], [])
+      return
+    }
     indicatorManagerRef.current.update(indicators, rawCandlesRef.current)
-  }, [indicators, candleRevision])
+  }, [indicators, candleRevision, overlayVisible])
 
   useEffect(() => {
     if (alertModal?.mode === 'edit' && !alerts.some((alert) => alert.id === alertModal.alertId)) {
@@ -1102,6 +1109,87 @@ export default function NiftyChart() {
       return
     }
     event.currentTarget.focus()
+
+    // Drawing drag initiation (hline/vline only, when toolbar is open and no tool active)
+    if (drawingToolbar && !activeTool && seriesRef.current && chartRef.current) {
+      const rect = containerRef.current?.getBoundingClientRect()
+      if (!rect) return
+      const x = event.clientX - rect.left
+      const y = event.clientY - rect.top
+      const symbol = chartQuote?.symbol ?? 'NIFTY 50'
+      const symbolDrawings = drawings[symbol] ?? []
+
+      for (const drawing of symbolDrawings) {
+        if (drawing.type === 'hline') {
+          const lineY = seriesRef.current.priceToCoordinate(drawing.points[0].price)
+          if (lineY !== null && Math.abs(y - lineY) < 12) {
+            drawingDragRef.current = { drawingId: drawing.id, symbol, startY: event.clientY, startX: event.clientX, startPrice: drawing.points[0].price, startTime: 0, type: 'hline', moved: false }
+            setSelectedDrawingId(drawing.id)
+            document.body.style.userSelect = 'none'
+            const handleMove = (moveEvent: PointerEvent) => {
+              const state = drawingDragRef.current
+              if (!state || !seriesRef.current || !containerRef.current) return
+              if (!state.moved && Math.abs(moveEvent.clientY - state.startY) > 5) state.moved = true
+              if (!state.moved) return
+              const moveRect = containerRef.current.getBoundingClientRect()
+              const newPrice = seriesRef.current.coordinateToPrice(clamp(moveEvent.clientY - moveRect.top, 0, moveRect.height))
+              if (newPrice !== null) {
+                updateDrawing(state.symbol, state.drawingId, { points: [{ time: 0, price: Number(newPrice.toFixed(2)) }] })
+              }
+            }
+            const handleUp = () => {
+              window.removeEventListener('pointermove', handleMove)
+              window.removeEventListener('pointerup', handleUp)
+              document.body.style.userSelect = ''
+              drawingDragRef.current = null
+            }
+            window.addEventListener('pointermove', handleMove)
+            window.addEventListener('pointerup', handleUp)
+            return
+          }
+        }
+        if (drawing.type === 'vline') {
+          const chart = chartRef.current
+          const lineX = chart.timeScale().timeToCoordinate(drawing.points[0].time as Time)
+          if (lineX !== null && Math.abs(x - lineX) < 12) {
+            drawingDragRef.current = { drawingId: drawing.id, symbol, startY: event.clientY, startX: event.clientX, startPrice: 0, startTime: drawing.points[0].time, type: 'vline', moved: false }
+            setSelectedDrawingId(drawing.id)
+            document.body.style.userSelect = 'none'
+            const handleMove = (moveEvent: PointerEvent) => {
+              const state = drawingDragRef.current
+              if (!state || !chartRef.current || !containerRef.current) return
+              if (!state.moved && Math.abs(moveEvent.clientX - state.startX) > 5) state.moved = true
+              if (!state.moved) return
+              const moveRect = containerRef.current.getBoundingClientRect()
+              const logicalX = moveEvent.clientX - moveRect.left
+              // Use chart coordinate conversion to get the time at this x position
+              const coord = chartRef.current.timeScale().coordinateToLogical(logicalX)
+              if (coord !== null) {
+                // Convert logical index back to time
+                const ts = chartRef.current.timeScale().logicalToCoordinate(coord)
+                if (ts !== null) {
+                  // Get time from the nearest candle
+                  const candles = candlesRef.current
+                  const idx = clamp(Math.round(coord), 0, candles.length - 1)
+                  if (candles[idx]) {
+                    updateDrawing(state.symbol, state.drawingId, { points: [{ time: Number(candles[idx].time), price: 0 }] })
+                  }
+                }
+              }
+            }
+            const handleUp = () => {
+              window.removeEventListener('pointermove', handleMove)
+              window.removeEventListener('pointerup', handleUp)
+              document.body.style.userSelect = ''
+              drawingDragRef.current = null
+            }
+            window.addEventListener('pointermove', handleMove)
+            window.addEventListener('pointerup', handleUp)
+            return
+          }
+        }
+      }
+    }
   }
 
   const handleChartKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -1222,6 +1310,16 @@ export default function NiftyChart() {
                 <IndicatorPanel indicators={indicators} onToggle={toggleIndicator} onClose={() => setIndicatorPanelOpen(false)} />
               )}
             </div>
+            <div className="mx-1 h-3 w-px bg-border-primary opacity-50" />
+            <button
+              onClick={toggleOverlayVisible}
+              className={`flex items-center justify-center rounded-sm px-1 py-0.5 text-[11px] transition-colors ${
+                overlayVisible ? 'text-text-muted hover:text-text-primary' : 'text-text-muted opacity-40 hover:opacity-75'
+              }`}
+              title={overlayVisible ? 'Hide all drawings & indicators (S)' : 'Show all drawings & indicators (S)'}
+            >
+              {overlayVisible ? <Eye size={12} /> : <EyeOff size={12} />}
+            </button>
             <div className="mx-1 h-3 w-px bg-border-primary opacity-50" />
             <button
               onClick={() => setAlertsPanelOpen((open) => !open)}
@@ -1584,7 +1682,7 @@ export default function NiftyChart() {
           )
         })()}
       </div>
-      {indicators.filter((ind) => ind.enabled && OSCILLATOR_INDICATORS.includes(ind.type)).map((ind) => {
+      {overlayVisible && indicators.filter((ind) => ind.enabled && OSCILLATOR_INDICATORS.includes(ind.type)).map((ind) => {
         const raw = rawCandlesRef.current
         let data: { time: number; value: number }[] = []
         let extraLines: { data: { time: number; value: number }[]; color: string }[] | undefined

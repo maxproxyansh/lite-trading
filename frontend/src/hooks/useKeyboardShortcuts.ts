@@ -164,12 +164,14 @@ export default function useKeyboardShortcuts() {
         return
       }
 
-      // S — Sell selected option
+      // S — Sell selected option, or toggle overlay visibility
       if (key === 's') {
         if (quote) {
           state.openOrderModal(quote, 'SELL')
-          e.preventDefault()
+        } else {
+          state.toggleOverlayVisible()
         }
+        e.preventDefault()
         return
       }
 
