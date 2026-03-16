@@ -27,9 +27,10 @@ export class DrawingManager {
       }
     }
 
-    // Remove stale plugins (non-hline drawings)
+    // Remove stale plugins — hide immediately, then detach
     for (const [id, plugin] of this._plugins) {
       if (!drawingIds.has(id)) {
+        plugin._visible = false
         this._series.detachPrimitive(plugin)
         this._plugins.delete(id)
       }
@@ -43,9 +44,6 @@ export class DrawingManager {
         this._syncPlugin(drawing)
       }
     }
-
-    // Force chart repaint
-    this._chart.timeScale().applyOptions({})
   }
 
   private _syncHLine(drawing: Drawing): void {
@@ -83,6 +81,7 @@ export class DrawingManager {
     }
     this._priceLines.clear()
     for (const [, plugin] of this._plugins) {
+      plugin._visible = false
       this._series.detachPrimitive(plugin)
     }
     this._plugins.clear()

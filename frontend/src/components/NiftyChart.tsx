@@ -1330,9 +1330,9 @@ export default function NiftyChart() {
                 const count = (drawings[symbol] ?? []).length
                 if (count === 0) return
                 if (!confirm(`Delete all ${count} drawing${count > 1 ? 's' : ''}?`)) return
-                drawingManagerRef.current?.sync([])
+                drawingManagerRef.current?.destroy()
                 clearDrawings(symbol)
-                addToast('success', `Deleted ${count} drawing${count > 1 ? 's' : ''}`)
+                requestAnimationFrame(() => addToast('success', `Deleted ${count} drawing${count > 1 ? 's' : ''}`))
               }}
               className="flex items-center justify-center rounded-sm px-1 py-0.5 text-[11px] text-text-muted transition-colors hover:text-[#e53935]"
               title="Delete all drawings"
@@ -1463,9 +1463,9 @@ export default function NiftyChart() {
               const count = (drawings[symbol] ?? []).length
               if (count === 0) return
               if (!confirm(`Delete all ${count} drawing${count > 1 ? 's' : ''}?`)) return
-              drawingManagerRef.current?.sync([])
+              drawingManagerRef.current?.destroy()
               clearDrawings(symbol)
-              addToast('success', `Deleted ${count} drawing${count > 1 ? 's' : ''}`)
+              requestAnimationFrame(() => addToast('success', `Deleted ${count} drawing${count > 1 ? 's' : ''}`))
             }}
             isCoarsePointer={hasCoarsePointer}
           />

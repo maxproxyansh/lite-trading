@@ -16,6 +16,7 @@ class DrawingPaneRenderer implements ISeriesPrimitivePaneRenderer {
     this._plugin = plugin
   }
   draw(target: CanvasRenderingTarget2D): void {
+    if (!this._plugin._visible) return
     target.useMediaCoordinateSpace(({ context, mediaSize }) => {
       this._plugin.drawOnCanvas(context, mediaSize.width, mediaSize.height)
     })
@@ -34,6 +35,7 @@ class DrawingPaneView implements ISeriesPrimitivePaneView {
 
 export abstract class BaseDrawingPlugin implements ISeriesPrimitive<Time> {
   drawing: Drawing
+  _visible = true
   protected _chart: IChartApi | null = null
   protected _series: ISeriesApi<'Candlestick'> | null = null
   private _paneViews: ISeriesPrimitivePaneView[]
