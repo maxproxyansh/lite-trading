@@ -1,6 +1,7 @@
 import {
   BarChart2,
   History,
+  Keyboard,
   LayoutDashboard,
   List,
   TrendingUp,
@@ -40,6 +41,19 @@ export default function Sidebar() {
           </div>
         </div>
       ))}
+      <div className="flex-1" />
+      <div className="group relative">
+        <button
+          onClick={() => window.dispatchEvent(new KeyboardEvent('keydown', { key: '?', bubbles: true }))}
+          className="flex h-10 w-10 items-center justify-center text-brand/60 transition-colors hover:text-brand hover:bg-bg-hover"
+          title="Keyboard shortcuts (?)"
+        >
+          <Keyboard size={16} strokeWidth={1.5} />
+        </button>
+        <div className="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-2 rounded-sm bg-bg-tertiary px-2 py-1 text-xs text-text-primary opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50">
+          Shortcuts
+        </div>
+      </div>
     </aside>
   )
 }
