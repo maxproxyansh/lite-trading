@@ -1,5 +1,8 @@
 import { create } from 'zustand'
 
+import type { Drawing, DrawingType, DrawingPoint, IndicatorConfig } from '../lib/chart/types'
+import { loadDrawings, saveDrawings, saveDrawingsDebounced, loadIndicatorConfigs, saveIndicatorConfigsDebounced } from '../lib/chart/storage'
+
 import type {
   AlertSummary,
   AnalyticsResponse,
@@ -77,6 +80,14 @@ interface AppState {
   portfolioRefreshNonce: number
   toasts: Toast[]
   orderModal: { isOpen: boolean; quote: OptionQuote; side: 'BUY' | 'SELL' } | null
+  drawingToolbar: boolean
+  activeTool: DrawingType | null
+  drawings: Record<string, Drawing[]>
+  selectedDrawingId: string | null
+  drawingInProgress: DrawingPoint[] | null
+  indicatorPanelOpen: boolean
+  indicators: IndicatorConfig[]
+  oscillatorPaneState: Record<string, boolean>
   setChartTimeframe: (tf: AppState['chartTimeframe']) => void
   setChainView: (view: AppState['chainView']) => void
   setChainFilter: (filter: AppState['chainFilter']) => void
@@ -111,6 +122,18 @@ interface AppState {
   requestPortfolioRefresh: (portfolioId?: string | null) => void
   addToast: (type: ToastType, message: string) => void
   removeToast: (id: string) => void
+  setDrawingToolbar: (open: boolean) => void
+  setActiveTool: (tool: DrawingType | null) => void
+  setSelectedDrawingId: (id: string | null) => void
+  setDrawingInProgress: (points: DrawingPoint[] | null) => void
+  addDrawing: (symbol: string, drawing: Drawing) => void
+  updateDrawing: (symbol: string, id: string, updates: Partial<Drawing>) => void
+  removeDrawing: (symbol: string, id: string) => void
+  clearDrawings: (symbol: string) => void
+  loadDrawingsForSymbol: (symbol: string) => void
+  setIndicatorPanelOpen: (open: boolean) => void
+  toggleIndicator: (id: string) => void
+  setOscillatorPaneExpanded: (id: string, expanded: boolean) => void
 }
 
 function initialUserScopedState(): Pick<
@@ -389,13 +412,21 @@ function syncSelectedQuote(
   return resolveIndexedQuote(chain, chainIndex, selectedQuote.symbol) ?? selectedQuote
 }
 
-export const useStore = create<AppState>((set) => ({
+export const useStore = create<AppState>((set, get) => ({
   ...initialUserScopedState(),
   chartTimeframe: 'D',
   chainView: 'collapsed',
   chainFilter: 'ATM',
   chainPanelOpen: true,
   toasts: [],
+  drawingToolbar: false,
+  activeTool: null,
+  drawings: {},
+  selectedDrawingId: null,
+  drawingInProgress: null,
+  indicatorPanelOpen: false,
+  indicators: loadIndicatorConfigs(),
+  oscillatorPaneState: {},
   setChartTimeframe: (chartTimeframe) => set({ chartTimeframe }),
   setChainView: (chainView) => set({ chainView }),
   setChainFilter: (chainFilter) => set({ chainFilter }),
@@ -605,4 +636,44 @@ export const useStore = create<AppState>((set) => ({
     }, 5000)
   },
   removeToast: (id) => set((state) => ({ toasts: state.toasts.filter((toast) => toast.id !== id) })),
+  setDrawingToolbar: (open) => set({ drawingToolbar: open, activeTool: open ? null : get().activeTool }),
+  setActiveTool: (tool) => set({ activeTool: tool, selectedDrawingId: null, drawingInProgress: null }),
+  setSelectedDrawingId: (id) => set({ selectedDrawingId: id }),
+  setDrawingInProgress: (points) => set({ drawingInProgress: points }),
+  addDrawing: (symbol, drawing) => {
+    const current = get().drawings[symbol] ?? []
+    set({ drawings: { ...get().drawings, [symbol]: [...current, drawing] } })
+    saveDrawingsDebounced(symbol, [...current, drawing])
+  },
+  updateDrawing: (symbol, id, updates) => {
+    const current = get().drawings[symbol] ?? []
+    const updated = current.map((d) => (d.id === id ? { ...d, ...updates } : d))
+    set({ drawings: { ...get().drawings, [symbol]: updated } })
+    saveDrawingsDebounced(symbol, updated)
+  },
+  removeDrawing: (symbol, id) => {
+    const current = get().drawings[symbol] ?? []
+    const filtered = current.filter((d) => d.id !== id)
+    set({ drawings: { ...get().drawings, [symbol]: filtered }, selectedDrawingId: null })
+    saveDrawingsDebounced(symbol, filtered)
+  },
+  clearDrawings: (symbol) => {
+    set({ drawings: { ...get().drawings, [symbol]: [] }, selectedDrawingId: null })
+    saveDrawings(symbol, [])
+  },
+  loadDrawingsForSymbol: (symbol) => {
+    if (get().drawings[symbol]) return
+    set({ drawings: { ...get().drawings, [symbol]: loadDrawings(symbol) } })
+  },
+  setIndicatorPanelOpen: (open) => set({ indicatorPanelOpen: open }),
+  toggleIndicator: (id) => {
+    const indicators = get().indicators.map((ind) =>
+      ind.id === id ? { ...ind, enabled: !ind.enabled } : ind
+    )
+    set({ indicators })
+    saveIndicatorConfigsDebounced(indicators)
+  },
+  setOscillatorPaneExpanded: (id, expanded) => {
+    set({ oscillatorPaneState: { ...get().oscillatorPaneState, [id]: expanded } })
+  },
 }))
