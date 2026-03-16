@@ -1883,6 +1883,10 @@ export interface components {
             change: number;
             /** Change Pct */
             change_pct: number;
+            /** Day High */
+            day_high?: number | null;
+            /** Day Low */
+            day_low?: number | null;
             /** Vix */
             vix?: number | null;
             /** Pcr */

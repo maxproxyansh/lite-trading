@@ -213,6 +213,8 @@ export default function NiftyChart() {
     alerts,
     chain,
     chainIndex,
+    dayHigh,
+    dayLow,
     optionChartSymbol,
     removeAlert,
     setOptionChartSymbol,
@@ -225,6 +227,8 @@ export default function NiftyChart() {
     alerts: state.alerts,
     chain: state.chain,
     chainIndex: state.chainIndex,
+    dayHigh: state.snapshot?.day_high ?? null,
+    dayLow: state.snapshot?.day_low ?? null,
     optionChartSymbol: state.optionChartSymbol,
     removeAlert: state.removeAlert,
     setOptionChartSymbol: state.setOptionChartSymbol,
@@ -381,10 +385,16 @@ export default function NiftyChart() {
       return
     }
 
+    // For NIFTY spot (no option chart), incorporate day high/low from the feed
+    let high = Math.max(lastBar.high, price)
+    let low = Math.min(lastBar.low, price)
+    if (!optionChartSymbol && dayHigh && dayHigh > 0) high = Math.max(high, dayHigh)
+    if (!optionChartSymbol && dayLow && dayLow > 0) low = Math.min(low, dayLow)
+
     const nextBar: CandlestickData<Time> = {
       ...lastBar,
-      high: Math.max(lastBar.high, price),
-      low: Math.min(lastBar.low, price),
+      high,
+      low,
       close: price,
     }
 

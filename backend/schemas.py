@@ -240,6 +240,8 @@ class MarketSnapshot(BaseModel):
     spot: float
     change: float
     change_pct: float
+    day_high: float | None = None
+    day_low: float | None = None
     vix: float | None = None
     pcr: float | None = None
     pcr_scope: PcrScope = "all_loaded_strikes_for_active_expiry"

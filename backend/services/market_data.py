@@ -754,6 +754,8 @@ class MarketDataService:
         *,
         timeframe: str,
         live_price: float | None,
+        day_high: float | None = None,
+        day_low: float | None = None,
     ) -> list[dict[str, Any]]:
         if live_price is None or live_price <= 0:
             return candles
@@ -761,22 +763,34 @@ class MarketDataService:
         bucket_time = MarketDataService._current_bucket_time(timeframe)
         if candles and int(candles[-1]["time"]) == bucket_time:
             last = candles[-1]
+            high = max(float(last["high"]), live_price)
+            low = min(float(last["low"]), live_price)
+            if day_high and day_high > 0:
+                high = max(high, day_high)
+            if day_low and day_low > 0:
+                low = min(low, day_low)
             next_candle = {
                 **last,
-                "high": max(float(last["high"]), live_price),
-                "low": min(float(last["low"]), live_price),
+                "high": high,
+                "low": low,
                 "close": live_price,
             }
             return [*candles[:-1], next_candle]
 
         open_price = float(candles[-1]["close"]) if candles else live_price
+        high = max(open_price, live_price)
+        low = min(open_price, live_price)
+        if day_high and day_high > 0:
+            high = max(high, day_high)
+        if day_low and day_low > 0:
+            low = min(low, day_low)
         return [
             *candles,
             {
                 "time": bucket_time,
                 "open": open_price,
-                "high": max(open_price, live_price),
-                "low": min(open_price, live_price),
+                "high": high,
+                "low": low,
                 "close": live_price,
                 "volume": 0.0,
             },
@@ -1042,6 +1056,10 @@ class MarketDataService:
         if prev_close and prev_close > 0:
             self.last_known_prev_close = prev_close
 
+        # Day high/low from Dhan Full feed
+        day_high = self._safe_float(payload.get("high"))
+        day_low = self._safe_float(payload.get("low"))
+
         effective_prev = self.last_known_prev_close
         change = round(ltp - effective_prev, 2) if effective_prev else self.last_known_change
         change_pct = round((change / effective_prev) * 100, 2) if effective_prev else self.last_known_change_pct
@@ -1055,6 +1073,10 @@ class MarketDataService:
         self.snapshot["spot"] = ltp
         self.snapshot["change"] = change
         self.snapshot["change_pct"] = change_pct
+        if day_high and day_high > 0:
+            self.snapshot["day_high"] = day_high
+        if day_low and day_low > 0:
+            self.snapshot["day_low"] = day_low
         self.snapshot["market_status"] = market_status()
         self.snapshot["updated_at"] = datetime.now(timezone.utc)
         self._snapshot_dirty = True
@@ -1208,10 +1230,14 @@ class MarketDataService:
             payload = payload if isinstance(payload, dict) else {}
             candles = self._aggregate_candles(self._map_candles(payload), timeframe)
             if before is None:
+                day_high = self._safe_float(self.snapshot.get("day_high")) if target.security_id == NIFTY_INDEX_SECURITY_ID else None
+                day_low = self._safe_float(self.snapshot.get("day_low")) if target.security_id == NIFTY_INDEX_SECURITY_ID else None
                 candles = self._overlay_live_price(
                     candles,
                     timeframe=timeframe,
                     live_price=self._live_price_for_target(target),
+                    day_high=day_high,
+                    day_low=day_low,
                 )
             candles = self._filter_history_before(candles, before)
             has_more = lower_date > oldest_date
