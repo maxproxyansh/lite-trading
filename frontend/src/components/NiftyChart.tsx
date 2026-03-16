@@ -327,6 +327,8 @@ export default function NiftyChart() {
   const drawingManagerRef = useRef<DrawingManager | null>(null)
   const indicatorManagerRef = useRef<IndicatorManager | null>(null)
   const drawingDragRef = useRef<{ drawingId: string; symbol: string; startY: number; startX: number; startPrice: number; startTime: number; type: 'hline' | 'vline'; moved: boolean } | null>(null)
+  const cursorPointRef = useRef<{ time: number; price: number } | null>(null)
+  const previewDrawingIdRef = useRef<string>('__preview__')
   const [loading, setLoading] = useState(true)
   const [candleRevision, setCandleRevision] = useState(0)
   const [visibleLogicalRange, setVisibleLogicalRange] = useState<LogicalRange | null>(null)
@@ -477,6 +479,50 @@ export default function NiftyChart() {
     setOverlayRevision((value) => value + 1)
   })
 
+  const syncDrawingPreview = useEffectEvent(() => {
+    if (!drawingManagerRef.current || !activeTool || !cursorPointRef.current) return
+    const cursor = cursorPointRef.current
+    const progress = drawingInProgress
+
+    // Build a preview drawing from existing points + cursor position
+    let previewPoints: { time: number; price: number }[] | null = null
+    const previewType = activeTool
+
+    if (activeTool === 'hline') {
+      previewPoints = [{ time: 0, price: cursor.price }]
+    } else if (activeTool === 'vline') {
+      previewPoints = [{ time: cursor.time, price: 0 }]
+    } else if (progress && progress.length >= 1) {
+      // Multi-point tools: show rubber-band from first point to cursor
+      if (activeTool === 'channel') {
+        // Channel: 2 points for baseline, auto-offset from cursor
+        previewPoints = [...progress, cursor, { time: cursor.time, price: cursor.price + (progress[0].price - cursor.price) * 0.3 }]
+      } else {
+        previewPoints = [...progress, cursor]
+      }
+    }
+
+    if (!previewPoints) {
+      // No preview needed — remove any existing preview
+      const symbol = chartQuote?.symbol ?? 'NIFTY 50'
+      const symbolDrawings = drawings[symbol] ?? []
+      drawingManagerRef.current.sync(symbolDrawings)
+      return
+    }
+
+    // Merge real drawings with the preview
+    const symbol = chartQuote?.symbol ?? 'NIFTY 50'
+    const symbolDrawings = overlayVisible ? (drawings[symbol] ?? []) : []
+    const previewDrawing = {
+      id: previewDrawingIdRef.current,
+      type: previewType,
+      points: previewPoints,
+      style: { ...DEFAULT_DRAWING_STYLE, lineStyle: 'dashed' as const },
+      createdAt: 0,
+    }
+    drawingManagerRef.current.sync([...symbolDrawings, previewDrawing])
+  })
+
   const handleDrawingClick = useEffectEvent((param: MouseEventParams) => {
     if (!activeTool || !param.time || !param.point) return
     const series = seriesRef.current
@@ -497,13 +543,21 @@ export default function NiftyChart() {
 
     const current = drawingInProgress ?? []
     const next = [...current, point]
-    const requiredPoints = activeTool === 'channel' ? 3 : 2
+    const requiredPoints = 2
     if (next.length >= requiredPoints) {
+      let finalPoints = next
+      if (activeTool === 'channel') {
+        // Auto-generate 3rd point: offset perpendicular to baseline by 30% of price range
+        const priceDiff = Math.abs(next[1].price - next[0].price)
+        const offset = Math.max(priceDiff * 0.3, 10)
+        finalPoints = [...next, { time: next[1].time, price: next[1].price + offset }]
+      }
       addDrawing(symbol, {
-        id: crypto.randomUUID(), type: activeTool, points: next,
+        id: crypto.randomUUID(), type: activeTool, points: finalPoints,
         style: { ...DEFAULT_DRAWING_STYLE }, createdAt: Date.now(),
       })
       setDrawingInProgress(null)
+      cursorPointRef.current = null
     } else {
       setDrawingInProgress(next)
     }
@@ -750,6 +804,17 @@ export default function NiftyChart() {
 
     const handleCrosshairMove = (param: MouseEventParams<Time>) => {
       setHoveredAlertAnchor(param.point ? toAlertAnchor(series, param.point.y) : null)
+
+      // Track cursor position for drawing preview
+      if (param.point && param.time) {
+        const price = series.coordinateToPrice(param.point.y)
+        if (price !== null) {
+          cursorPointRef.current = { time: Number(param.time), price: Number(price.toFixed(2)) }
+          syncDrawingPreview()
+        }
+      } else {
+        cursorPointRef.current = null
+      }
 
       const candle = param.seriesData.get(series) as CandlestickData<Time> | undefined
       if (!param.point || !param.time || !candle) {
@@ -1399,7 +1464,7 @@ export default function NiftyChart() {
 
       <div
         ref={containerRef}
-        className="relative flex-1 min-h-0 outline-none"
+        className={`relative flex-1 min-h-0 outline-none ${activeTool ? 'cursor-crosshair' : ''}`}
         tabIndex={0}
         onPointerDown={handleChartPointerDown}
         onKeyDown={handleChartKeyDown}
@@ -1474,9 +1539,8 @@ export default function NiftyChart() {
           <div className="pointer-events-none absolute left-10 top-2 z-30 rounded bg-[#1e1e1e]/80 px-2 py-1 text-[10px] text-text-muted backdrop-blur-sm">
             {activeTool === 'hline' ? 'Click to place horizontal line' :
              activeTool === 'vline' ? 'Click to place vertical line' :
-             activeTool === 'channel' && drawingInProgress?.length === 2 ? 'Click to set channel width' :
-             drawingInProgress?.length === 1 ? 'Click second point' :
-             'Click first point'}
+             drawingInProgress?.length === 1 ? 'Click to set endpoint' :
+             `Click to start ${activeTool === 'fib' ? 'fib retracement' : activeTool === 'measure' ? 'measurement' : activeTool}`}
           </div>
         )}
         {loading && (

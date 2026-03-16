@@ -11,32 +11,79 @@ interface Props {
 
 const TOOLS: { type: DrawingType; label: string; icon: React.ReactNode }[] = [
   {
-    type: 'hline', label: 'Horizontal Line',
-    icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><line x1="1" y1="7" x2="13" y2="7" stroke="currentColor" strokeWidth="1.5" /></svg>,
+    type: 'hline', label: 'Horizontal Line (−)',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <line x1="1" y1="8" x2="15" y2="8" stroke="currentColor" strokeWidth="1.5" />
+        <circle cx="3" cy="8" r="1.5" fill="currentColor" opacity="0.4" />
+        <circle cx="13" cy="8" r="1.5" fill="currentColor" opacity="0.4" />
+      </svg>
+    ),
   },
   {
-    type: 'vline', label: 'Vertical Line',
-    icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><line x1="7" y1="1" x2="7" y2="13" stroke="currentColor" strokeWidth="1.5" /></svg>,
+    type: 'vline', label: 'Vertical Line (|)',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <line x1="8" y1="1" x2="8" y2="15" stroke="currentColor" strokeWidth="1.5" />
+        <circle cx="8" cy="3" r="1.5" fill="currentColor" opacity="0.4" />
+        <circle cx="8" cy="13" r="1.5" fill="currentColor" opacity="0.4" />
+      </svg>
+    ),
   },
   {
-    type: 'trendline', label: 'Trend Line',
-    icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><line x1="2" y1="12" x2="12" y2="2" stroke="currentColor" strokeWidth="1.5" /></svg>,
+    type: 'trendline', label: 'Trend Line (T)',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <line x1="2" y1="13" x2="14" y2="3" stroke="currentColor" strokeWidth="1.5" />
+        <circle cx="2" cy="13" r="1.5" fill="currentColor" opacity="0.5" />
+        <circle cx="14" cy="3" r="1.5" fill="currentColor" opacity="0.5" />
+      </svg>
+    ),
   },
   {
-    type: 'channel', label: 'Channel',
-    icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><line x1="2" y1="10" x2="12" y2="4" stroke="currentColor" strokeWidth="1.5" /><line x1="2" y1="12" x2="12" y2="6" stroke="currentColor" strokeWidth="1.5" strokeDasharray="2 2" /></svg>,
+    type: 'channel', label: 'Parallel Channel',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <line x1="1" y1="11" x2="15" y2="5" stroke="currentColor" strokeWidth="1.2" />
+        <line x1="1" y1="6" x2="15" y2="0" stroke="currentColor" strokeWidth="1.2" opacity="0.5" />
+        <line x1="1" y1="6" x2="1" y2="11" stroke="currentColor" strokeWidth="0.8" strokeDasharray="1.5 1.5" opacity="0.3" />
+        <line x1="15" y1="0" x2="15" y2="5" stroke="currentColor" strokeWidth="0.8" strokeDasharray="1.5 1.5" opacity="0.3" />
+      </svg>
+    ),
   },
   {
     type: 'rectangle', label: 'Rectangle',
-    icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="2" y="3" width="10" height="8" stroke="currentColor" strokeWidth="1.5" rx="1" /></svg>,
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <rect x="2" y="4" width="12" height="8" stroke="currentColor" strokeWidth="1.2" fill="currentColor" fillOpacity="0.08" rx="0.5" />
+        <circle cx="2" cy="4" r="1.2" fill="currentColor" opacity="0.5" />
+        <circle cx="14" cy="12" r="1.2" fill="currentColor" opacity="0.5" />
+      </svg>
+    ),
   },
   {
-    type: 'fib', label: 'Fib Retracement',
-    icon: <span style={{ fontSize: 10, fontWeight: 700 }}>Fib</span>,
+    type: 'fib', label: 'Fibonacci Retracement',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <line x1="1" y1="2" x2="15" y2="2" stroke="currentColor" strokeWidth="1" />
+        <line x1="1" y1="5.5" x2="15" y2="5.5" stroke="currentColor" strokeWidth="0.7" opacity="0.5" />
+        <line x1="1" y1="8" x2="15" y2="8" stroke="currentColor" strokeWidth="0.7" strokeDasharray="2 2" opacity="0.4" />
+        <line x1="1" y1="10.5" x2="15" y2="10.5" stroke="currentColor" strokeWidth="0.7" opacity="0.5" />
+        <line x1="1" y1="14" x2="15" y2="14" stroke="currentColor" strokeWidth="1" />
+        <text x="12" y="4.5" fill="currentColor" fontSize="3" opacity="0.6">0.5</text>
+      </svg>
+    ),
   },
   {
-    type: 'measure', label: 'Measure',
-    icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><line x1="3" y1="3" x2="3" y2="11" stroke="currentColor" strokeWidth="1.5" /><line x1="11" y1="3" x2="11" y2="11" stroke="currentColor" strokeWidth="1.5" /><line x1="3" y1="7" x2="11" y2="7" stroke="currentColor" strokeWidth="1" strokeDasharray="2 2" /></svg>,
+    type: 'measure', label: 'Price Range / Measure',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <rect x="3" y="3" width="10" height="10" stroke="currentColor" strokeWidth="1" strokeDasharray="2 1.5" fill="currentColor" fillOpacity="0.06" rx="0.5" />
+        <line x1="8" y1="5" x2="8" y2="11" stroke="currentColor" strokeWidth="1" opacity="0.6" />
+        <line x1="6" y1="5" x2="10" y2="5" stroke="currentColor" strokeWidth="0.8" opacity="0.6" />
+        <line x1="6" y1="11" x2="10" y2="11" stroke="currentColor" strokeWidth="0.8" opacity="0.6" />
+      </svg>
+    ),
   },
 ]
 
