@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
-import { Bell, Plus, Trash2, X } from 'lucide-react'
+import { BarChart2, Bell, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { createChart } from 'lightweight-charts'
 import type { CandlestickData, HistogramData, IChartApi, ISeriesApi, LogicalRange, MouseEventParams, Time } from 'lightweight-charts'
 import { useShallow } from 'zustand/react/shallow'
@@ -16,6 +16,14 @@ import {
   type CandleResponse,
 } from '../lib/api'
 import { useStore } from '../store/useStore'
+import { DrawingToolbar } from './chart/DrawingToolbar'
+import { IndicatorPanel } from './chart/IndicatorPanel'
+import { OscillatorPane } from './chart/OscillatorPane'
+import { DrawingManager } from '../lib/chart/drawing-manager'
+import { IndicatorManager } from '../lib/chart/indicator-manager'
+import { DEFAULT_DRAWING_STYLE, OSCILLATOR_INDICATORS } from '../lib/chart/types'
+import type { DrawingType } from '../lib/chart/types'
+import { computeRSI, computeMACD, computeADX } from '../lib/chart/indicators'
 
 const TIMEFRAMES = ['1m', '5m', '15m', '1h', 'D', 'W', 'M'] as const
 const IST_OFFSET_SECONDS = 5.5 * 60 * 60
@@ -222,6 +230,22 @@ export default function NiftyChart() {
     spot,
     timeframe,
     upsertAlert,
+    drawingToolbar,
+    activeTool,
+    drawings,
+    drawingInProgress,
+    setDrawingToolbar,
+    setActiveTool,
+    setDrawingInProgress,
+    addDrawing,
+    loadDrawingsForSymbol,
+    clearDrawings,
+    indicatorPanelOpen,
+    indicators,
+    oscillatorPaneState,
+    setIndicatorPanelOpen,
+    toggleIndicator,
+    setOscillatorPaneExpanded,
   } = useStore(useShallow((state) => ({
     addToast: state.addToast,
     alerts: state.alerts,
@@ -236,6 +260,22 @@ export default function NiftyChart() {
     timeframe: state.chartTimeframe,
     setTimeframe: state.setChartTimeframe,
     upsertAlert: state.upsertAlert,
+    drawingToolbar: state.drawingToolbar,
+    activeTool: state.activeTool,
+    drawings: state.drawings,
+    drawingInProgress: state.drawingInProgress,
+    setDrawingToolbar: state.setDrawingToolbar,
+    setActiveTool: state.setActiveTool,
+    setDrawingInProgress: state.setDrawingInProgress,
+    addDrawing: state.addDrawing,
+    loadDrawingsForSymbol: state.loadDrawingsForSymbol,
+    clearDrawings: state.clearDrawings,
+    indicatorPanelOpen: state.indicatorPanelOpen,
+    indicators: state.indicators,
+    oscillatorPaneState: state.oscillatorPaneState,
+    setIndicatorPanelOpen: state.setIndicatorPanelOpen,
+    toggleIndicator: state.toggleIndicator,
+    setOscillatorPaneExpanded: state.setOscillatorPaneExpanded,
   })))
   /* timeframe & setTimeframe are now from the store, not local state */
   const chartQuote = optionChartSymbol && chain
@@ -271,7 +311,11 @@ export default function NiftyChart() {
   const hoveredCandleTimeRef = useRef<number | null>(null)
   const dragStateRef = useRef<DragState | null>(null)
   const dragCleanupRef = useRef<(() => void) | null>(null)
+  const drawingManagerRef = useRef<DrawingManager | null>(null)
+  const indicatorManagerRef = useRef<IndicatorManager | null>(null)
   const [loading, setLoading] = useState(true)
+  const [candleRevision, setCandleRevision] = useState(0)
+  const [visibleLogicalRange, setVisibleLogicalRange] = useState<LogicalRange | null>(null)
   const [, setLoadingMoreHistory] = useState(false)
   const [candleCount, setCandleCount] = useState(0)
   const [hoveredAlertAnchor, setHoveredAlertAnchor] = useState<ChartAnchor | null>(null)
@@ -416,6 +460,38 @@ export default function NiftyChart() {
     seriesRef.current.update(nextBar)
     syncHoveredCandleStats()
     setOverlayRevision((value) => value + 1)
+  })
+
+  const handleDrawingClick = useEffectEvent((param: MouseEventParams) => {
+    if (!activeTool || !param.time || !param.point) return
+    const series = seriesRef.current
+    if (!series) return
+    const price = series.coordinateToPrice(param.point.y)
+    if (price === null) return
+    const time = Number(param.time)
+    const symbol = chartQuote?.symbol ?? 'NIFTY 50'
+    const point = { time, price: Number(price.toFixed(2)) }
+
+    if (activeTool === 'hline' || activeTool === 'vline') {
+      addDrawing(symbol, {
+        id: crypto.randomUUID(), type: activeTool, points: [point],
+        style: { ...DEFAULT_DRAWING_STYLE }, createdAt: Date.now(),
+      })
+      return
+    }
+
+    const current = drawingInProgress ?? []
+    const next = [...current, point]
+    const requiredPoints = activeTool === 'channel' ? 3 : 2
+    if (next.length >= requiredPoints) {
+      addDrawing(symbol, {
+        id: crypto.randomUUID(), type: activeTool, points: next,
+        style: { ...DEFAULT_DRAWING_STYLE }, createdAt: Date.now(),
+      })
+      setDrawingInProgress(null)
+    } else {
+      setDrawingInProgress(next)
+    }
   })
 
   const submitAlertModal = async () => {
@@ -643,8 +719,11 @@ export default function NiftyChart() {
     chartRef.current = chart
     seriesRef.current = series
     volumeSeriesRef.current = volumeSeries
+    drawingManagerRef.current = new DrawingManager(series)
+    indicatorManagerRef.current = new IndicatorManager(chart)
 
     const handleClick = (param: MouseEventParams<Time>) => {
+      handleDrawingClick(param)
       if (!param.point) {
         return
       }
@@ -679,6 +758,10 @@ export default function NiftyChart() {
       chart.unsubscribeClick(handleClick)
       chart.unsubscribeCrosshairMove(handleCrosshairMove)
       observer.disconnect()
+      drawingManagerRef.current?.destroy()
+      drawingManagerRef.current = null
+      indicatorManagerRef.current?.destroy()
+      indicatorManagerRef.current = null
       chartRef.current = null
       seriesRef.current = null
       volumeSeriesRef.current = null
@@ -771,6 +854,7 @@ export default function NiftyChart() {
           chart.timeScale().scrollToRealTime()
         }
         setCandleCount(candles.length)
+        setCandleRevision((v) => v + 1)
         syncHoveredCandleStats(null)
         syncLiveChartPrice()
         setOverlayRevision((value) => value + 1)
@@ -859,6 +943,7 @@ export default function NiftyChart() {
         const mergeColors = getChartColors()
         volumeSeriesRef.current?.setData(toVolumeData(mergedRaw, mergeColors.bullColor, mergeColors.bearColor))
         setCandleCount(merged.length)
+        setCandleRevision((v) => v + 1)
         syncHoveredCandleStats()
         setOverlayRevision((value) => value + 1)
 
@@ -890,6 +975,7 @@ export default function NiftyChart() {
       if (!range) {
         return
       }
+      setVisibleLogicalRange(range)
       void loadMoreHistory(range)
     }
 
@@ -925,6 +1011,22 @@ export default function NiftyChart() {
       chart.priceScale('right').applyOptions({ scaleMargins: { top: 0.08, bottom: 0.02 } })
     }
   }, [showVolume])
+
+  useEffect(() => {
+    const symbol = chartQuote?.symbol ?? 'NIFTY 50'
+    loadDrawingsForSymbol(symbol)
+  }, [chartQuote?.symbol, loadDrawingsForSymbol])
+
+  useEffect(() => {
+    const symbol = chartQuote?.symbol ?? 'NIFTY 50'
+    const symbolDrawings = drawings[symbol] ?? []
+    drawingManagerRef.current?.sync(symbolDrawings)
+  }, [drawings, chartQuote?.symbol])
+
+  useEffect(() => {
+    if (!indicatorManagerRef.current) return
+    indicatorManagerRef.current.update(indicators, rawCandlesRef.current)
+  }, [indicators, candleRevision])
 
   useEffect(() => {
     if (alertModal?.mode === 'edit' && !alerts.some((alert) => alert.id === alertModal.alertId)) {
@@ -1080,6 +1182,30 @@ export default function NiftyChart() {
             </button>
             <div className="mx-1 h-3 w-px bg-border-primary opacity-50" />
             <button
+              onClick={() => setDrawingToolbar(!drawingToolbar)}
+              className={`flex items-center gap-1 rounded-sm border px-1.5 py-0.5 text-[11px] transition-colors ${
+                drawingToolbar ? 'border-brand/60 bg-brand/10 text-text-primary' : 'border-border-primary text-text-muted hover:text-text-primary'
+              }`}
+              title={drawingToolbar ? 'Hide drawing tools' : 'Show drawing tools'}
+            >
+              <Pencil size={10} />
+              <span className="hidden md:inline">Draw</span>
+            </button>
+            <div className="mx-1 h-3 w-px bg-border-primary opacity-50" />
+            <div className="relative">
+              <button onClick={() => setIndicatorPanelOpen(!indicatorPanelOpen)}
+                className={`flex items-center gap-1 rounded-sm border px-1.5 py-0.5 text-[11px] transition-colors ${
+                  indicatorPanelOpen ? 'border-brand/60 bg-brand/10 text-text-primary' : 'border-border-primary text-text-muted hover:text-text-primary'
+                }`} title="Indicators">
+                <BarChart2 size={10} />
+                <span className="hidden md:inline">Indicators</span>
+              </button>
+              {indicatorPanelOpen && (
+                <IndicatorPanel indicators={indicators} onToggle={toggleIndicator} onClose={() => setIndicatorPanelOpen(false)} />
+              )}
+            </div>
+            <div className="mx-1 h-3 w-px bg-border-primary opacity-50" />
+            <button
               onClick={() => setAlertsPanelOpen((open) => !open)}
               className={`flex items-center gap-1.5 rounded-sm border px-1.5 py-0.5 text-[11px] transition-colors ${
                 alertsPanelOpen
@@ -1143,6 +1269,23 @@ export default function NiftyChart() {
         onPointerDown={handleChartPointerDown}
         onKeyDown={handleChartKeyDown}
       >
+        {drawingToolbar && (
+          <DrawingToolbar
+            activeTool={activeTool}
+            onSelectTool={setActiveTool}
+            onClearAll={() => clearDrawings(chartQuote?.symbol ?? 'NIFTY 50')}
+            isCoarsePointer={hasCoarsePointer}
+          />
+        )}
+        {activeTool && (
+          <div className="pointer-events-none absolute left-10 top-2 z-30 rounded bg-[#1e1e1e]/80 px-2 py-1 text-[10px] text-text-muted backdrop-blur-sm">
+            {activeTool === 'hline' ? 'Click to place horizontal line' :
+             activeTool === 'vline' ? 'Click to place vertical line' :
+             activeTool === 'channel' && drawingInProgress?.length === 2 ? 'Click to set channel width' :
+             drawingInProgress?.length === 1 ? 'Click second point' :
+             'Click first point'}
+          </div>
+        )}
         {loading && (
           <div className="absolute inset-0 z-30 flex items-center justify-center bg-bg-primary/80">
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-signal border-t-transparent" />
@@ -1359,6 +1502,39 @@ export default function NiftyChart() {
           </div>
         ) : null}
       </div>
+      {indicators.filter((ind) => ind.enabled && OSCILLATOR_INDICATORS.includes(ind.type)).map((ind) => {
+        const raw = rawCandlesRef.current
+        let data: { time: number; value: number }[] = []
+        let extraLines: { data: { time: number; value: number }[]; color: string }[] | undefined
+        let histogram: { time: number; value: number }[] | undefined
+        let currentValue: number | null = null
+
+        if (ind.type === 'rsi') {
+          data = computeRSI(raw, ind.params.period)
+          currentValue = data.length > 0 ? data[data.length - 1].value : null
+        } else if (ind.type === 'macd') {
+          const macdData = computeMACD(raw, ind.params.fast, ind.params.slow, ind.params.signal)
+          data = macdData.map((d) => ({ time: d.time, value: d.macd }))
+          extraLines = [{ data: macdData.map((d) => ({ time: d.time, value: d.signal })), color: '#e53935' }]
+          histogram = macdData.map((d) => ({ time: d.time, value: d.histogram }))
+          currentValue = macdData.length > 0 ? macdData[macdData.length - 1].macd : null
+        } else if (ind.type === 'adx') {
+          const adxData = computeADX(raw, ind.params.period)
+          data = adxData.map((d) => ({ time: d.time, value: d.adx }))
+          extraLines = [
+            { data: adxData.map((d) => ({ time: d.time, value: d.plusDI })), color: '#4caf50' },
+            { data: adxData.map((d) => ({ time: d.time, value: d.minusDI })), color: '#e53935' },
+          ]
+          currentValue = adxData.length > 0 ? adxData[adxData.length - 1].adx : null
+        }
+
+        return (
+          <OscillatorPane key={ind.id} config={ind} data={data} extraLines={extraLines} histogram={histogram}
+            expanded={oscillatorPaneState[ind.id] !== false} currentValue={currentValue} visibleRange={visibleLogicalRange}
+            onToggleExpanded={() => setOscillatorPaneExpanded(ind.id, oscillatorPaneState[ind.id] === false)}
+            onRemove={() => toggleIndicator(ind.id)} />
+        )
+      })}
     </div>
   )
 }
