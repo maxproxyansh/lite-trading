@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     auto_execute_signals: bool = False
     signal_min_confidence: float = 60.0
     market_poll_seconds: int = 5
-    option_chain_refresh_seconds: int = 15
+    option_chain_refresh_seconds: int = 60
     signal_poll_seconds: int = 15
     quote_refresh_seconds: int = 5
     market_feed_flush_ms: int = 150

@@ -4,6 +4,7 @@ import asyncio
 import logging
 import math
 import re
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
@@ -43,6 +44,10 @@ INITIAL_HISTORY_WINDOWS = {
 INTRADAY_INTERVALS = {"1m": 1, "5m": 5, "15m": 15, "1h": 60}
 DAILY_HISTORY_TIMEFRAMES = {"D", "W", "M"}
 AGGREGATED_DAILY_TIMEFRAMES = {"W", "M"}
+CANDLE_CACHE_TTL = {
+    "D": 300, "W": 300, "M": 300,     # daily+ timeframes: 5 min TTL
+    "1m": 60, "5m": 60, "15m": 60, "1h": 60,  # intraday: 60s TTL
+}
 INDEX_SYMBOL_ALIASES = {"NIFTY", "NIFTY 50", "NIFTY50"}
 OPTION_SYMBOL_PATTERN = re.compile(r"^(?P<root>[A-Z0-9]+)_(?P<expiry>\d{4}-\d{2}-\d{2})_(?P<strike>\d+)_(?P<option_type>CE|PE)$")
 
@@ -138,6 +143,7 @@ class MarketDataService:
         self._dirty_quote_symbols: set[str] = set()
         self._snapshot_dirty = False
         self._pcr_dirty = False
+        self._candle_cache: dict[tuple, tuple[float, dict[str, Any]]] = {}  # (sec_id, tf, from, to) -> (ts, data)
 
     def set_broadcast(self, broadcast: BroadcastFn) -> None:
         self._broadcast = broadcast
@@ -845,7 +851,7 @@ class MarketDataService:
 
     def _fetch_vix(self) -> float | None:
         today = date.today()
-        from_date = (today - timedelta(days=10)).strftime("%Y-%m-%d")
+        from_date = (today - timedelta(days=3)).strftime("%Y-%m-%d")
         to_date = today.strftime("%Y-%m-%d")
         result = dhan_credential_service.call(
             "historical_daily_data.vix",
@@ -887,17 +893,29 @@ class MarketDataService:
         spot = float(body.get("last_price") or 0.0)
         prev_close = float(body.get("prev_close") or body.get("previous_close") or 0.0)
 
-        # Dhan option chain doesn't provide prev_close at top level — derive from daily candles
+        # Dhan option chain doesn't provide prev_close at top level — derive from daily candles.
+        # Only need last 2 trading days, so fetch 5 calendar days (covers weekends/holidays).
         if prev_close == 0.0 and self.last_known_prev_close == 0.0:
             try:
-                daily = self._fetch_candles("D")
-                if daily.get("candles"):
-                    # Use second-to-last candle's close as prev_close (last candle is today)
-                    candles = daily["candles"]
-                    if len(candles) >= 2:
-                        prev_close = float(candles[-2]["close"])
-                    elif candles:
-                        prev_close = float(candles[-1]["close"])
+                today = date.today()
+                from_dt = (today - timedelta(days=5)).strftime("%Y-%m-%d")
+                to_dt = today.strftime("%Y-%m-%d")
+                payload = dhan_credential_service.call(
+                    "historical_daily_data.prev_close",
+                    lambda client: client.historical_daily_data(
+                        security_id=NIFTY_INDEX_SECURITY_ID,
+                        exchange_segment=INDEX_EXCHANGE_SEGMENT,
+                        instrument_type=INDEX_INSTRUMENT_TYPE,
+                        from_date=from_dt,
+                        to_date=to_dt,
+                    ),
+                )
+                payload = payload if isinstance(payload, dict) else {}
+                closes = payload.get("close", []) if isinstance(payload, dict) else []
+                if len(closes) >= 2:
+                    prev_close = float(closes[-2])
+                elif closes:
+                    prev_close = float(closes[-1])
             except Exception:  # noqa: BLE001
                 pass
 
@@ -1226,6 +1244,55 @@ class MarketDataService:
     ) -> dict[str, Any]:
         target = self._resolve_candle_target(symbol=symbol, security_id=security_id)
         lower_date, upper_date, oldest_date = self._history_window(timeframe, before)
+
+        # --- candle cache lookup ---
+        cache_key = (target.security_id, timeframe, lower_date.isoformat(), upper_date.isoformat())
+        ttl = CANDLE_CACHE_TTL.get(timeframe, 60)
+        cached = self._candle_cache.get(cache_key)
+        if cached is not None:
+            cached_ts, cached_payload = cached
+            if time.monotonic() - cached_ts < ttl:
+                payload = cached_payload
+                # Still apply live overlay and filtering on cached raw payload
+                if timeframe in DAILY_HISTORY_TIMEFRAMES:
+                    candles = self._aggregate_candles(self._map_candles(payload), timeframe)
+                    if before is None:
+                        day_high = self._safe_float(self.snapshot.get("day_high")) if target.security_id == NIFTY_INDEX_SECURITY_ID else None
+                        day_low = self._safe_float(self.snapshot.get("day_low")) if target.security_id == NIFTY_INDEX_SECURITY_ID else None
+                        candles = self._overlay_live_price(
+                            candles,
+                            timeframe=timeframe,
+                            live_price=self._live_price_for_target(target),
+                            day_high=day_high,
+                            day_low=day_low,
+                        )
+                    candles = self._filter_history_before(candles, before)
+                    has_more = lower_date > oldest_date
+                    return {
+                        "timeframe": timeframe,
+                        "candles": candles,
+                        "source": "dhan",
+                        "degraded": not candles,
+                        "has_more": has_more,
+                        "next_before": self._next_history_cursor(
+                            candles, lower_date=lower_date, oldest_date=oldest_date, has_more=has_more,
+                        ),
+                    }
+                else:
+                    candles = self._filter_history_before(self._map_candles(payload), before)
+                    has_more = lower_date > oldest_date
+                    return {
+                        "timeframe": timeframe,
+                        "candles": candles,
+                        "source": "dhan",
+                        "degraded": not candles,
+                        "has_more": has_more,
+                        "next_before": self._next_history_cursor(
+                            candles, lower_date=lower_date, oldest_date=oldest_date, has_more=has_more,
+                        ),
+                    }
+        # --- end cache lookup ---
+
         if timeframe in DAILY_HISTORY_TIMEFRAMES:
             payload = dhan_credential_service.call(
                 "historical_daily_data",
@@ -1238,6 +1305,7 @@ class MarketDataService:
                 ),
             )
             payload = payload if isinstance(payload, dict) else {}
+            self._candle_cache[cache_key] = (time.monotonic(), payload)
             candles = self._aggregate_candles(self._map_candles(payload), timeframe)
             if before is None:
                 day_high = self._safe_float(self.snapshot.get("day_high")) if target.security_id == NIFTY_INDEX_SECURITY_ID else None
@@ -1278,6 +1346,7 @@ class MarketDataService:
             ),
         )
         payload = payload if isinstance(payload, dict) else {}
+        self._candle_cache[cache_key] = (time.monotonic(), payload)
         candles = self._filter_history_before(self._map_candles(payload), before)
         has_more = lower_date > oldest_date
         return {
