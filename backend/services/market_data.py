@@ -292,11 +292,19 @@ class MarketDataService:
     async def _open_incident(self, reason: str, message: str) -> None:
         now = datetime.now(timezone.utc)
         cooldown = timedelta(seconds=max(settings.dhan_incident_alert_cooldown_seconds, 60))
-        changed = (not self._health.incident_open) or self._health.incident_reason != reason or self._health.incident_message != message
-        should_alert = changed or not self._health.last_incident_alert_at or now - self._health.last_incident_alert_at >= cooldown
+        # Alert only when degradation first starts or the cooldown has elapsed.
+        # Reason/message changes within an ongoing incident (e.g. OPTION_CHAIN_STALE
+        # ↔ DHAN_UPSTREAM_FAILED flipping, or age counter incrementing) are NOT
+        # treated as new incidents — the cooldown still applies.
+        new_incident = not self._health.incident_open
+        cooldown_elapsed = (
+            not self._health.last_incident_alert_at
+            or now - self._health.last_incident_alert_at >= cooldown
+        )
+        should_alert = new_incident or cooldown_elapsed
 
         self._health.incident_open = True
-        if changed or not self._health.incident_since:
+        if new_incident or not self._health.incident_since:
             self._health.incident_since = now
         self._health.incident_reason = reason
         self._health.incident_message = message
