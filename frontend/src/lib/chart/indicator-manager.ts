@@ -27,7 +27,11 @@ export class IndicatorManager {
     // Add/update enabled overlay indicators
     for (const config of configs) {
       if (!config.enabled || !OVERLAY_INDICATORS.includes(config.type)) continue
-      this._renderOverlay(config, candles)
+      try {
+        this._renderOverlay(config, candles)
+      } catch (err) {
+        console.warn(`Failed to render indicator ${config.type}:`, err)
+      }
     }
   }
 
@@ -105,29 +109,32 @@ export class IndicatorManager {
     seriesList[0].setData(data.filter((d) => d.tenkan !== null).map((d) => ({ time: (d.time + IST_OFFSET_SECONDS) as Time, value: d.tenkan! })))
     seriesList[1].setData(data.filter((d) => d.kijun !== null).map((d) => ({ time: (d.time + IST_OFFSET_SECONDS) as Time, value: d.kijun! })))
 
-    // Senkou lines shifted forward by kijun periods using candle timestamps
-    const senkouAPoints = data.filter((d) => d.senkouA !== null)
-    const senkouBPoints = data.filter((d) => d.senkouB !== null)
-    // Build a lookup of candle timestamps by index for forward-shifted placement
-    const allTimes = data.map((d) => d.time)
-    const senkouAWithTime = senkouAPoints.map((d) => {
-      const origIdx = allTimes.indexOf(d.time)
-      const shiftedIdx = Math.min(origIdx + shift, allTimes.length - 1)
-      return { time: (allTimes[shiftedIdx] + IST_OFFSET_SECONDS) as Time, value: d.senkouA! }
-    })
-    const senkouBWithTime = senkouBPoints.map((d) => {
-      const origIdx = allTimes.indexOf(d.time)
-      const shiftedIdx = Math.min(origIdx + shift, allTimes.length - 1)
-      return { time: (allTimes[shiftedIdx] + IST_OFFSET_SECONDS) as Time, value: d.senkouB! }
-    })
-    seriesList[2].setData(senkouAWithTime)
-    seriesList[3].setData(senkouBWithTime)
+    // Senkou lines shifted forward by kijun periods — only include points
+    // where the shifted index is still within candle range (no clamping = no duplicate timestamps)
+    const timeByIndex = new Map<number, number>()
+    for (let i = 0; i < data.length; i++) timeByIndex.set(data[i].time, i)
+
+    const senkouAData: { time: Time; value: number }[] = []
+    const senkouBData: { time: Time; value: number }[] = []
+    for (const d of data) {
+      const origIdx = timeByIndex.get(d.time)
+      if (origIdx === undefined) continue
+      const shiftedIdx = origIdx + shift
+      if (shiftedIdx >= data.length) continue // drop points beyond available timestamps
+      const shiftedTime = data[shiftedIdx].time
+      if (d.senkouA !== null) senkouAData.push({ time: (shiftedTime + IST_OFFSET_SECONDS) as Time, value: d.senkouA })
+      if (d.senkouB !== null) senkouBData.push({ time: (shiftedTime + IST_OFFSET_SECONDS) as Time, value: d.senkouB })
+    }
+    seriesList[2].setData(senkouAData)
+    seriesList[3].setData(senkouBData)
 
     // Chikou: current close plotted kijun periods in the past
-    const chikouData = data.slice(shift).map((d, i) => ({
-      time: (data[i].time + IST_OFFSET_SECONDS) as Time,
-      value: d.chikou!,
-    }))
+    const chikouData: { time: Time; value: number }[] = []
+    for (let i = shift; i < data.length; i++) {
+      if (data[i].chikou !== null) {
+        chikouData.push({ time: (data[i - shift].time + IST_OFFSET_SECONDS) as Time, value: data[i].chikou! })
+      }
+    }
     seriesList[4].setData(chikouData)
   }
 
