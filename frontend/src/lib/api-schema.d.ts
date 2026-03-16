@@ -1974,6 +1974,10 @@ export interface components {
             oi_lakhs?: number | null;
             /** Volume */
             volume?: number | null;
+            /** Day High */
+            day_high?: number | null;
+            /** Day Low */
+            day_low?: number | null;
             /** Delta */
             delta?: number | null;
             /** Gamma */

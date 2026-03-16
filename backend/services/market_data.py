@@ -812,18 +812,23 @@ class MarketDataService:
             },
         ]
 
-    def _live_price_for_target(self, target: CandleInstrument) -> float | None:
+    def _live_ohlc_for_target(
+        self, target: CandleInstrument,
+    ) -> tuple[float | None, float | None, float | None]:
+        """Return (live_price, day_high, day_low) for the given target."""
         if target.security_id == NIFTY_INDEX_SECURITY_ID:
             live_spot = self._safe_float(self.snapshot.get("spot"))
-            return live_spot if live_spot and live_spot > 0 else self.last_known_spot or None
+            price = live_spot if live_spot and live_spot > 0 else self.last_known_spot or None
+            return price, self._safe_float(self.snapshot.get("day_high")), self._safe_float(self.snapshot.get("day_low"))
 
         quote = self._lookup_quote_by_security_id(target.security_id)
         if not quote:
             quote = self._lookup_quote_by_symbol(target.symbol)
         if not quote:
-            return None
+            return None, None, None
         live_price = self._safe_float(quote.get("ltp"))
-        return live_price if live_price and live_price > 0 else None
+        price = live_price if live_price and live_price > 0 else None
+        return price, self._safe_float(quote.get("day_high")), self._safe_float(quote.get("day_low"))
 
     def _fetch_expiries(self) -> list[str]:
         result = dhan_credential_service.call(
@@ -1132,6 +1137,16 @@ class MarketDataService:
             self._pcr_dirty = True
             changed = True
 
+        # Day high/low from Dhan Full feed (same fields as index tick)
+        day_high = self._safe_float(payload.get("high"))
+        if day_high is not None and day_high > 0 and quote.get("day_high") != day_high:
+            quote["day_high"] = day_high
+            changed = True
+        day_low = self._safe_float(payload.get("low"))
+        if day_low is not None and day_low > 0 and quote.get("day_low") != day_low:
+            quote["day_low"] = day_low
+            changed = True
+
         depth = payload.get("depth")
         if isinstance(depth, list) and depth:
             best_level = depth[0] or {}
@@ -1257,12 +1272,11 @@ class MarketDataService:
                 if timeframe in DAILY_HISTORY_TIMEFRAMES:
                     candles = self._aggregate_candles(self._map_candles(payload), timeframe)
                     if before is None:
-                        day_high = self._safe_float(self.snapshot.get("day_high")) if target.security_id == NIFTY_INDEX_SECURITY_ID else None
-                        day_low = self._safe_float(self.snapshot.get("day_low")) if target.security_id == NIFTY_INDEX_SECURITY_ID else None
+                        live_price, day_high, day_low = self._live_ohlc_for_target(target)
                         candles = self._overlay_live_price(
                             candles,
                             timeframe=timeframe,
-                            live_price=self._live_price_for_target(target),
+                            live_price=live_price,
                             day_high=day_high,
                             day_low=day_low,
                         )
@@ -1308,12 +1322,11 @@ class MarketDataService:
             self._candle_cache[cache_key] = (time.monotonic(), payload)
             candles = self._aggregate_candles(self._map_candles(payload), timeframe)
             if before is None:
-                day_high = self._safe_float(self.snapshot.get("day_high")) if target.security_id == NIFTY_INDEX_SECURITY_ID else None
-                day_low = self._safe_float(self.snapshot.get("day_low")) if target.security_id == NIFTY_INDEX_SECURITY_ID else None
+                live_price, day_high, day_low = self._live_ohlc_for_target(target)
                 candles = self._overlay_live_price(
                     candles,
                     timeframe=timeframe,
-                    live_price=self._live_price_for_target(target),
+                    live_price=live_price,
                     day_high=day_high,
                     day_low=day_low,
                 )
