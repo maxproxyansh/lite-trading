@@ -10,7 +10,7 @@ from fastapi.responses import RedirectResponse, Response
 
 from config import get_settings
 from database import SessionLocal, init_db
-from routers import admin, agent, alerts, analytics, auth, funds, market, meta, orders, portfolios, positions, signals, websocket
+from routers import admin, agent, alerts, analytics, auth, funds, market, meta, orders, participants, portfolios, positions, signals, websocket
 from schemas import HealthResponse
 from services.alert_service import sync_alerts
 from services.market_data import market_data_service
@@ -117,14 +117,14 @@ app.add_middleware(
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
     response: Response = await call_next(request)
-    response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+    response.headers["Content-Security-Policy"] = "default-src 'none'; frame-src https://s.tradingview.com; frame-ancestors 'none'; base-uri 'none'"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     return response
 
-for router in (auth, admin, meta, market, alerts, portfolios, orders, positions, funds, analytics, signals, agent, websocket):
+for router in (auth, admin, meta, market, alerts, portfolios, orders, positions, funds, analytics, signals, participants, agent, websocket):
     app.include_router(router)
 
 

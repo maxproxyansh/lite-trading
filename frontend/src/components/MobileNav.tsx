@@ -1,18 +1,16 @@
 import {
-  BarChart2,
+  BookOpen,
   LayoutDashboard,
-  List,
-  TrendingUp,
-  Wallet,
+  PieChart,
+  RefreshCcw,
 } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
 const navItems = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
-  { icon: List, label: 'Orders', path: '/orders' },
-  { icon: TrendingUp, label: 'Positions', path: '/positions' },
-  { icon: Wallet, label: 'Funds', path: '/funds' },
-  { icon: BarChart2, label: 'Analytics', path: '/analytics' },
+  { icon: RefreshCcw, label: 'Trading', path: '/trading' },
+  { icon: PieChart, label: 'Portfolio', path: '/portfolio' },
+  { icon: BookOpen, label: 'Desk', path: '/desk' },
 ]
 
 export default function MobileNav() {

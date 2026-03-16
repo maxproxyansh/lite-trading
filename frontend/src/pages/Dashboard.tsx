@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react'
-import { BarChart3, Grid2x2, Ticket, X } from 'lucide-react'
+import { BarChart3, Grid2x2 } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 
 import MobileOptionsChain from '../components/MobileOptionsChain'
 import NiftyChart from '../components/NiftyChart'
 import OptionsPanel from '../components/OptionsPanel'
-import OrderTicket from '../components/OrderTicket'
 import { useStore } from '../store/useStore'
 
 type MobileView = 'chart' | 'chain'
@@ -16,7 +15,6 @@ export default function Dashboard() {
     degradedReason: state.snapshot?.degraded_reason ?? null,
     optionChartSymbol: state.optionChartSymbol,
   })))
-  const [showMobileTicket, setShowMobileTicket] = useState(false)
   const [mobileView, setMobileView] = useState<MobileView>('chart')
 
   // When an option chart is selected (from chain's chart button), switch to chart view
@@ -76,31 +74,7 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* Mobile FAB for order ticket */}
-      <button
-        onClick={() => setShowMobileTicket(true)}
-        className="fixed bottom-16 right-4 z-20 flex h-12 w-12 items-center justify-center rounded-full bg-signal text-white shadow-lg md:hidden"
-      >
-        <Ticket size={20} />
-      </button>
-
-      {/* Mobile order ticket bottom sheet */}
-      {showMobileTicket && (
-        <div className="fixed inset-0 z-40 bg-black/60 md:hidden" onClick={() => setShowMobileTicket(false)}>
-          <div
-            className="absolute bottom-0 left-0 right-0 max-h-[80vh] overflow-auto rounded-t-lg bg-bg-secondary p-4"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-xs font-medium text-text-secondary">Order Ticket</span>
-              <button onClick={() => setShowMobileTicket(false)} className="text-text-muted">
-                <X size={16} />
-              </button>
-            </div>
-            <OrderTicket />
-          </div>
-        </div>
-      )}
+      {/* Mobile order ticket — no longer needed, B/S buttons are in the chart toolbar */}
     </div>
   )
 }

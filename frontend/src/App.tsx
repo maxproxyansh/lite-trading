@@ -3,8 +3,10 @@ import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-
 import { useShallow } from 'zustand/react/shallow'
 
 import ErrorBoundary from './components/ErrorBoundary'
+import { FiiDiiModal } from './components/FiiDiiModal'
 import Header from './components/Header'
 import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal'
+import { MacroCalendarModal } from './components/MacroCalendarModal'
 import MobileNav from './components/MobileNav'
 import OrderModal from './components/OrderModal'
 import Sidebar from './components/Sidebar'
@@ -27,15 +29,18 @@ import {
 } from './lib/api'
 import Analytics from './pages/Analytics'
 import Dashboard from './pages/Dashboard'
+import Desk from './pages/Desk'
 import Funds from './pages/Funds'
 import History from './pages/History'
 import Login from './pages/Login'
 import Orders from './pages/Orders'
+import Portfolio from './pages/Portfolio'
 import Positions from './pages/Positions'
 import Settings from './pages/Settings'
+import Trading from './pages/Trading'
 import { useStore } from './store/useStore'
 
-function ProtectedLayout() {
+function ProtectedLayout({ onOpenMacroCalendar, onOpenFiiDii }: { onOpenMacroCalendar: () => void; onOpenFiiDii: () => void }) {
   const { user, spot } = useStore(useShallow((state) => ({
     user: state.user,
     spot: state.snapshot?.spot ?? null,
@@ -51,6 +56,9 @@ function ProtectedLayout() {
       '/funds': 'Funds',
       '/analytics': 'Analytics',
       '/settings': 'Settings',
+      '/trading': 'Trading',
+      '/portfolio': 'Portfolio',
+      '/desk': 'Desk',
     }
     const page = titles[location.pathname] ?? 'Dashboard'
     const prefix = spot && spot > 0
@@ -68,7 +76,7 @@ function ProtectedLayout() {
       <div className="flex h-dvh flex-col bg-bg-primary text-text-primary">
         <Header />
         <div className="flex flex-1 overflow-hidden pb-14 md:pb-0">
-          <Sidebar />
+          <Sidebar onOpenMacroCalendar={onOpenMacroCalendar} onOpenFiiDii={onOpenFiiDii} />
           <main className="md:ml-10 flex-1 overflow-auto animate-fade-in" key={location.pathname}>
             <Routes>
               <Route path="/" element={<Dashboard />} />
@@ -78,6 +86,9 @@ function ProtectedLayout() {
               <Route path="/funds" element={<Funds />} />
               <Route path="/analytics" element={<Analytics />} />
               <Route path="/settings" element={<Settings />} />
+              <Route path="/trading" element={<Trading />} />
+              <Route path="/portfolio" element={<Portfolio />} />
+              <Route path="/desk" element={<Desk />} />
             </Routes>
           </main>
         </div>
@@ -91,7 +102,11 @@ function ProtectedLayout() {
 
 export default function App() {
   useWebSocket()
-  const { shortcutsModalOpen, setShortcutsModalOpen } = useKeyboardShortcuts()
+  const {
+    shortcutsModalOpen, setShortcutsModalOpen,
+    macroCalendarOpen, setMacroCalendarOpen,
+    fiiDiiOpen, setFiiDiiOpen,
+  } = useKeyboardShortcuts()
   const navigate = useNavigate()
   const {
     accessToken,
@@ -324,9 +339,16 @@ export default function App() {
     <>
       <Toast />
       {shortcutsModalOpen && <KeyboardShortcutsModal onClose={() => setShortcutsModalOpen(false)} />}
+      {macroCalendarOpen && <MacroCalendarModal onClose={() => setMacroCalendarOpen(false)} />}
+      {fiiDiiOpen && <FiiDiiModal onClose={() => setFiiDiiOpen(false)} />}
       <Routes>
         <Route path="/login" element={<Login />} />
-        <Route path="/*" element={<ProtectedLayout />} />
+        <Route path="/*" element={
+          <ProtectedLayout
+            onOpenMacroCalendar={() => setMacroCalendarOpen(true)}
+            onOpenFiiDii={() => setFiiDiiOpen(true)}
+          />
+        } />
       </Routes>
     </>
   )

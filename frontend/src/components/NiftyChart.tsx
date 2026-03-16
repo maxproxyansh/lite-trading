@@ -223,6 +223,7 @@ export default function NiftyChart() {
     chainIndex,
     dayHigh,
     dayLow,
+    marketStatus,
     optionChartSymbol,
     removeAlert,
     setOptionChartSymbol,
@@ -259,6 +260,7 @@ export default function NiftyChart() {
     chainIndex: state.chainIndex,
     dayHigh: state.snapshot?.day_high ?? null,
     dayLow: state.snapshot?.day_low ?? null,
+    marketStatus: state.snapshot?.market_status ?? 'closed',
     optionChartSymbol: state.optionChartSymbol,
     removeAlert: state.removeAlert,
     setOptionChartSymbol: state.setOptionChartSymbol,
@@ -422,6 +424,10 @@ export default function NiftyChart() {
   const syncLiveChartPrice = useEffectEvent(() => {
     const price = chartQuote?.ltp ?? spot
     if (!price || price <= 0 || !seriesRef.current || !lastBarRef.current) {
+      return
+    }
+    // Don't create/update candles when market is closed
+    if (marketStatus !== 'open') {
       return
     }
 
@@ -1322,6 +1328,23 @@ export default function NiftyChart() {
                 {chartQuote ? 'LTP' : 'Spot'} ₹{chartPrice.toFixed(2)}
               </span>
             ) : null}
+            {/* Buy/Sell — desktop */}
+            {chartQuote && (
+              <div className="hidden md:flex items-center gap-1 ml-auto">
+                <button
+                  onClick={() => useStore.getState().openOrderModal(chartQuote, 'BUY')}
+                  className="rounded-sm bg-btn-buy px-2.5 py-0.5 text-[10px] font-bold text-white transition-colors hover:bg-btn-buy-hover"
+                >
+                  B
+                </button>
+                <button
+                  onClick={() => useStore.getState().openOrderModal(chartQuote, 'SELL')}
+                  className="rounded-sm bg-btn-sell px-2.5 py-0.5 text-[10px] font-bold text-white transition-colors hover:bg-btn-sell-hover"
+                >
+                  S
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="ml-auto flex shrink-0 items-center gap-0.5">
@@ -1417,6 +1440,7 @@ export default function NiftyChart() {
               <Bell size={11} className="text-signal" />
               <span>{activeAlerts.length} active</span>
             </button>
+            {/* Buy/Sell buttons removed from here — now in OHLC row */}
           </div>
         </div>
 
@@ -1452,12 +1476,30 @@ export default function NiftyChart() {
                 {formatSignedPrice(hoveredCandleStats.change)} ({formatSignedPercent(hoveredCandleStats.changePct)})
               </span>
             ) : null}
+            {/* Buy/Sell — mobile */}
+            {chartQuote && (
+              <div className="flex items-center gap-1 ml-auto">
+                <button onClick={() => useStore.getState().openOrderModal(chartQuote, 'BUY')}
+                  className="rounded-sm bg-btn-buy px-2 py-0.5 text-[10px] font-bold text-white">B</button>
+                <button onClick={() => useStore.getState().openOrderModal(chartQuote, 'SELL')}
+                  className="rounded-sm bg-btn-sell px-2 py-0.5 text-[10px] font-bold text-white">S</button>
+              </div>
+            )}
           </div>
         ) : chartPrice ? (
-          <div className="md:hidden px-3 pb-1">
+          <div className="flex md:hidden items-center px-3 pb-1">
             <span className="text-[10px] tabular-nums text-text-secondary">
               {chartQuote ? 'LTP' : 'Spot'} ₹{chartPrice.toFixed(2)}
             </span>
+            {/* Buy/Sell — mobile, no OHLC */}
+            {chartQuote && (
+              <div className="flex items-center gap-1 ml-auto">
+                <button onClick={() => useStore.getState().openOrderModal(chartQuote, 'BUY')}
+                  className="rounded-sm bg-btn-buy px-2 py-0.5 text-[10px] font-bold text-white">B</button>
+                <button onClick={() => useStore.getState().openOrderModal(chartQuote, 'SELL')}
+                  className="rounded-sm bg-btn-sell px-2 py-0.5 text-[10px] font-bold text-white">S</button>
+              </div>
+            )}
           </div>
         ) : null}
       </div>

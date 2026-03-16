@@ -44,10 +44,12 @@ const SECTIONS: Section[] = [
     ],
   },
   {
-    title: 'Chart',
+    title: 'Chart & Panels',
     shortcuts: [
       { keys: ['S'], label: 'Show / hide drawings & indicators' },
       { keys: ['A'], label: 'Create alert at crosshair' },
+      { keys: ['G', 'M'], label: 'Macro Calendar' },
+      { keys: ['G', 'F'], label: 'FII / DII positions' },
       { keys: ['Esc'], label: 'Close modal / cancel' },
       { keys: ['?'], label: 'This help' },
     ],

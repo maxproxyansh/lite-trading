@@ -197,7 +197,10 @@ class MarketDataService:
         if self._snapshot_task or self._feed_task or self._flush_task:
             return
         dhan_credential_service.initialize()
-        await self.refresh()
+        try:
+            await self.refresh()
+        except Exception as exc:
+            logger.error("Initial market data refresh failed (background loops will retry): %s", exc)
         self._snapshot_task = asyncio.create_task(self._snapshot_loop())
         self._feed_task = asyncio.create_task(self._feed_loop())
         self._flush_task = asyncio.create_task(self._flush_loop())

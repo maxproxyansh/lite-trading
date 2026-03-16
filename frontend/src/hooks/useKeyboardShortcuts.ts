@@ -12,6 +12,8 @@ const CHORD_TIMEOUT = 300
 
 export default function useKeyboardShortcuts() {
   const [shortcutsModalOpen, setShortcutsModalOpen] = useState(false)
+  const [macroCalendarOpen, setMacroCalendarOpen] = useState(false)
+  const [fiiDiiOpen, setFiiDiiOpen] = useState(false)
   const chordRef = useRef<{ key: string; timer: ReturnType<typeof setTimeout> } | null>(null)
 
   useEffect(() => {
@@ -100,17 +102,36 @@ export default function useKeyboardShortcuts() {
       const state = useStore.getState()
       const quote = state.selectedQuote
 
-      // --- Chord-aware timeframe shortcuts ---
+      // --- Chord-aware shortcuts ---
 
-      // Check if this completes a chord: "1" then "5" → 15m
+      // Check if this completes a chord
       if (chordRef.current) {
+        // "1" then "5" → 15m
         if (chordRef.current.key === '1' && key === '5') {
           commitTimeframe('15m')
           e.preventDefault()
           return
         }
-        // Not a valid chord — commit the pending "1" as 1m, then handle this key below
-        commitTimeframe('1m')
+        // "g" then "m" → macro calendar
+        if (chordRef.current.key === 'g' && key === 'm') {
+          clearChord()
+          setMacroCalendarOpen((v) => !v)
+          e.preventDefault()
+          return
+        }
+        // "g" then "f" → FII/DII
+        if (chordRef.current.key === 'g' && key === 'f') {
+          clearChord()
+          setFiiDiiOpen((v) => !v)
+          e.preventDefault()
+          return
+        }
+        // Not a valid chord — commit pending key
+        if (chordRef.current.key === '1') {
+          commitTimeframe('1m')
+        } else {
+          clearChord()
+        }
       }
 
       // Start a chord if "1" is pressed (could be 1m or start of 15m)
@@ -118,9 +139,22 @@ export default function useKeyboardShortcuts() {
         chordRef.current = {
           key: '1',
           timer: setTimeout(() => {
-            // Timeout elapsed without "5" — commit as 1m
             if (chordRef.current?.key === '1') {
               commitTimeframe('1m')
+            }
+          }, CHORD_TIMEOUT),
+        }
+        e.preventDefault()
+        return
+      }
+
+      // Start a chord if "g" is pressed (g+m = macro calendar, g+f = FII/DII)
+      if (key === 'g') {
+        chordRef.current = {
+          key: 'g',
+          timer: setTimeout(() => {
+            if (chordRef.current?.key === 'g') {
+              clearChord()
             }
           }, CHORD_TIMEOUT),
         }
@@ -248,5 +282,9 @@ export default function useKeyboardShortcuts() {
     }
   }, [])
 
-  return { shortcutsModalOpen, setShortcutsModalOpen }
+  return {
+    shortcutsModalOpen, setShortcutsModalOpen,
+    macroCalendarOpen, setMacroCalendarOpen,
+    fiiDiiOpen, setFiiDiiOpen,
+  }
 }
