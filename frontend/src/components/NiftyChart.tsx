@@ -78,7 +78,7 @@ function getChartColors() {
 
 function toVolumeData(candles: Candle[], bullColor: string, bearColor: string): HistogramData<Time>[] {
   return candles.map((candle) => ({
-    time: candle.time as Time,
+    time: (candle.time + IST_OFFSET_SECONDS) as Time,
     value: candle.volume,
     color: candle.close >= candle.open ? `${bullColor}55` : `${bearColor}55`,
   }))
@@ -97,14 +97,15 @@ function nextBarBoundary(time: number, timeframe: (typeof TIMEFRAMES)[number]) {
     return time + map[timeframe]
   }
 
-  const istDate = new Date((time + IST_OFFSET_SECONDS) * 1000)
+  // Timestamps are already IST-shifted, so UTC fields give IST values
+  const istDate = new Date(time * 1000)
   const nextMonthStart = Date.UTC(istDate.getUTCFullYear(), istDate.getUTCMonth() + 1, 1)
-  return Math.floor(nextMonthStart / 1000) - IST_OFFSET_SECONDS
+  return Math.floor(nextMonthStart / 1000)
 }
 
 function toChartCandles(candles: Candle[]) {
   return candles.map((candle) => ({
-    time: candle.time as Time,
+    time: (candle.time + IST_OFFSET_SECONDS) as Time,
     open: candle.open,
     high: candle.high,
     low: candle.low,
@@ -358,7 +359,7 @@ export default function NiftyChart() {
     }
 
     const lastBar = lastBarRef.current
-    const now = Math.floor(Date.now() / 1000)
+    const now = Math.floor(Date.now() / 1000) + IST_OFFSET_SECONDS
 
     const nextBoundary = nextBarBoundary(Number(lastBar.time), timeframe)
     if (now >= nextBoundary) {
@@ -886,6 +887,13 @@ export default function NiftyChart() {
   useEffect(() => {
     syncLiveChartPrice()
   }, [candleCount, chartPrice, chartSymbol, timeframe])
+
+  // Periodic timer ensures live candle updates even without price changes
+  // (e.g., WebSocket down, new period boundary crossed)
+  useEffect(() => {
+    const id = setInterval(syncLiveChartPrice, 3000)
+    return () => clearInterval(id)
+  }, [])
 
   useEffect(() => {
     const chart = chartRef.current
