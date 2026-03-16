@@ -706,8 +706,8 @@ export default function NiftyChart() {
       },
       crosshair: {
         mode: 0,
-        vertLine: { color: 'rgba(255,255,255,0.2)', style: 2, width: 1, labelBackgroundColor: colors.bgSecondary },
-        horzLine: { color: 'rgba(255,255,255,0.2)', style: 2, width: 1, labelBackgroundColor: colors.bgSecondary },
+        vertLine: { color: 'rgba(255,255,255,0.15)', style: 3, width: 1, labelVisible: true, labelBackgroundColor: '#2a2a2a' },
+        horzLine: { color: 'rgba(255,255,255,0.15)', style: 3, width: 1, labelVisible: true, labelBackgroundColor: '#2a2a2a' },
       },
       rightPriceScale: {
         borderColor: colors.borderPrimary,
@@ -1323,9 +1323,7 @@ export default function NiftyChart() {
               {overlayVisible ? <Eye size={12} /> : <EyeOff size={12} />}
             </button>
             <button
-              onClick={() => {
-                if (confirm('Delete all drawings on this chart?')) clearDrawings(chartQuote?.symbol ?? 'NIFTY 50')
-              }}
+              onClick={() => clearDrawings(chartQuote?.symbol ?? 'NIFTY 50')}
               className="flex items-center justify-center rounded-sm px-1 py-0.5 text-[11px] text-text-muted transition-colors hover:text-[#e53935]"
               title="Delete all drawings"
             >
