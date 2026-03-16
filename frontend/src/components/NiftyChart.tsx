@@ -1214,6 +1214,8 @@ export default function NiftyChart() {
     if ((event.key === 'Delete' || event.key === 'Backspace') && selectedDrawingId && drawingToolbar) {
       const symbol = chartQuote?.symbol ?? 'NIFTY 50'
       removeDrawing(symbol, selectedDrawingId)
+      const remaining = (drawings[symbol] ?? []).filter((d) => d.id !== selectedDrawingId)
+      drawingManagerRef.current?.sync(remaining)
       setDrawingContextMenu(null)
       event.preventDefault()
     }
@@ -1323,7 +1325,14 @@ export default function NiftyChart() {
               {overlayVisible ? <Eye size={12} /> : <EyeOff size={12} />}
             </button>
             <button
-              onClick={() => clearDrawings(chartQuote?.symbol ?? 'NIFTY 50')}
+              onClick={() => {
+                const symbol = chartQuote?.symbol ?? 'NIFTY 50'
+                const count = (drawings[symbol] ?? []).length
+                if (count === 0) return
+                clearDrawings(symbol)
+                drawingManagerRef.current?.sync([])
+                addToast('success', `Deleted ${count} drawing${count > 1 ? 's' : ''}`)
+              }}
               className="flex items-center justify-center rounded-sm px-1 py-0.5 text-[11px] text-text-muted transition-colors hover:text-[#e53935]"
               title="Delete all drawings"
             >
@@ -1448,7 +1457,14 @@ export default function NiftyChart() {
           <DrawingToolbar
             activeTool={activeTool}
             onSelectTool={setActiveTool}
-            onClearAll={() => clearDrawings(chartQuote?.symbol ?? 'NIFTY 50')}
+            onClearAll={() => {
+              const symbol = chartQuote?.symbol ?? 'NIFTY 50'
+              const count = (drawings[symbol] ?? []).length
+              if (count === 0) return
+              clearDrawings(symbol)
+              drawingManagerRef.current?.sync([])
+              addToast('success', `Deleted ${count} drawing${count > 1 ? 's' : ''}`)
+            }}
             isCoarsePointer={hasCoarsePointer}
           />
         )}
@@ -1685,7 +1701,12 @@ export default function NiftyChart() {
             <DrawingContextMenu
               x={drawingContextMenu.x} y={drawingContextMenu.y} style={drawing.style}
               onChangeStyle={(updates) => updateDrawing(symbol, drawing.id, { style: { ...drawing.style, ...updates } })}
-              onDelete={() => { removeDrawing(symbol, drawing.id); setDrawingContextMenu(null) }}
+              onDelete={() => {
+                removeDrawing(symbol, drawing.id)
+                const remaining = (drawings[symbol] ?? []).filter((d) => d.id !== drawing.id)
+                drawingManagerRef.current?.sync(remaining)
+                setDrawingContextMenu(null)
+              }}
               onClose={() => setDrawingContextMenu(null)}
             />
           )
