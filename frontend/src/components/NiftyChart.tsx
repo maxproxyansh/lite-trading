@@ -1322,6 +1322,15 @@ export default function NiftyChart() {
             >
               {overlayVisible ? <Eye size={12} /> : <EyeOff size={12} />}
             </button>
+            <button
+              onClick={() => {
+                if (confirm('Delete all drawings on this chart?')) clearDrawings(chartQuote?.symbol ?? 'NIFTY 50')
+              }}
+              className="flex items-center justify-center rounded-sm px-1 py-0.5 text-[11px] text-text-muted transition-colors hover:text-[#e53935]"
+              title="Delete all drawings"
+            >
+              <Trash2 size={12} />
+            </button>
             <div className="mx-1 h-3 w-px bg-border-primary opacity-50" />
             <button
               onClick={() => setAlertsPanelOpen((open) => !open)}
