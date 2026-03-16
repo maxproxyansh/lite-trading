@@ -9,6 +9,7 @@ from .meta import router as meta
 from .orders import router as orders
 from .portfolios import router as portfolios
 from .positions import router as positions
+from .participants import router as participants
 from .signals import router as signals
 from .websocket import router as websocket
 
@@ -22,6 +23,7 @@ __all__ = [
     "market",
     "meta",
     "orders",
+    "participants",
     "portfolios",
     "positions",
     "signals",
