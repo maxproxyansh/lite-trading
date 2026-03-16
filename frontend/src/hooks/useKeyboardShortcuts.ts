@@ -208,6 +208,28 @@ export default function useKeyboardShortcuts() {
         e.preventDefault()
         return
       }
+
+      // Drawing tool shortcuts (only when drawing toolbar is open)
+      if (state.drawingToolbar) {
+        // - key → horizontal line
+        if (e.key === '-') {
+          state.setActiveTool(state.activeTool === 'hline' ? null : 'hline')
+          e.preventDefault()
+          return
+        }
+        // | key (Shift+\) → vertical line
+        if (e.key === '|') {
+          state.setActiveTool(state.activeTool === 'vline' ? null : 'vline')
+          e.preventDefault()
+          return
+        }
+        // T key → trendline
+        if (key === 't') {
+          state.setActiveTool(state.activeTool === 'trendline' ? null : 'trendline')
+          e.preventDefault()
+          return
+        }
+      }
     }
 
     // Use capture phase so arrow keys are intercepted before lightweight-charts consumes them

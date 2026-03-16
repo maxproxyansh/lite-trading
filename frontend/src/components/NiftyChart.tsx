@@ -16,6 +16,7 @@ import {
   type CandleResponse,
 } from '../lib/api'
 import { useStore } from '../store/useStore'
+import { DrawingContextMenu } from './chart/DrawingContextMenu'
 import { DrawingToolbar } from './chart/DrawingToolbar'
 import { IndicatorPanel } from './chart/IndicatorPanel'
 import { OscillatorPane } from './chart/OscillatorPane'
@@ -240,6 +241,10 @@ export default function NiftyChart() {
     addDrawing,
     loadDrawingsForSymbol,
     clearDrawings,
+    selectedDrawingId,
+    setSelectedDrawingId,
+    updateDrawing,
+    removeDrawing,
     indicatorPanelOpen,
     indicators,
     oscillatorPaneState,
@@ -270,6 +275,10 @@ export default function NiftyChart() {
     addDrawing: state.addDrawing,
     loadDrawingsForSymbol: state.loadDrawingsForSymbol,
     clearDrawings: state.clearDrawings,
+    selectedDrawingId: state.selectedDrawingId,
+    setSelectedDrawingId: state.setSelectedDrawingId,
+    updateDrawing: state.updateDrawing,
+    removeDrawing: state.removeDrawing,
     indicatorPanelOpen: state.indicatorPanelOpen,
     indicators: state.indicators,
     oscillatorPaneState: state.oscillatorPaneState,
@@ -325,6 +334,7 @@ export default function NiftyChart() {
   const [alertMutation, setAlertMutation] = useState<AlertMutation>(null)
   const [dragPreview, setDragPreview] = useState<{ alertId: string; price: number } | null>(null)
   const [alertsPanelOpen, setAlertsPanelOpen] = useState(false)
+  const [drawingContextMenu, setDrawingContextMenu] = useState<{ drawingId: string; x: number; y: number } | null>(null)
   const [showVolume, setShowVolume] = useState(() => {
     try { return localStorage.getItem('chart:showVolume') !== 'false' } catch { return true }
   })
@@ -1108,6 +1118,14 @@ export default function NiftyChart() {
     if ((event.key === 'a' || event.key === 'A') && shortcutAnchor && !alertModal) {
       openCreateAlertModal(shortcutAnchor)
       event.preventDefault()
+      return
+    }
+
+    if ((event.key === 'Delete' || event.key === 'Backspace') && selectedDrawingId && drawingToolbar) {
+      const symbol = chartQuote?.symbol ?? 'NIFTY 50'
+      removeDrawing(symbol, selectedDrawingId)
+      setDrawingContextMenu(null)
+      event.preventDefault()
     }
   }
 
@@ -1268,6 +1286,56 @@ export default function NiftyChart() {
         tabIndex={0}
         onPointerDown={handleChartPointerDown}
         onKeyDown={handleChartKeyDown}
+        onContextMenu={(e) => {
+          if (!drawingToolbar) return
+          e.preventDefault()
+          const rect = containerRef.current?.getBoundingClientRect()
+          if (!rect || !seriesRef.current) return
+          const x = e.clientX - rect.left
+          const y = e.clientY - rect.top
+          const symbol = chartQuote?.symbol ?? 'NIFTY 50'
+          const symbolDrawings = drawings[symbol] ?? []
+
+          for (const drawing of symbolDrawings) {
+            if (drawing.type === 'hline') {
+              const lineY = seriesRef.current.priceToCoordinate(drawing.points[0].price)
+              if (lineY !== null && Math.abs(y - lineY) < 12) {
+                setDrawingContextMenu({ drawingId: drawing.id, x, y })
+                setSelectedDrawingId(drawing.id)
+                return
+              }
+            }
+            if (drawing.type === 'vline') {
+              const chart = chartRef.current
+              if (!chart) continue
+              const lineX = chart.timeScale().timeToCoordinate(drawing.points[0].time as any)
+              if (lineX !== null && Math.abs(x - lineX) < 12) {
+                setDrawingContextMenu({ drawingId: drawing.id, x, y })
+                setSelectedDrawingId(drawing.id)
+                return
+              }
+            }
+            // For other drawing types, do a simple bounding-box check
+            if (drawing.points.length >= 2) {
+              const p1 = seriesRef.current.priceToCoordinate(drawing.points[0].price)
+              const p2 = seriesRef.current.priceToCoordinate(drawing.points[1].price)
+              const chart = chartRef.current
+              if (!p1 || !p2 || !chart) continue
+              const x1 = chart.timeScale().timeToCoordinate(drawing.points[0].time as any)
+              const x2 = chart.timeScale().timeToCoordinate(drawing.points[1].time as any)
+              if (x1 === null || x2 === null) continue
+              const minX = Math.min(x1, x2) - 12
+              const maxX = Math.max(x1, x2) + 12
+              const minY = Math.min(p1, p2) - 12
+              const maxY = Math.max(p1, p2) + 12
+              if (x >= minX && x <= maxX && y >= minY && y <= maxY) {
+                setDrawingContextMenu({ drawingId: drawing.id, x, y })
+                setSelectedDrawingId(drawing.id)
+                return
+              }
+            }
+          }
+        }}
       >
         {drawingToolbar && (
           <DrawingToolbar
@@ -1501,6 +1569,20 @@ export default function NiftyChart() {
             </div>
           </div>
         ) : null}
+
+        {drawingContextMenu && (() => {
+          const symbol = chartQuote?.symbol ?? 'NIFTY 50'
+          const drawing = (drawings[symbol] ?? []).find((d) => d.id === drawingContextMenu.drawingId)
+          if (!drawing) return null
+          return (
+            <DrawingContextMenu
+              x={drawingContextMenu.x} y={drawingContextMenu.y} style={drawing.style}
+              onChangeStyle={(updates) => updateDrawing(symbol, drawing.id, { style: { ...drawing.style, ...updates } })}
+              onDelete={() => { removeDrawing(symbol, drawing.id); setDrawingContextMenu(null) }}
+              onClose={() => setDrawingContextMenu(null)}
+            />
+          )
+        })()}
       </div>
       {indicators.filter((ind) => ind.enabled && OSCILLATOR_INDICATORS.includes(ind.type)).map((ind) => {
         const raw = rawCandlesRef.current
