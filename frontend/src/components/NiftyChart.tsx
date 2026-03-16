@@ -385,11 +385,11 @@ export default function NiftyChart() {
       return
     }
 
-    // For NIFTY spot (no option chart), incorporate day high/low from the feed
+    // For NIFTY daily candle only, incorporate day high/low from the Dhan feed
     let high = Math.max(lastBar.high, price)
     let low = Math.min(lastBar.low, price)
-    if (!optionChartSymbol && dayHigh && dayHigh > 0) high = Math.max(high, dayHigh)
-    if (!optionChartSymbol && dayLow && dayLow > 0) low = Math.min(low, dayLow)
+    if (!optionChartSymbol && timeframe === 'D' && dayHigh && dayHigh > 0) high = Math.max(high, dayHigh)
+    if (!optionChartSymbol && timeframe === 'D' && dayLow && dayLow > 0) low = Math.min(low, dayLow)
 
     const nextBar: CandlestickData<Time> = {
       ...lastBar,
