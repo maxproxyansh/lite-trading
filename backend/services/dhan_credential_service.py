@@ -163,6 +163,7 @@ def _totp_candidates(secret: str) -> list[str]:
 class DhanCredentialService:
     def __init__(self) -> None:
         self._lock = threading.RLock()
+        self._renewal_lock = threading.Lock()
         self._initialized = False
         self._client_id: str | None = None
         self._access_token: str | None = None
@@ -424,15 +425,22 @@ class DhanCredentialService:
             )
 
     def _refresh_or_regenerate(self, *, reason: str) -> bool:
-        snapshot = self.snapshot()
-        if snapshot.client_id and snapshot.access_token:
-            try:
-                return self._renew_access_token(reason=reason)
-            except DhanApiError as exc:
-                if not settings.dhan_pin or not settings.dhan_totp_secret:
-                    raise
-                logger.warning("Dhan token renewal failed (%s); falling back to TOTP regeneration", exc.reason)
-        return self._regenerate_access_token(reason=f"{reason}-totp-fallback")
+        gen_before = self.snapshot().generation
+        # Serialize all token renewal attempts so concurrent threads don't
+        # each generate a new token (each generation invalidates the previous).
+        with self._renewal_lock:
+            # Another thread may have already refreshed while we waited.
+            if self.snapshot().generation != gen_before:
+                return True
+            snapshot = self.snapshot()
+            if snapshot.client_id and snapshot.access_token:
+                try:
+                    return self._renew_access_token(reason=reason)
+                except DhanApiError as exc:
+                    if not settings.dhan_pin or not settings.dhan_totp_secret:
+                        raise
+                    logger.warning("Dhan token renewal failed (%s); falling back to TOTP regeneration", exc.reason)
+            return self._regenerate_access_token(reason=f"{reason}-totp-fallback")
 
     def _renew_access_token(self, *, reason: str) -> bool:
         snapshot = self.snapshot()
