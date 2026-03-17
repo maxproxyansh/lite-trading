@@ -440,13 +440,13 @@ class DhanCredentialService:
             raise DhanApiError("DHAN_TOKEN_RENEWAL_FAILED", "Cannot renew Dhan token without an active access token", auth_failed=True)
 
         payload = self._request_json(
-            "GET",
+            "POST",
             f"{DHAN_API_BASE}/RenewToken",
             headers=self._headers(snapshot.client_id, snapshot.access_token),
             failure_reason="DHAN_TOKEN_RENEWAL_FAILED",
             auth_failed=True,
         )
-        next_token = str(payload.get("token") or "").strip()
+        next_token = str(payload.get("accessToken") or payload.get("token") or "").strip()
         if not next_token:
             raise DhanApiError("DHAN_TOKEN_RENEWAL_FAILED", f"Dhan renew token response did not include a token: {_extract_error_text(payload)}", auth_failed=True, payload=payload)
         expires_at = _parse_ist_datetime(str(payload.get("expiryTime") or "")) or _decode_token_expiry(next_token)
@@ -472,37 +472,42 @@ class DhanCredentialService:
                 auth_failed=True,
             )
 
+        next_token: str = ""
         payload = None
         last_error: DhanApiError | None = None
         for totp in _totp_candidates(totp_secret):
             try:
-                payload = self._request_json(
+                candidate_payload = self._request_json(
                     "POST",
                     f"{DHAN_AUTH_BASE}/generateAccessToken",
                     params={"dhanClientId": client_id, "pin": pin, "totp": totp},
                     failure_reason="DHAN_TOKEN_REGENERATION_FAILED",
                     auth_failed=True,
                 )
-                break
             except DhanApiError as exc:
                 last_error = exc
                 continue
+            # Dhan may return HTTP 200 with {"status": "error"} for invalid TOTP;
+            # only accept the response if it actually contains an access token.
+            token = str(candidate_payload.get("accessToken") or candidate_payload.get("token") or "").strip()
+            if token:
+                next_token = token
+                payload = candidate_payload
+                break
+            last_error = DhanApiError(
+                "DHAN_TOKEN_REGENERATION_FAILED",
+                f"Dhan TOTP response missing access token: {_extract_error_text(candidate_payload)}",
+                auth_failed=True,
+                payload=candidate_payload,
+            )
 
-        if payload is None:
+        if not next_token:
             if last_error:
                 raise last_error
             raise DhanApiError(
                 "DHAN_TOKEN_REGENERATION_FAILED",
                 "Dhan TOTP regeneration failed without a response payload",
                 auth_failed=True,
-            )
-        next_token = str(payload.get("accessToken") or payload.get("token") or "").strip()
-        if not next_token:
-            raise DhanApiError(
-                "DHAN_TOKEN_REGENERATION_FAILED",
-                f"Dhan TOTP regeneration did not return an access token: {_extract_error_text(payload)}",
-                auth_failed=True,
-                payload=payload,
             )
         expires_at = _parse_ist_datetime(str(payload.get("expiryTime") or "")) or _decode_token_expiry(next_token)
         refreshed_at = datetime.now(timezone.utc)
