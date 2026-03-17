@@ -443,6 +443,17 @@ class MarketDataService:
                 if not self._has_dhan():
                     await asyncio.sleep(reconnect_delay)
                     continue
+                if market_status() != "OPEN":
+                    # Feed is not expected when market is closed — clear any
+                    # stale MARKET_FEED_DISCONNECTED incident and wait.
+                    if self._health.incident_open and self._health.incident_reason in (
+                        "MARKET_FEED_DISCONNECTED",
+                        "REALTIME_FEED_STALE",
+                    ):
+                        await self._close_incident()
+                    await self._reset_feed()
+                    await asyncio.sleep(reconnect_delay)
+                    continue
                 if not self._desired_feed_instruments:
                     await asyncio.sleep(0.25)
                     continue
