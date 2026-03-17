@@ -434,6 +434,15 @@ class DhanCredentialService:
             if self.snapshot().generation != gen_before:
                 return True
             snapshot = self.snapshot()
+            # Guard: don't nuke a token that has plenty of life left.
+            # A single auth error is likely transient; regenerating via TOTP
+            # is destructive (invalidates current token) and rate-limited.
+            now = datetime.now(timezone.utc)
+            if snapshot.access_token and snapshot.expires_at:
+                remaining = (snapshot.expires_at - now).total_seconds()
+                if remaining > max(settings.dhan_token_renewal_lead_seconds, 60):
+                    logger.info("Token has %.0fh remaining, treating auth error as transient (%s)", remaining / 3600, reason)
+                    return False
             if snapshot.client_id and snapshot.access_token:
                 # RenewToken only works for web-generated tokens, not TOTP-generated ones.
                 can_renew = snapshot.token_source not in ("totp",)
@@ -485,6 +494,7 @@ class DhanCredentialService:
             )
 
         # Dhan rate-limits generateAccessToken to once every 2 minutes.
+        # Track attempt time (not just success) so we don't spam the endpoint.
         elapsed = time.time() - self._last_totp_generation_at
         if elapsed < 130:  # 2m10s to be safe
             snapshot = self.snapshot()
@@ -495,6 +505,10 @@ class DhanCredentialService:
             wait = 130 - elapsed
             logger.warning("TOTP rate-limited but token expired; waiting %.0fs for cooldown", wait)
             time.sleep(wait)
+
+        # Record attempt time BEFORE calling Dhan, so concurrent threads
+        # that enter after the lock is released see the cooldown immediately.
+        self._last_totp_generation_at = time.time()
 
         next_token: str = ""
         payload = None
