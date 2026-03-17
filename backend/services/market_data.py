@@ -914,12 +914,14 @@ class MarketDataService:
         # Always derive prev_close from historical daily candles — the option
         # chain's prev_close field can be stale (e.g. returns Friday's close
         # instead of Monday's after a weekend).
+        # Use to_date=yesterday so today's candle is excluded and closes[-1]
+        # is always the previous trading day's close.
         prev_close = 0.0
         if self.last_known_prev_close == 0.0:
             try:
                 today = date.today()
-                from_dt = (today - timedelta(days=5)).strftime("%Y-%m-%d")
-                to_dt = today.strftime("%Y-%m-%d")
+                from_dt = (today - timedelta(days=6)).strftime("%Y-%m-%d")
+                to_dt = (today - timedelta(days=1)).strftime("%Y-%m-%d")
                 payload = dhan_credential_service.call(
                     "historical_daily_data.prev_close",
                     lambda client: client.historical_daily_data(
@@ -932,9 +934,7 @@ class MarketDataService:
                 )
                 payload = payload if isinstance(payload, dict) else {}
                 closes = payload.get("close", []) if isinstance(payload, dict) else []
-                if len(closes) >= 2:
-                    prev_close = float(closes[-2])
-                elif closes:
+                if closes:
                     prev_close = float(closes[-1])
             except Exception:  # noqa: BLE001
                 pass
