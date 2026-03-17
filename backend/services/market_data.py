@@ -910,11 +910,12 @@ class MarketDataService:
         rows: list[dict[str, Any]] = []
         security_id_to_symbol: dict[str, str] = {}
         spot = float(body.get("last_price") or 0.0)
-        prev_close = float(body.get("prev_close") or body.get("previous_close") or 0.0)
 
-        # Dhan option chain doesn't provide prev_close at top level — derive from daily candles.
-        # Only need last 2 trading days, so fetch 5 calendar days (covers weekends/holidays).
-        if prev_close == 0.0 and self.last_known_prev_close == 0.0:
+        # Always derive prev_close from historical daily candles — the option
+        # chain's prev_close field can be stale (e.g. returns Friday's close
+        # instead of Monday's after a weekend).
+        prev_close = 0.0
+        if self.last_known_prev_close == 0.0:
             try:
                 today = date.today()
                 from_dt = (today - timedelta(days=5)).strftime("%Y-%m-%d")
