@@ -175,6 +175,7 @@ class DhanCredentialService:
         self._data_plan_status: str | None = None
         self._data_valid_until: datetime | None = None
         self._generation = 0
+        self._last_totp_generation_at: float = 0.0
 
     def initialize(self, *, force_reload: bool = False) -> None:
         with self._lock:
@@ -434,12 +435,15 @@ class DhanCredentialService:
                 return True
             snapshot = self.snapshot()
             if snapshot.client_id and snapshot.access_token:
-                try:
-                    return self._renew_access_token(reason=reason)
-                except DhanApiError as exc:
-                    if not settings.dhan_pin or not settings.dhan_totp_secret:
-                        raise
-                    logger.warning("Dhan token renewal failed (%s); falling back to TOTP regeneration", exc.reason)
+                # RenewToken only works for web-generated tokens, not TOTP-generated ones.
+                can_renew = snapshot.token_source not in ("totp",)
+                if can_renew:
+                    try:
+                        return self._renew_access_token(reason=reason)
+                    except DhanApiError as exc:
+                        if not settings.dhan_pin or not settings.dhan_totp_secret:
+                            raise
+                        logger.warning("Dhan token renewal failed (%s); falling back to TOTP regeneration", exc.reason)
             return self._regenerate_access_token(reason=f"{reason}-totp-fallback")
 
     def _renew_access_token(self, *, reason: str) -> bool:
@@ -480,6 +484,18 @@ class DhanCredentialService:
                 auth_failed=True,
             )
 
+        # Dhan rate-limits generateAccessToken to once every 2 minutes.
+        elapsed = time.time() - self._last_totp_generation_at
+        if elapsed < 130:  # 2m10s to be safe
+            snapshot = self.snapshot()
+            if snapshot.access_token and snapshot.expires_at and snapshot.expires_at > datetime.now(timezone.utc):
+                logger.info("Skipping TOTP regeneration (%.0fs cooldown, current token still valid)", 130 - elapsed)
+                return False
+            # Token is expired and we're rate-limited — wait out the cooldown.
+            wait = 130 - elapsed
+            logger.warning("TOTP rate-limited but token expired; waiting %.0fs for cooldown", wait)
+            time.sleep(wait)
+
         next_token: str = ""
         payload = None
         last_error: DhanApiError | None = None
@@ -517,6 +533,7 @@ class DhanCredentialService:
                 "Dhan TOTP regeneration failed without a response payload",
                 auth_failed=True,
             )
+        self._last_totp_generation_at = time.time()
         expires_at = _parse_ist_datetime(str(payload.get("expiryTime") or "")) or _decode_token_expiry(next_token)
         refreshed_at = datetime.now(timezone.utc)
         logger.info("Regenerated Dhan access token for %s via %s", client_id, reason)
