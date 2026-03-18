@@ -13,6 +13,12 @@ from schemas import DhanConsumerStateSummary
 
 logger = logging.getLogger("lite.dhan.incidents")
 HEALTHY_STATES = {"healthy", "ok", "connected", "ready"}
+SLACK_ALERTABLE_ROOT_CAUSES = {
+    "DHAN_AUTH_FAILED",
+    "DHAN_PROFILE_FAILED",
+    "DHAN_TOKEN_RENEWAL_FAILED",
+    "DHAN_TOKEN_REGENERATION_FAILED",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,7 +155,7 @@ class DhanIncidentService:
 
         if desired_class is None:
             if record.incident_open:
-                if alert_sender:
+                if alert_sender and self._should_send_slack_alert(record.root_cause):
                     try:
                         delivered = alert_sender(
                             state="RECOVERY",
@@ -189,7 +195,7 @@ class DhanIncidentService:
         record.last_state_change_at = now
         if should_alert:
             record.opened_at = now
-            if alert_sender:
+            if alert_sender and self._should_send_slack_alert(desired_root_cause):
                 try:
                     delivered = alert_sender(
                         state="P0",
@@ -205,12 +211,18 @@ class DhanIncidentService:
                     record.alert_delivery_error = None
                 else:
                     record.alert_delivery_error = "open-alert-delivery-failed"
+            elif alert_sender:
+                record.alert_delivery_error = None
         db.add(record)
 
     @staticmethod
     def _fingerprint(*, incident_class: str, root_cause: str, affected_consumers: list[str]) -> str:
         raw = "|".join(["dhan", incident_class, root_cause, ",".join(sorted(affected_consumers))])
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _should_send_slack_alert(root_cause: str | None) -> bool:
+        return (root_cause or "").strip() in SLACK_ALERTABLE_ROOT_CAUSES
 
     @staticmethod
     def _get_or_create_record(db) -> DhanIncident:

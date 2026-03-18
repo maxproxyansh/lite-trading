@@ -31,6 +31,20 @@ INDEX_INSTRUMENT_TYPE = "INDEX"
 OPTION_EXCHANGE_SEGMENT = "NSE_FNO"
 OPTION_INSTRUMENT_TYPE = "OPTIDX"
 PCR_SCOPE = "all_loaded_strikes_for_active_expiry"
+TOKEN_ALERT_REASONS = frozenset(
+    {
+        "DHAN_AUTH_FAILED",
+        "DHAN_PROFILE_FAILED",
+        "DHAN_TOKEN_RENEWAL_FAILED",
+        "DHAN_TOKEN_REGENERATION_FAILED",
+    }
+)
+TOKEN_ALERT_SUMMARIES = {
+    "DHAN_AUTH_FAILED": "auth failed",
+    "DHAN_PROFILE_FAILED": "profile check failed",
+    "DHAN_TOKEN_RENEWAL_FAILED": "renewal failed",
+    "DHAN_TOKEN_REGENERATION_FAILED": "regeneration failed",
+}
 OLDEST_DAILY_HISTORY = date(1990, 1, 1)
 MAX_INTRADAY_HISTORY_DAYS = 365 * 5
 INITIAL_HISTORY_WINDOWS = {
@@ -304,23 +318,35 @@ class MarketDataService:
             return None
         return max(int((now - value).total_seconds()), 0)
 
-    async def _send_incident_alert(self, *, state: str, reason: str, message: str) -> None:
+    def _build_slack_alert(
+        self,
+        *,
+        state: str,
+        reason: str,
+    ) -> tuple[str, list[str]] | None:
+        normalized_reason = (reason or "").strip()
+        if normalized_reason.startswith("PROVIDER_UNHEALTHY:"):
+            _, normalized_reason = normalized_reason.split(":", 1)
+        if normalized_reason not in TOKEN_ALERT_REASONS:
+            return None
+
+        if state == "RECOVERY":
+            token_source = (self.get_provider_health().token_source or "").lower()
+            if token_source == "totp":
+                return "[RECOVERY] Dhan token regenerated", []
+            return "[RECOVERY] Dhan token recovered", []
+
+        summary = TOKEN_ALERT_SUMMARIES.get(normalized_reason, normalized_reason.lower().replace("_", " "))
+        return "[P0] Dhan token failed", [summary]
+
+    async def _send_incident_alert(self, *, state: str, reason: str, message: str) -> bool:
         if not settings.dhan_p0_slack_webhook_url:
-            return
-        health = self.get_provider_health()
-        lines = [
-            f"environment: {settings.app_env}",
-            f"reason: {reason}",
-            f"message: {message}",
-            f"token_expires_at: {health.token_expires_at.isoformat() if health.token_expires_at else 'unknown'}",
-            f"last_token_refresh_at: {health.last_token_refresh_at.isoformat() if health.last_token_refresh_at else 'never'}",
-            f"last_profile_check_at: {health.last_profile_check_at.isoformat() if health.last_profile_check_at else 'never'}",
-            f"last_option_chain_success_at: {health.last_option_chain_success_at.isoformat() if health.last_option_chain_success_at else 'never'}",
-            f"last_feed_message_at: {health.last_feed_message_at.isoformat() if health.last_feed_message_at else 'never'}",
-            "health_path: /api/v1/market/provider-health",
-        ]
-        title = f"[{state}] Dhan market data"
-        await send_p0_slack_alert(title=title, lines=lines)
+            return False
+        alert = self._build_slack_alert(state=state, reason=reason)
+        if not alert:
+            return True
+        title, lines = alert
+        return await send_p0_slack_alert(title=title, lines=lines)
 
     def _send_incident_alert_sync(
         self,
@@ -331,8 +357,13 @@ class MarketDataService:
         message: str,
     ) -> bool:
         try:
-            asyncio.run(self._send_incident_alert(state=state, reason=f"{incident_class}:{reason}", message=message))
-            return True
+            return asyncio.run(
+                self._send_incident_alert(
+                    state=state,
+                    reason=f"{incident_class}:{reason}",
+                    message=message,
+                )
+            )
         except Exception:  # noqa: BLE001
             logger.exception("Failed to deliver persisted Dhan incident alert")
             return False
