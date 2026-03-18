@@ -10,6 +10,7 @@ import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi import Request, Response
@@ -42,8 +43,10 @@ from rate_limit import _rate_buckets, _rate_windows, rate_limit  # noqa: E402
 from routers.websocket import broadcast_message  # noqa: E402
 from services.alert_service import sync_alerts  # noqa: E402
 from services.auth_service import ensure_bootstrap_state  # noqa: E402
+import dependencies as dependencies_module  # noqa: E402
 import services.dhan_credential_service as dhan_credentials_module  # noqa: E402
-from services.dhan_credential_service import DhanApiError, dhan_credential_service  # noqa: E402
+from services.dhan_credential_service import DhanApiError, DhanCredentialSnapshot, dhan_credential_service  # noqa: E402
+from services.dhan_incident_service import DhanIncidentService, dhan_incident_service  # noqa: E402
 import services.market_data as market_data_module  # noqa: E402
 from services.market_data import market_data_service  # noqa: E402
 from services.signal_adapter import signal_adapter  # noqa: E402
@@ -2014,7 +2017,7 @@ def test_fetch_candles_aggregates_weekly_and_monthly_from_daily_history(monkeypa
     fake_client = FakeDhanClient()
     monkeypatch.setattr(market_data_service, "_has_dhan", lambda: True)
     monkeypatch.setattr(dhan_credential_service, "call", lambda operation_name, fn, **kwargs: fn(fake_client)["data"])
-    monkeypatch.setattr(market_data_service, "_live_price_for_target", lambda target: None)
+    monkeypatch.setattr(market_data_service, "_live_ohlc_for_target", lambda target: (None, None, None))
 
     weekly = market_data_service._fetch_candles("W")
     monthly = market_data_service._fetch_candles("M")
@@ -2265,6 +2268,13 @@ def test_dhan_credential_service_falls_back_to_totp_regeneration(monkeypatch: py
         if url.endswith("/RenewToken"):
             raise DhanApiError("DHAN_TOKEN_RENEWAL_FAILED", "token expired", auth_failed=True)
         if url.endswith("/profile"):
+            headers = kwargs.get("headers") or {}
+            if headers.get("access-token") == regenerated_token:
+                return {
+                    "tokenValidity": "2026-03-15T09:30:00.000",
+                    "dataPlan": "Active",
+                    "dataValidity": "2026-03-15T15:30:00.000",
+                }
             raise DhanApiError("DHAN_PROFILE_FAILED", "token expired", auth_failed=True)
         if url.endswith("/generateAccessToken"):
             return {
@@ -2324,6 +2334,17 @@ def test_market_data_incident_alerts_only_on_transition(monkeypatch: pytest.Monk
     dhan_credential_service.reset_runtime_state()
     dhan_credential_service.initialize(force_reload=True)
     market_data_service.reset_runtime_state_for_tests()
+    monkeypatch.setattr(
+        market_data_service,
+        "get_provider_health",
+        lambda: SimpleNamespace(
+            token_expires_at=now + timedelta(days=1),
+            last_token_refresh_at=now - timedelta(minutes=1),
+            last_profile_check_at=now - timedelta(minutes=2),
+            last_option_chain_success_at=now - timedelta(minutes=3),
+            last_feed_message_at=now - timedelta(minutes=4),
+        ),
+    )
 
     async def fake_send_p0_slack_alert(*, title: str, lines: list[str]) -> bool:
         sent.append(title)
@@ -2336,3 +2357,199 @@ def test_market_data_incident_alerts_only_on_transition(monkeypatch: pytest.Monk
     asyncio.run(market_data_service._close_incident("Realtime ticks resumed"))
 
     assert sent == ["[P0] Dhan market data", "[RECOVERY] Dhan market data"]
+
+
+def test_internal_dhan_lease_route_requires_authority_key_and_returns_snapshot(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime.now(timezone.utc)
+    monkeypatch.setattr(dependencies_module.settings, "dhan_authority_shared_secret", "authority-secret")
+    monkeypatch.setattr(
+        dhan_credential_service,
+        "issue_lease",
+        lambda: DhanCredentialSnapshot(
+            configured=True,
+            client_id="1103337749",
+            access_token="lease-token-1",
+            expires_at=now + timedelta(hours=6),
+            token_source="totp",
+            last_refreshed_at=now - timedelta(minutes=2),
+            last_profile_checked_at=now - timedelta(minutes=1),
+            last_rest_success_at=now - timedelta(seconds=30),
+            data_plan_status="ACTIVE",
+            data_valid_until=now + timedelta(days=30),
+            last_lease_issued_at=now,
+            generation=7,
+            totp_regeneration_enabled=True,
+        ),
+    )
+
+    denied = client.get("/internal/dhan/lease")
+    assert denied.status_code == 401, denied.text
+
+    response = client.get("/internal/dhan/lease", headers={"X-Dhan-Authority-Key": "authority-secret"})
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["client_id"] == "1103337749"
+    assert payload["access_token"] == "lease-token-1"
+    assert payload["generation"] == 7
+    assert payload["token_source"] == "totp"
+    assert payload["data_plan_status"] == "ACTIVE"
+    assert payload["data_valid_until"] is not None
+    assert payload["validated_at"] is not None
+
+
+def test_internal_dhan_consumer_state_route_persists_state_and_surfaces_in_provider_health(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime.now(timezone.utc)
+    monkeypatch.setattr(dependencies_module.settings, "dhan_authority_shared_secret", "authority-secret")
+    monkeypatch.setattr(market_data_module.settings, "dhan_p0_slack_webhook_url", "https://slack.example")
+    monkeypatch.setattr(
+        dhan_credential_service,
+        "snapshot",
+        lambda: DhanCredentialSnapshot(
+            configured=True,
+            client_id="1103337749",
+            access_token="lease-token-2",
+            expires_at=now + timedelta(hours=8),
+            token_source="renew",
+            last_refreshed_at=now - timedelta(minutes=3),
+            last_profile_checked_at=now - timedelta(minutes=2),
+            last_rest_success_at=now - timedelta(seconds=45),
+            data_plan_status="ACTIVE",
+            data_valid_until=now + timedelta(days=20),
+            last_lease_issued_at=now - timedelta(minutes=5),
+            generation=11,
+            totp_regeneration_enabled=True,
+        ),
+    )
+    market_data_service.reset_runtime_state_for_tests()
+
+    payload = {
+        "consumer": "auto_trader.market_feed",
+        "instance_id": "worker-1",
+        "state": "unhealthy",
+        "reason": "WEBSOCKET_STALE",
+        "message": "market feed packets stopped",
+        "observed_at": now.isoformat(),
+        "generation": 11,
+    }
+
+    response = client.post(
+        "/internal/dhan/consumer-state",
+        headers={"X-Dhan-Authority-Key": "authority-secret"},
+        json=payload,
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == {"ok": True}
+
+    snapshot = dhan_incident_service.snapshot()
+    assert snapshot.incident_open is True
+    assert snapshot.incident_class == "CONSUMER_UNHEALTHY"
+    assert snapshot.root_cause == "WEBSOCKET_STALE"
+    assert snapshot.fingerprint is not None
+    assert snapshot.affected_consumers == ["auto_trader.market_feed:worker-1"]
+    assert len(snapshot.consumer_states) == 1
+    consumer_state = snapshot.consumer_states[0]
+    assert consumer_state.consumer == "auto_trader.market_feed"
+    assert consumer_state.instance_id == "worker-1"
+    assert consumer_state.state == "unhealthy"
+    assert consumer_state.reason == "WEBSOCKET_STALE"
+    assert consumer_state.message == "market feed packets stopped"
+    assert consumer_state.generation == 11
+
+
+def test_dhan_incident_dedupe_persists_and_provider_health_reports_runtime_fields(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime.now(timezone.utc)
+    admin_headers = _login(client, "admin@lite.trade", "lite-admin-123")
+    monkeypatch.setattr(market_data_module.settings, "dhan_p0_slack_webhook_url", "https://slack.example")
+    monkeypatch.setattr(
+        dhan_credential_service,
+        "snapshot",
+        lambda: DhanCredentialSnapshot(
+            configured=True,
+            client_id="1103337749",
+            access_token="lease-token-3",
+            expires_at=now + timedelta(hours=4),
+            token_source="totp",
+            last_refreshed_at=now - timedelta(minutes=10),
+            last_profile_checked_at=now - timedelta(minutes=5),
+            last_rest_success_at=now - timedelta(seconds=15),
+            data_plan_status="ACTIVE",
+            data_valid_until=now + timedelta(days=15),
+            last_lease_issued_at=now - timedelta(minutes=20),
+            generation=13,
+            totp_regeneration_enabled=True,
+        ),
+    )
+    market_data_service.reset_runtime_state_for_tests()
+
+    sent: list[dict[str, str]] = []
+
+    def fake_alert_sender(*, state: str, incident_class: str, reason: str, message: str) -> bool:
+        sent.append(
+            {
+                "state": state,
+                "incident_class": incident_class,
+                "reason": reason,
+                "message": message,
+            }
+        )
+        return True
+
+    dhan_incident_service.set_provider_health(
+        unhealthy=True,
+        reason="REALTIME_FEED_STALE",
+        message="No realtime ticks received",
+        alert_sender=fake_alert_sender,
+    )
+    dhan_incident_service.set_provider_health(
+        unhealthy=True,
+        reason="REALTIME_FEED_STALE",
+        message="No realtime ticks received",
+        alert_sender=fake_alert_sender,
+    )
+
+    assert len(sent) == 1
+    assert sent[0]["state"] == "P0"
+    assert sent[0]["incident_class"] == "PROVIDER_UNHEALTHY"
+
+    health = client.get("/api/v1/market/provider-health", headers=admin_headers)
+    assert health.status_code == 200, health.text
+    body = health.json()
+    assert body["configured"] is True
+    assert body["authority_mode"] == "lite"
+    assert body["p0_status"] == "critical"
+    assert body["incident_open"] is True
+    assert body["incident_class"] == "PROVIDER_UNHEALTHY"
+    assert body["incident_reason"] == "REALTIME_FEED_STALE"
+    assert body["incident_fingerprint"] is not None
+    assert body["last_lease_issued_at"] is not None
+    assert body["slack_configured"] is True
+    assert body["totp_regeneration_enabled"] is True
+
+    fresh_service = DhanIncidentService()
+    snapshot = fresh_service.snapshot()
+    assert snapshot.incident_open is True
+    assert snapshot.fingerprint == body["incident_fingerprint"]
+
+    dhan_incident_service.set_provider_health(
+        unhealthy=False,
+        reason=None,
+        message=None,
+        alert_sender=fake_alert_sender,
+    )
+    assert len(sent) == 2
+    assert sent[1]["state"] == "RECOVERY"
+
+    recovered = client.get("/api/v1/market/provider-health", headers=admin_headers)
+    assert recovered.status_code == 200, recovered.text
+    recovered_body = recovered.json()
+    assert recovered_body["p0_status"] == "ok"
+    assert recovered_body["incident_open"] is False

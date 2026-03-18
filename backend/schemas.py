@@ -265,15 +265,20 @@ class OptionChainResponse(BaseModel):
 class DhanProviderHealth(BaseModel):
     provider: Literal["dhan"] = "dhan"
     configured: bool
+    authority_mode: Literal["lite"] = "lite"
     p0_status: Literal["ok", "critical"]
     incident_open: bool = False
+    incident_class: str | None = None
+    incident_fingerprint: str | None = None
     incident_reason: str | None = None
     incident_message: str | None = None
     incident_since: datetime | None = None
+    affected_consumers: list[str] = Field(default_factory=list)
     token_source: str | None = None
     token_expires_at: datetime | None = None
     last_token_refresh_at: datetime | None = None
     last_profile_check_at: datetime | None = None
+    last_lease_issued_at: datetime | None = None
     last_rest_success_at: datetime | None = None
     last_option_chain_success_at: datetime | None = None
     last_feed_message_at: datetime | None = None
@@ -290,6 +295,38 @@ class DhanProviderHealth(BaseModel):
     market_open: bool = False
     slack_configured: bool = False
     totp_regeneration_enabled: bool = False
+    consumer_states: list["DhanConsumerStateSummary"] = Field(default_factory=list)
+
+
+class DhanConsumerStateSummary(BaseModel):
+    consumer: str
+    instance_id: str
+    state: str
+    reason: str | None = None
+    message: str | None = None
+    observed_at: datetime
+    generation: int | None = None
+
+
+class DhanLeaseResponse(BaseModel):
+    client_id: str
+    access_token: str
+    expires_at: datetime | None = None
+    generation: int
+    validated_at: datetime | None = None
+    token_source: str | None = None
+    data_plan_status: str | None = None
+    data_valid_until: datetime | None = None
+
+
+class DhanConsumerStateUpdateRequest(BaseModel):
+    consumer: str = Field(min_length=1, max_length=64)
+    instance_id: str = Field(min_length=1, max_length=128)
+    state: str = Field(min_length=1, max_length=32)
+    reason: str | None = Field(default=None, max_length=128)
+    message: str | None = Field(default=None, max_length=2000)
+    observed_at: datetime
+    generation: int | None = None
 
 
 class Candle(BaseModel):

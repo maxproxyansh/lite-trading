@@ -275,5 +275,47 @@ class ServiceCredential(Base, BaseModelMixin):
     access_token = Column(Text, nullable=False)
     expires_at = Column(DateTime(timezone=True), index=True)
     token_source = Column(String(32), nullable=False, default="env")
+    generation = Column(Integer, nullable=False, default=0)
     last_refreshed_at = Column(DateTime(timezone=True))
     last_validated_at = Column(DateTime(timezone=True))
+    data_plan_status = Column(String(64))
+    data_valid_until = Column(DateTime(timezone=True))
+    last_lease_issued_at = Column(DateTime(timezone=True))
+
+
+class DhanIncident(Base, BaseModelMixin):
+    __tablename__ = "dhan_incidents"
+
+    provider = Column(String(64), nullable=False, unique=True, index=True, default="dhan")
+    provider_unhealthy = Column(Boolean, nullable=False, default=False)
+    provider_reason = Column(String(128))
+    provider_message = Column(Text)
+    provider_updated_at = Column(DateTime(timezone=True))
+    incident_open = Column(Boolean, nullable=False, default=False)
+    incident_class = Column(String(64))
+    root_cause = Column(String(128))
+    message = Column(Text)
+    fingerprint = Column(String(255), index=True)
+    opened_at = Column(DateTime(timezone=True))
+    closed_at = Column(DateTime(timezone=True))
+    last_state_change_at = Column(DateTime(timezone=True))
+    last_open_alert_at = Column(DateTime(timezone=True))
+    last_recovery_alert_at = Column(DateTime(timezone=True))
+    affected_consumers = Column(JSON, nullable=False, default=list)
+    alert_delivery_error = Column(Text)
+
+
+class DhanConsumerState(Base, BaseModelMixin):
+    __tablename__ = "dhan_consumer_states"
+    __table_args__ = (
+        UniqueConstraint("consumer", "instance_id", name="uq_dhan_consumer_state_instance"),
+        Index("ix_dhan_consumer_states_observed_at", "observed_at"),
+    )
+
+    consumer = Column(String(64), nullable=False, index=True)
+    instance_id = Column(String(128), nullable=False)
+    state = Column(String(32), nullable=False)
+    reason = Column(String(128))
+    message = Column(Text)
+    observed_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+    generation = Column(Integer)

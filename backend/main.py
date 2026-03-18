@@ -10,7 +10,7 @@ from fastapi.responses import RedirectResponse, Response
 
 from config import get_settings
 from database import SessionLocal, init_db
-from routers import admin, agent, alerts, analytics, auth, funds, market, meta, orders, participants, portfolios, positions, signals, websocket
+from routers import admin, agent, alerts, analytics, auth, funds, internal, market, meta, orders, participants, portfolios, positions, signals, websocket
 from schemas import HealthResponse
 from services.alert_service import sync_alerts
 from services.market_data import market_data_service
@@ -84,6 +84,7 @@ async def lifespan(app: FastAPI):
     market_data_service.set_open_order_processor(_process_market_side_effects)
     signal_adapter.set_broadcast(broadcast_message)
 
+    await dhan_credential_service.start_background_tasks()
     await market_data_service.start()
     await signal_adapter.start()
     webhook_stop = asyncio.Event()
@@ -93,6 +94,7 @@ async def lifespan(app: FastAPI):
     await webhook_task
     await signal_adapter.stop()
     await market_data_service.stop()
+    await dhan_credential_service.stop_background_tasks()
 
 
 app = FastAPI(
@@ -124,7 +126,7 @@ async def security_headers(request: Request, call_next):
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     return response
 
-for router in (auth, admin, meta, market, alerts, portfolios, orders, positions, funds, analytics, signals, participants, agent, websocket):
+for router in (auth, admin, meta, market, alerts, portfolios, orders, positions, funds, analytics, signals, participants, agent, internal, websocket):
     app.include_router(router)
 
 

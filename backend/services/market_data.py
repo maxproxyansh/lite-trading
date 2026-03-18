@@ -15,8 +15,9 @@ from dhanhq.marketfeed import DhanFeed, Full, IDX, NSE_FNO, Quote
 
 from config import get_settings
 from market_hours import IST, market_status
-from schemas import DhanProviderHealth, MarketSnapshot, OptionChainResponse
+from schemas import DhanConsumerStateUpdateRequest, DhanProviderHealth, MarketSnapshot, OptionChainResponse
 from services.dhan_credential_service import DhanApiError, dhan_credential_service
+from services.dhan_incident_service import dhan_incident_service
 from services.ops_alert_service import send_p0_slack_alert
 
 
@@ -226,12 +227,14 @@ class MarketDataService:
         self._dirty_quote_symbols = set()
         self._snapshot_dirty = False
         self._pcr_dirty = False
+        dhan_incident_service.reset_runtime_state_for_tests()
 
     def get_provider_health(self) -> DhanProviderHealth:
         credentials = dhan_credential_service.snapshot()
-        incident_reason = self._health.incident_reason
-        incident_message = self._health.incident_message
-        incident_open = self._health.incident_open
+        incident = dhan_incident_service.snapshot()
+        incident_reason = incident.root_cause or self._health.incident_reason
+        incident_message = incident.message or self._health.incident_message
+        incident_open = incident.incident_open or self._health.incident_open
 
         if not credentials.configured and not incident_reason:
             incident_open = True
@@ -240,15 +243,20 @@ class MarketDataService:
 
         return DhanProviderHealth(
             configured=credentials.configured,
+            authority_mode="lite",
             p0_status="critical" if incident_open else "ok",
             incident_open=incident_open,
+            incident_class=incident.incident_class,
+            incident_fingerprint=incident.fingerprint,
             incident_reason=incident_reason,
             incident_message=incident_message,
-            incident_since=self._health.incident_since,
+            incident_since=incident.opened_at or self._health.incident_since,
+            affected_consumers=incident.affected_consumers,
             token_source=credentials.token_source,
             token_expires_at=credentials.expires_at,
             last_token_refresh_at=credentials.last_refreshed_at,
             last_profile_check_at=credentials.last_profile_checked_at,
+            last_lease_issued_at=credentials.last_lease_issued_at,
             last_rest_success_at=credentials.last_rest_success_at,
             last_option_chain_success_at=self._health.last_option_chain_success_at,
             last_feed_message_at=self._health.last_feed_message_at,
@@ -265,6 +273,20 @@ class MarketDataService:
             market_open=market_status() == "OPEN",
             slack_configured=bool(settings.dhan_p0_slack_webhook_url),
             totp_regeneration_enabled=credentials.totp_regeneration_enabled,
+            consumer_states=incident.consumer_states,
+        )
+
+    async def record_consumer_state(self, payload: DhanConsumerStateUpdateRequest) -> None:
+        await asyncio.to_thread(
+            dhan_incident_service.mark_consumer_state,
+            consumer=payload.consumer,
+            instance_id=payload.instance_id,
+            state=payload.state,
+            reason=payload.reason,
+            message=payload.message,
+            observed_at=payload.observed_at,
+            generation=payload.generation,
+            alert_sender=self._send_incident_alert_sync,
         )
 
     async def _ensure_runtime_ready(self, *, force_profile: bool = False) -> None:
@@ -298,17 +320,23 @@ class MarketDataService:
         title = f"[{state}] Dhan market data"
         await send_p0_slack_alert(title=title, lines=lines)
 
+    def _send_incident_alert_sync(
+        self,
+        *,
+        state: str,
+        incident_class: str,
+        reason: str,
+        message: str,
+    ) -> bool:
+        try:
+            asyncio.run(self._send_incident_alert(state=state, reason=f"{incident_class}:{reason}", message=message))
+            return True
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed to deliver persisted Dhan incident alert")
+            return False
+
     async def _open_incident(self, reason: str, message: str) -> None:
         now = datetime.now(timezone.utc)
-        cooldown = timedelta(seconds=max(settings.dhan_incident_alert_cooldown_seconds, 60))
-        # Suppress alerts from flapping (rapid P0 → RECOVERY → P0 cycles).
-        # A "new" incident only counts if we haven't alerted recently.
-        recently_alerted = (
-            self._health.last_incident_alert_at
-            and now - self._health.last_incident_alert_at < cooldown
-        )
-        should_alert = not recently_alerted
-
         self._health.incident_open = True
         if not self._health.incident_since:
             self._health.incident_since = now
@@ -321,25 +349,25 @@ class MarketDataService:
         self.snapshot["degraded_reason"] = reason
         self.snapshot["updated_at"] = now
         self._snapshot_dirty = True
-
-        if should_alert:
-            self._health.last_incident_alert_at = now
-            await self._send_incident_alert(state="P0", reason=reason, message=message)
+        await asyncio.to_thread(
+            dhan_incident_service.set_provider_health,
+            unhealthy=True,
+            reason=reason,
+            message=message,
+            alert_sender=self._send_incident_alert_sync,
+        )
 
     async def _close_incident(self, message: str = "Dhan market data recovered") -> None:
         if not self._health.incident_open:
+            await asyncio.to_thread(
+                dhan_incident_service.set_provider_health,
+                unhealthy=False,
+                reason=None,
+                message=None,
+                alert_sender=self._send_incident_alert_sync,
+            )
             return
         now = datetime.now(timezone.utc)
-        reason = self._health.incident_reason or "RECOVERED"
-        # Only send RECOVERY alert if the incident lasted longer than the
-        # cooldown period.  Short-lived blips (flapping) are silently cleared.
-        incident_duration = (
-            now - self._health.incident_since
-            if self._health.incident_since
-            else timedelta(0)
-        )
-        cooldown = timedelta(seconds=max(settings.dhan_incident_alert_cooldown_seconds, 60))
-        should_alert = incident_duration >= cooldown
 
         self._health.incident_open = False
         self._health.incident_since = None
@@ -350,9 +378,13 @@ class MarketDataService:
         self.snapshot["degraded_reason"] = None
         self.snapshot["updated_at"] = now
         self._snapshot_dirty = True
-
-        if should_alert:
-            await self._send_incident_alert(state="RECOVERY", reason=reason, message=message)
+        await asyncio.to_thread(
+            dhan_incident_service.set_provider_health,
+            unhealthy=False,
+            reason=None,
+            message=None,
+            alert_sender=self._send_incident_alert_sync,
+        )
 
     async def _evaluate_provider_health(self) -> None:
         now = datetime.now(timezone.utc)
@@ -656,6 +688,15 @@ class MarketDataService:
             instrument_type=INDEX_INSTRUMENT_TYPE,
         )
 
+    @staticmethod
+    def _vix_history_target() -> CandleInstrument:
+        return CandleInstrument(
+            symbol="INDIA VIX",
+            security_id=VIX_INDEX_SECURITY_ID,
+            exchange_segment=INDEX_EXCHANGE_SEGMENT,
+            instrument_type=INDEX_INSTRUMENT_TYPE,
+        )
+
     def _lookup_quote_by_security_id(self, security_id: str) -> dict[str, Any] | None:
         security_id_str = str(security_id)
         symbol = self._security_id_to_symbol.get(security_id_str)
@@ -712,6 +753,8 @@ class MarketDataService:
 
         if normalized_security_id == NIFTY_INDEX_SECURITY_ID:
             return self._index_history_target()
+        if normalized_security_id == VIX_INDEX_SECURITY_ID:
+            return self._vix_history_target()
 
         if normalized_security_id:
             quote = self._lookup_quote_by_security_id(normalized_security_id)

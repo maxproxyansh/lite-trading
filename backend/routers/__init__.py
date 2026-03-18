@@ -4,6 +4,7 @@ from .agent import router as agent
 from .auth import admin_router as admin
 from .auth import router as auth
 from .funds import router as funds
+from .internal import router as internal
 from .market import router as market
 from .meta import router as meta
 from .orders import router as orders
@@ -20,6 +21,7 @@ __all__ = [
     "analytics",
     "auth",
     "funds",
+    "internal",
     "market",
     "meta",
     "orders",
