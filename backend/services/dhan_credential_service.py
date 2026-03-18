@@ -5,9 +5,11 @@ import hashlib
 import hmac
 import json
 import logging
+import os
 import struct
 import threading
 import time
+from pathlib import Path
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable, TypeVar
@@ -294,6 +296,22 @@ class DhanCredentialService:
         env_access_token = (settings.dhan_access_token or "").strip() or None
         env_expires_at = _decode_token_expiry(env_access_token)
 
+        # Check shared token file (written by auto_trader cron)
+        shared_client_id: str | None = None
+        shared_token: str | None = None
+        shared_expires_at: datetime | None = None
+        shared_source: str | None = None
+        try:
+            _shared_path = Path(os.environ.get("DHAN_TOKEN_FILE", os.path.expanduser("~/.dhan/token.json")))
+            if _shared_path.exists():
+                _shared_data = json.loads(_shared_path.read_text(encoding="utf-8"))
+                shared_client_id = _shared_data.get("client_id") or None
+                shared_token = _shared_data.get("access_token") or None
+                shared_expires_at = _decode_token_expiry(shared_token)
+                shared_source = _shared_data.get("token_source") or "shared"
+        except Exception:
+            pass
+
         record = None
         db = SessionLocal()
         try:
@@ -301,30 +319,27 @@ class DhanCredentialService:
         finally:
             db.close()
 
-        chosen_client_id: str | None = env_client_id
-        chosen_token: str | None = env_access_token
-        chosen_expires_at = env_expires_at
-        chosen_source: str | None = "env" if env_access_token else None
-        chosen_last_refreshed_at: datetime | None = None
-        chosen_last_validated_at: datetime | None = None
-
-        if record:
+        # Priority: pick whichever source has the latest expiry
+        candidates = []
+        if env_access_token and env_expires_at:
+            candidates.append(("env", env_client_id, env_access_token, env_expires_at, None, None))
+        if shared_token and shared_expires_at:
+            candidates.append((shared_source, shared_client_id, shared_token, shared_expires_at, None, None))
+        if record and record.access_token:
             record_expires_at = _ensure_utc(record.expires_at) or _decode_token_expiry(record.access_token)
-            prefer_record = False
-            if record.client_id == env_client_id and record.access_token:
-                if chosen_expires_at is None:
-                    prefer_record = True
-                elif record_expires_at and record_expires_at >= chosen_expires_at:
-                    prefer_record = True
-            elif record.access_token and not env_access_token:
-                prefer_record = True
-            if prefer_record:
-                chosen_client_id = record.client_id
-                chosen_token = record.access_token
-                chosen_expires_at = record_expires_at
-                chosen_source = record.token_source or "db"
-                chosen_last_refreshed_at = _ensure_utc(record.last_refreshed_at)
-                chosen_last_validated_at = _ensure_utc(record.last_validated_at)
+            if record_expires_at:
+                candidates.append((record.token_source or "db", record.client_id, record.access_token, record_expires_at, _ensure_utc(record.last_refreshed_at), _ensure_utc(record.last_validated_at)))
+
+        if candidates:
+            candidates.sort(key=lambda c: c[3] if c[3] else datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+            chosen_source, chosen_client_id, chosen_token, chosen_expires_at, chosen_last_refreshed_at, chosen_last_validated_at = candidates[0]
+        else:
+            chosen_source = None
+            chosen_client_id = env_client_id
+            chosen_token = None
+            chosen_expires_at = None
+            chosen_last_refreshed_at = None
+            chosen_last_validated_at = None
 
         with self._lock:
             token_changed = chosen_token != self._access_token
@@ -427,33 +442,44 @@ class DhanCredentialService:
 
     def _refresh_or_regenerate(self, *, reason: str) -> bool:
         gen_before = self.snapshot().generation
-        # Serialize all token renewal attempts so concurrent threads don't
-        # each generate a new token (each generation invalidates the previous).
         with self._renewal_lock:
-            # Another thread may have already refreshed while we waited.
             if self.snapshot().generation != gen_before:
                 return True
             snapshot = self.snapshot()
             # Guard: don't nuke a token that has plenty of life left.
-            # A single auth error is likely transient; regenerating via TOTP
-            # is destructive (invalidates current token) and rate-limited.
             now = datetime.now(timezone.utc)
             if snapshot.access_token and snapshot.expires_at:
                 remaining = (snapshot.expires_at - now).total_seconds()
                 if remaining > max(settings.dhan_token_renewal_lead_seconds, 60):
                     logger.info("Token has %.0fh remaining, treating auth error as transient (%s)", remaining / 3600, reason)
                     return False
-            if snapshot.client_id and snapshot.access_token:
-                # RenewToken only works for web-generated tokens, not TOTP-generated ones.
-                can_renew = snapshot.token_source not in ("totp",)
+
+            # Step 1: Re-read from shared file — the cron may have refreshed
+            old_token = snapshot.access_token
+            self._load_from_storage()
+            new_snapshot = self.snapshot()
+            if new_snapshot.access_token and new_snapshot.access_token != old_token:
+                logger.info("Picked up fresh token from shared file via %s", reason)
+                return True
+
+            # Step 2: Try RenewToken (only for non-TOTP tokens)
+            if new_snapshot.client_id and new_snapshot.access_token:
+                can_renew = new_snapshot.token_source not in ("totp",)
                 if can_renew:
                     try:
                         return self._renew_access_token(reason=reason)
                     except DhanApiError as exc:
-                        if not settings.dhan_pin or not settings.dhan_totp_secret:
-                            raise
-                        logger.warning("Dhan token renewal failed (%s); falling back to TOTP regeneration", exc.reason)
-            return self._regenerate_access_token(reason=f"{reason}-totp-fallback")
+                        logger.warning("Dhan token renewal failed (%s)", exc.reason)
+
+            # Step 3: TOTP regeneration as last resort — but only in production
+            # where the cron may not be running (Railway)
+            if settings.dhan_pin and settings.dhan_totp_secret:
+                try:
+                    return self._regenerate_access_token(reason=f"{reason}-totp-fallback")
+                except DhanApiError as exc:
+                    logger.error("TOTP regeneration also failed: %s", exc.message)
+
+            return False
 
     def _renew_access_token(self, *, reason: str) -> bool:
         snapshot = self.snapshot()
