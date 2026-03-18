@@ -395,3 +395,28 @@ export interface GlobalQuote {
 export async function fetchGlobalMarkets() {
   return rawFetch<{ quotes: GlobalQuote[] }>('/api/v1/market/global')
 }
+
+export async function webauthnRegisterOptions() {
+  return rawFetch<{ options: any }>('/api/v1/auth/webauthn/register-options', { method: 'POST' })
+}
+
+export async function webauthnRegister(credential: object) {
+  return rawFetch<{ status: string }>('/api/v1/auth/webauthn/register', {
+    method: 'POST',
+    body: JSON.stringify({ credential }),
+  })
+}
+
+export async function webauthnAuthenticateOptions(email: string) {
+  return rawFetch<{ options: any }>('/api/v1/auth/webauthn/authenticate-options', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  })
+}
+
+export async function webauthnAuthenticate(credential: object, email: string) {
+  return rawFetch<TokenEnvelope>('/api/v1/auth/webauthn/authenticate', {
+    method: 'POST',
+    body: JSON.stringify({ credential, email }),
+  })
+}

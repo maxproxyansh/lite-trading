@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Eye, EyeOff } from 'lucide-react'
-import { login, signup } from '../lib/api'
+import { Eye, EyeOff, Fingerprint } from 'lucide-react'
+import { login, signup, webauthnAuthenticateOptions, webauthnAuthenticate } from '../lib/api'
+import { supportsWebAuthn, getPasskey } from '../lib/webauthn'
 import { useStore } from '../store/useStore'
 import Logo from '../components/Logo'
 
@@ -14,6 +15,17 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [hasPasskey, setHasPasskey] = useState(false)
+  const [savedEmail, setSavedEmail] = useState('')
+
+  useEffect(() => {
+    const passkeyEmail = localStorage.getItem('lite_passkey_email')
+    if (passkeyEmail && supportsWebAuthn()) {
+      setHasPasskey(true)
+      setSavedEmail(passkeyEmail)
+      setEmail(passkeyEmail)
+    }
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -34,6 +46,21 @@ export default function Login() {
     }
   }
 
+  const handlePasskeyLogin = async () => {
+    setLoading(true)
+    try {
+      const { options } = await webauthnAuthenticateOptions(savedEmail)
+      const credential = await getPasskey(options)
+      await webauthnAuthenticate(credential, savedEmail)
+      addToast('success', 'Signed in')
+      navigate('/')
+    } catch (error) {
+      addToast('error', error instanceof Error ? error.message : 'Passkey login failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <div className="flex h-screen items-center justify-center bg-bg-primary">
       <div className="w-full mx-4 max-w-[380px] rounded-sm border border-border-primary bg-bg-secondary px-8 py-8">
@@ -49,6 +76,25 @@ export default function Login() {
         </div>
 
         <form className="space-y-4" onSubmit={handleSubmit}>
+          {hasPasskey && mode === 'login' && (
+            <>
+              <button
+                type="button"
+                onClick={handlePasskeyLogin}
+                disabled={loading}
+                className="w-full flex items-center justify-center gap-2 rounded-sm border border-border-primary bg-bg-primary py-2.5 text-sm font-medium text-text-primary transition-colors hover:bg-bg-hover disabled:opacity-40"
+              >
+                <Fingerprint size={18} />
+                Sign in with fingerprint
+              </button>
+              <div className="flex items-center gap-3 my-1">
+                <div className="flex-1 h-px bg-border-primary" />
+                <span className="text-[11px] text-text-muted">or</span>
+                <div className="flex-1 h-px bg-border-primary" />
+              </div>
+            </>
+          )}
+
           {mode === 'signup' && (
             <input
               type="text"
