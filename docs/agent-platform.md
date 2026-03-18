@@ -257,6 +257,42 @@ curl https://lite-options-api-production.up.railway.app/api/v1/market/depth/NIFT
   -H "X-API-Key: $LITE_AGENT_API_KEY"
 ```
 
+### `GET /api/v1/market/global`
+
+Returns global market quotes — indices (S&P 500, Dow, Nasdaq, GIFT Nifty), commodities (Brent, Gold), bonds (US 10Y, Japan 10Y), and forex (DXY, USD/INR). Includes daily OHLC, change, and multi-period performance. Cached for 60 seconds.
+
+```bash
+curl https://lite-options-api-production.up.railway.app/api/v1/market/global \
+  -H "X-API-Key: $LITE_AGENT_API_KEY"
+```
+
+Response:
+
+```json
+{
+  "quotes": [
+    {
+      "ticker": "SP:SPX",
+      "name": "S&P 500",
+      "group": "Indices",
+      "close": 5650.12,
+      "change_pct": -1.08,
+      "change_abs": -72.51,
+      "high": 5710.30,
+      "low": 5640.00,
+      "open": 5700.50,
+      "prev_close": 5722.63,
+      "perf_w": -2.08,
+      "perf_1m": -2.72,
+      "perf_3m": -1.91,
+      "perf_ytd": -3.34,
+      "week52_high": 7002.28,
+      "week52_low": 4835.04
+    }
+  ]
+}
+```
+
 ## Native Agent API
 
 These routes use `X-API-Key: <secret>`.

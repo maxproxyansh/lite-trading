@@ -4,6 +4,7 @@ import { useShallow } from 'zustand/react/shallow'
 
 import ErrorBoundary from './components/ErrorBoundary'
 import { FiiDiiModal } from './components/FiiDiiModal'
+import { GlobalMarketsModal } from './components/GlobalMarketsModal'
 import Header from './components/Header'
 import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal'
 import { MacroCalendarModal } from './components/MacroCalendarModal'
@@ -40,7 +41,7 @@ import Settings from './pages/Settings'
 import Trading from './pages/Trading'
 import { useStore } from './store/useStore'
 
-function ProtectedLayout({ onOpenMacroCalendar, onOpenFiiDii }: { onOpenMacroCalendar: () => void; onOpenFiiDii: () => void }) {
+function ProtectedLayout({ onOpenMacroCalendar, onOpenFiiDii, onOpenGlobalMarkets }: { onOpenMacroCalendar: () => void; onOpenFiiDii: () => void; onOpenGlobalMarkets: () => void }) {
   const { user, spot } = useStore(useShallow((state) => ({
     user: state.user,
     spot: state.snapshot?.spot ?? null,
@@ -76,7 +77,7 @@ function ProtectedLayout({ onOpenMacroCalendar, onOpenFiiDii }: { onOpenMacroCal
       <div className="flex h-dvh flex-col bg-bg-primary text-text-primary">
         <Header />
         <div className="flex flex-1 overflow-hidden pb-14 md:pb-0">
-          <Sidebar onOpenMacroCalendar={onOpenMacroCalendar} onOpenFiiDii={onOpenFiiDii} />
+          <Sidebar onOpenMacroCalendar={onOpenMacroCalendar} onOpenFiiDii={onOpenFiiDii} onOpenGlobalMarkets={onOpenGlobalMarkets} />
           <main className="md:ml-10 flex-1 overflow-auto animate-fade-in" key={location.pathname}>
             <Routes>
               <Route path="/" element={<Dashboard />} />
@@ -106,6 +107,7 @@ export default function App() {
     shortcutsModalOpen, setShortcutsModalOpen,
     macroCalendarOpen, setMacroCalendarOpen,
     fiiDiiOpen, setFiiDiiOpen,
+    globalMarketsOpen, setGlobalMarketsOpen,
   } = useKeyboardShortcuts()
   const navigate = useNavigate()
   const {
@@ -341,12 +343,14 @@ export default function App() {
       {shortcutsModalOpen && <KeyboardShortcutsModal onClose={() => setShortcutsModalOpen(false)} />}
       {macroCalendarOpen && <MacroCalendarModal onClose={() => setMacroCalendarOpen(false)} />}
       {fiiDiiOpen && <FiiDiiModal onClose={() => setFiiDiiOpen(false)} />}
+      {globalMarketsOpen && <GlobalMarketsModal onClose={() => setGlobalMarketsOpen(false)} />}
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/*" element={
           <ProtectedLayout
             onOpenMacroCalendar={() => setMacroCalendarOpen(true)}
             onOpenFiiDii={() => setFiiDiiOpen(true)}
+            onOpenGlobalMarkets={() => setGlobalMarketsOpen(true)}
           />
         } />
       </Routes>

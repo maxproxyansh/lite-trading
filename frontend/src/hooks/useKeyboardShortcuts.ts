@@ -14,6 +14,7 @@ export default function useKeyboardShortcuts() {
   const [shortcutsModalOpen, setShortcutsModalOpen] = useState(false)
   const [macroCalendarOpen, setMacroCalendarOpen] = useState(false)
   const [fiiDiiOpen, setFiiDiiOpen] = useState(false)
+  const [globalMarketsOpen, setGlobalMarketsOpen] = useState(false)
   const chordRef = useRef<{ key: string; timer: ReturnType<typeof setTimeout> } | null>(null)
 
   useEffect(() => {
@@ -123,6 +124,13 @@ export default function useKeyboardShortcuts() {
         if (chordRef.current.key === 'g' && key === 'f') {
           clearChord()
           setFiiDiiOpen((v) => !v)
+          e.preventDefault()
+          return
+        }
+        // "g" then "g" → Global Markets
+        if (chordRef.current.key === 'g' && key === 'g') {
+          clearChord()
+          setGlobalMarketsOpen((v) => !v)
           e.preventDefault()
           return
         }
@@ -286,5 +294,6 @@ export default function useKeyboardShortcuts() {
     shortcutsModalOpen, setShortcutsModalOpen,
     macroCalendarOpen, setMacroCalendarOpen,
     fiiDiiOpen, setFiiDiiOpen,
+    globalMarketsOpen, setGlobalMarketsOpen,
   }
 }

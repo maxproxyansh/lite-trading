@@ -50,6 +50,7 @@ const SECTIONS: Section[] = [
       { keys: ['A'], label: 'Create alert at crosshair' },
       { keys: ['G', 'M'], label: 'Macro Calendar' },
       { keys: ['G', 'F'], label: 'FII / DII positions' },
+      { keys: ['G', 'G'], label: 'Global Markets' },
       { keys: ['Esc'], label: 'Close modal / cancel' },
       { keys: ['?'], label: 'This help' },
     ],
