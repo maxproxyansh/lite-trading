@@ -2376,6 +2376,7 @@ def test_market_data_incident_alerts_only_on_transition(monkeypatch: pytest.Monk
         market_data_service,
         "get_provider_health",
         lambda: SimpleNamespace(
+            token_source="totp",
             token_expires_at=now + timedelta(days=1),
             last_token_refresh_at=now - timedelta(minutes=1),
             last_profile_check_at=now - timedelta(minutes=2),
@@ -2390,11 +2391,35 @@ def test_market_data_incident_alerts_only_on_transition(monkeypatch: pytest.Monk
 
     monkeypatch.setattr(market_data_module, "send_p0_slack_alert", fake_send_p0_slack_alert)
 
-    asyncio.run(market_data_service._open_incident("REALTIME_FEED_STALE", "No realtime ticks received"))
-    asyncio.run(market_data_service._open_incident("REALTIME_FEED_STALE", "No realtime ticks received"))
-    asyncio.run(market_data_service._close_incident("Realtime ticks resumed"))
+    asyncio.run(market_data_service._open_incident("DHAN_AUTH_FAILED", "Token rejected by Dhan"))
+    asyncio.run(market_data_service._open_incident("DHAN_AUTH_FAILED", "Token rejected by Dhan"))
+    asyncio.run(market_data_service._close_incident("Token recovered"))
 
-    assert sent == ["[P0] Dhan market data", "[RECOVERY] Dhan market data"]
+    assert sent == ["[P0] Dhan token failed", "[RECOVERY] Dhan token regenerated"]
+
+
+def test_market_data_non_auth_incidents_do_not_page_slack(monkeypatch: pytest.MonkeyPatch) -> None:
+    _reset_test_runtime()
+    sent: list[str] = []
+    now = datetime.now(timezone.utc)
+
+    monkeypatch.setattr(market_data_module.settings, "dhan_p0_slack_webhook_url", "https://slack.example")
+    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_client_id", "1103337749")
+    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_access_token", _fake_dhan_token(issued_at=now, expires_at=now + timedelta(days=1)))
+    dhan_credential_service.reset_runtime_state()
+    dhan_credential_service.initialize(force_reload=True)
+    market_data_service.reset_runtime_state_for_tests()
+
+    async def fake_send_p0_slack_alert(*, title: str, lines: list[str]) -> bool:
+        sent.append(title)
+        return True
+
+    monkeypatch.setattr(market_data_module, "send_p0_slack_alert", fake_send_p0_slack_alert)
+
+    asyncio.run(market_data_service._open_incident("DHAN_RATE_LIMITED", "Too many requests"))
+    asyncio.run(market_data_service._close_incident("Recovered"))
+
+    assert sent == []
 
 
 def test_internal_dhan_lease_route_requires_authority_key_and_returns_snapshot(
@@ -2543,14 +2568,14 @@ def test_dhan_incident_dedupe_persists_and_provider_health_reports_runtime_field
 
     dhan_incident_service.set_provider_health(
         unhealthy=True,
-        reason="REALTIME_FEED_STALE",
-        message="No realtime ticks received",
+        reason="DHAN_AUTH_FAILED",
+        message="Token rejected by Dhan",
         alert_sender=fake_alert_sender,
     )
     dhan_incident_service.set_provider_health(
         unhealthy=True,
-        reason="REALTIME_FEED_STALE",
-        message="No realtime ticks received",
+        reason="DHAN_AUTH_FAILED",
+        message="Token rejected by Dhan",
         alert_sender=fake_alert_sender,
     )
 
@@ -2566,7 +2591,7 @@ def test_dhan_incident_dedupe_persists_and_provider_health_reports_runtime_field
     assert body["p0_status"] == "critical"
     assert body["incident_open"] is True
     assert body["incident_class"] == "PROVIDER_UNHEALTHY"
-    assert body["incident_reason"] == "REALTIME_FEED_STALE"
+    assert body["incident_reason"] == "DHAN_AUTH_FAILED"
     assert body["incident_fingerprint"] is not None
     assert body["last_lease_issued_at"] is not None
     assert body["slack_configured"] is True
@@ -2591,3 +2616,34 @@ def test_dhan_incident_dedupe_persists_and_provider_health_reports_runtime_field
     recovered_body = recovered.json()
     assert recovered_body["p0_status"] == "ok"
     assert recovered_body["incident_open"] is False
+
+
+def test_dhan_incident_service_suppresses_non_auth_slack_alerts() -> None:
+    _reset_test_runtime()
+    sent: list[dict[str, str]] = []
+
+    def fake_alert_sender(*, state: str, incident_class: str, reason: str, message: str) -> bool:
+        sent.append(
+            {
+                "state": state,
+                "incident_class": incident_class,
+                "reason": reason,
+                "message": message,
+            }
+        )
+        return True
+
+    dhan_incident_service.set_provider_health(
+        unhealthy=True,
+        reason="DHAN_RATE_LIMITED",
+        message="Too many requests",
+        alert_sender=fake_alert_sender,
+    )
+    dhan_incident_service.set_provider_health(
+        unhealthy=False,
+        reason=None,
+        message=None,
+        alert_sender=fake_alert_sender,
+    )
+
+    assert sent == []
