@@ -67,6 +67,9 @@ class Settings(BaseSettings):
     nifty_lot_size: int = Field(default=65, alias="NIFTY_LOT_SIZE")
     default_frontend_slug: str = "litetrade"
     default_backend_slug: str = "litetrade-api"
+    webauthn_rp_id: str = Field(default="localhost", alias="WEBAUTHN_RP_ID")
+    webauthn_rp_name: str = Field(default="Lite", alias="WEBAUTHN_RP_NAME")
+    webauthn_origin: str = Field(default="http://localhost:5173", alias="WEBAUTHN_ORIGIN")
 
     @property
     def signal_root_path(self) -> Path:

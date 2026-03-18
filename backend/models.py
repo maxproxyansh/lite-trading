@@ -41,6 +41,16 @@ class RefreshToken(Base, BaseModelMixin):
     revoked_at = Column(DateTime(timezone=True))
 
 
+class WebAuthnCredential(Base, BaseModelMixin):
+    __tablename__ = "webauthn_credentials"
+
+    user_id = Column(String(64), ForeignKey("users.id"), nullable=False, index=True)
+    credential_id = Column(Text, nullable=False, unique=True)
+    public_key = Column(Text, nullable=False)
+    sign_count = Column(Integer, nullable=False, default=0)
+    transports = Column(JSON, nullable=True)
+
+
 class AgentApiKey(Base, BaseModelMixin):
     __tablename__ = "agent_api_keys"
 
