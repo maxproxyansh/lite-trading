@@ -1,17 +1,16 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import hmac
 import json
 import logging
-import os
 import struct
 import threading
 import time
-from pathlib import Path
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, time as dt_time, timedelta, timezone
 from typing import Any, Callable, TypeVar
 
 import httpx
@@ -19,7 +18,7 @@ from dhanhq import dhanhq as Dhanhq
 
 from config import get_settings
 from database import SessionLocal
-from market_hours import IST
+from market_hours import IST, holiday_name
 from models import ServiceCredential
 
 
@@ -66,6 +65,7 @@ class DhanCredentialSnapshot:
     last_rest_success_at: datetime | None
     data_plan_status: str | None
     data_valid_until: datetime | None
+    last_lease_issued_at: datetime | None
     generation: int
     totp_regeneration_enabled: bool
 
@@ -167,12 +167,15 @@ class DhanCredentialService:
         self._lock = threading.RLock()
         self._renewal_lock = threading.Lock()
         self._initialized = False
+        self._scheduler_task: asyncio.Task | None = None
+        self._scheduler_stop: asyncio.Event | None = None
         self._client_id: str | None = None
         self._access_token: str | None = None
         self._expires_at: datetime | None = None
         self._token_source: str | None = None
         self._last_refreshed_at: datetime | None = None
         self._last_profile_checked_at: datetime | None = None
+        self._last_lease_issued_at: datetime | None = None
         self._last_rest_success_at: datetime | None = None
         self._data_plan_status: str | None = None
         self._data_valid_until: datetime | None = None
@@ -195,6 +198,7 @@ class DhanCredentialService:
             self._token_source = None
             self._last_refreshed_at = None
             self._last_profile_checked_at = None
+            self._last_lease_issued_at = None
             self._last_rest_success_at = None
             self._data_plan_status = None
             self._data_valid_until = None
@@ -214,6 +218,7 @@ class DhanCredentialService:
                 last_rest_success_at=self._last_rest_success_at,
                 data_plan_status=self._data_plan_status,
                 data_valid_until=self._data_valid_until,
+                last_lease_issued_at=self._last_lease_issued_at,
                 generation=self._generation,
                 totp_regeneration_enabled=bool(settings.dhan_pin and settings.dhan_totp_secret),
             )
@@ -226,6 +231,45 @@ class DhanCredentialService:
         if not snapshot.client_id or not snapshot.access_token:
             raise DhanApiError("DHAN_NOT_CONFIGURED", "Dhan credentials are not configured")
         return Dhanhq(snapshot.client_id, snapshot.access_token)
+
+    async def start_background_tasks(self) -> None:
+        if self._scheduler_task:
+            return
+        self._scheduler_stop = asyncio.Event()
+        self._scheduler_task = asyncio.create_task(self._scheduler_loop())
+
+    async def stop_background_tasks(self) -> None:
+        if not self._scheduler_task:
+            return
+        if self._scheduler_stop:
+            self._scheduler_stop.set()
+        self._scheduler_task.cancel()
+        try:
+            await self._scheduler_task
+        except asyncio.CancelledError:
+            pass
+        self._scheduler_task = None
+        self._scheduler_stop = None
+
+    def issue_lease(self) -> DhanCredentialSnapshot:
+        self.ensure_token_fresh()
+        snapshot = self.snapshot()
+        if not snapshot.client_id or not snapshot.access_token:
+            raise DhanApiError("DHAN_NOT_CONFIGURED", "Dhan credentials are not configured")
+        if snapshot.data_plan_status and snapshot.data_plan_status.lower() != "active":
+            raise DhanApiError(
+                "DATA_PLAN_INACTIVE",
+                f"Dhan data plan is {snapshot.data_plan_status}",
+            )
+        now = datetime.now(timezone.utc)
+        with self._lock:
+            self._last_lease_issued_at = now
+        self._persist_runtime_state()
+        return self.snapshot()
+
+    def scheduled_preopen_rotation(self) -> bool:
+        self.initialize()
+        return self._refresh_or_regenerate(reason="scheduled-preopen-rotation", force=True)
 
     def ensure_token_fresh(self, force_profile: bool = False) -> bool:
         self.initialize()
@@ -255,6 +299,16 @@ class DhanCredentialService:
             snapshot = self.snapshot()
             if snapshot.expires_at:
                 needs_renewal = (snapshot.expires_at - now).total_seconds() <= max(settings.dhan_token_renewal_lead_seconds, 60)
+            if snapshot.data_plan_status and snapshot.data_plan_status.lower() != "active":
+                raise DhanApiError(
+                    "DATA_PLAN_INACTIVE",
+                    f"Dhan data plan is {snapshot.data_plan_status}",
+                )
+            if snapshot.data_valid_until and snapshot.data_valid_until < now:
+                raise DhanApiError(
+                    "DATA_PLAN_INACTIVE",
+                    "Dhan market-data entitlement has expired",
+                )
 
         if needs_renewal:
             return self._refresh_or_regenerate(reason="scheduled-renewal")
@@ -296,22 +350,6 @@ class DhanCredentialService:
         env_access_token = (settings.dhan_access_token or "").strip() or None
         env_expires_at = _decode_token_expiry(env_access_token)
 
-        # Check shared token file (written by auto_trader cron)
-        shared_client_id: str | None = None
-        shared_token: str | None = None
-        shared_expires_at: datetime | None = None
-        shared_source: str | None = None
-        try:
-            _shared_path = Path(os.environ.get("DHAN_TOKEN_FILE", os.path.expanduser("~/.dhan/token.json")))
-            if _shared_path.exists():
-                _shared_data = json.loads(_shared_path.read_text(encoding="utf-8"))
-                shared_client_id = _shared_data.get("client_id") or None
-                shared_token = _shared_data.get("access_token") or None
-                shared_expires_at = _decode_token_expiry(shared_token)
-                shared_source = _shared_data.get("token_source") or "shared"
-        except Exception:
-            pass
-
         record = None
         db = SessionLocal()
         try:
@@ -323,12 +361,19 @@ class DhanCredentialService:
         candidates = []
         if env_access_token and env_expires_at:
             candidates.append(("env", env_client_id, env_access_token, env_expires_at, None, None))
-        if shared_token and shared_expires_at:
-            candidates.append((shared_source, shared_client_id, shared_token, shared_expires_at, None, None))
         if record and record.access_token:
             record_expires_at = _ensure_utc(record.expires_at) or _decode_token_expiry(record.access_token)
             if record_expires_at:
-                candidates.append((record.token_source or "db", record.client_id, record.access_token, record_expires_at, _ensure_utc(record.last_refreshed_at), _ensure_utc(record.last_validated_at)))
+                candidates.append(
+                    (
+                        record.token_source or "db",
+                        record.client_id,
+                        record.access_token,
+                        record_expires_at,
+                        _ensure_utc(record.last_refreshed_at),
+                        _ensure_utc(record.last_validated_at),
+                    )
+                )
 
         if candidates:
             candidates.sort(key=lambda c: c[3] if c[3] else datetime.min.replace(tzinfo=timezone.utc), reverse=True)
@@ -343,48 +388,42 @@ class DhanCredentialService:
 
         with self._lock:
             token_changed = chosen_token != self._access_token
+            had_runtime_token = self._access_token is not None
             self._client_id = chosen_client_id
             self._access_token = chosen_token
             self._expires_at = chosen_expires_at
             self._token_source = chosen_source
             self._last_refreshed_at = chosen_last_refreshed_at
             self._last_profile_checked_at = chosen_last_validated_at
-            self._data_plan_status = None
-            self._data_valid_until = None
-            if token_changed:
-                self._generation += 1
+            self._last_lease_issued_at = _ensure_utc(record.last_lease_issued_at) if record else None
+            self._data_plan_status = record.data_plan_status if record else None
+            self._data_valid_until = _ensure_utc(record.data_valid_until) if record else None
+            self._generation = int(record.generation or 0) if record else 0
+            if token_changed and had_runtime_token:
+                self._generation = max(self._generation, 0) + 1
 
         if chosen_client_id and chosen_token:
-            self._persist_token(
-                client_id=chosen_client_id,
-                access_token=chosen_token,
-                expires_at=chosen_expires_at,
-                token_source=chosen_source or "env",
-                last_refreshed_at=chosen_last_refreshed_at,
-                last_validated_at=chosen_last_validated_at,
-            )
+            self._persist_runtime_state()
 
-    def _persist_token(
-        self,
-        *,
-        client_id: str,
-        access_token: str,
-        expires_at: datetime | None,
-        token_source: str,
-        last_refreshed_at: datetime | None,
-        last_validated_at: datetime | None,
-    ) -> None:
+    def _persist_runtime_state(self) -> None:
+        snapshot = self.snapshot()
+        if not snapshot.client_id or not snapshot.access_token:
+            return
         db = SessionLocal()
         try:
             record = db.query(ServiceCredential).filter(ServiceCredential.provider == "dhan").first()
             if not record:
-                record = ServiceCredential(provider="dhan", client_id=client_id, access_token=access_token)
-            record.client_id = client_id
-            record.access_token = access_token
-            record.expires_at = expires_at
-            record.token_source = token_source
-            record.last_refreshed_at = last_refreshed_at
-            record.last_validated_at = last_validated_at
+                record = ServiceCredential(provider="dhan", client_id=snapshot.client_id, access_token=snapshot.access_token)
+            record.client_id = snapshot.client_id
+            record.access_token = snapshot.access_token
+            record.expires_at = snapshot.expires_at
+            record.token_source = snapshot.token_source or "authority"
+            record.generation = snapshot.generation
+            record.last_refreshed_at = snapshot.last_refreshed_at
+            record.last_validated_at = snapshot.last_profile_checked_at
+            record.data_plan_status = snapshot.data_plan_status
+            record.data_valid_until = snapshot.data_valid_until
+            record.last_lease_issued_at = snapshot.last_lease_issued_at
             db.add(record)
             db.commit()
         finally:
@@ -409,14 +448,7 @@ class DhanCredentialService:
             if token_changed:
                 self._generation += 1
 
-        self._persist_token(
-            client_id=client_id,
-            access_token=access_token,
-            expires_at=expires_at,
-            token_source=token_source,
-            last_refreshed_at=refreshed_at,
-            last_validated_at=self.snapshot().last_profile_checked_at,
-        )
+        self._persist_runtime_state()
 
     def _record_profile(self, payload: dict[str, Any]) -> None:
         now = datetime.now(timezone.utc)
@@ -429,50 +461,30 @@ class DhanCredentialService:
             if expires_at:
                 self._expires_at = expires_at
 
-        snapshot = self.snapshot()
-        if snapshot.client_id and snapshot.access_token:
-            self._persist_token(
-                client_id=snapshot.client_id,
-                access_token=snapshot.access_token,
-                expires_at=snapshot.expires_at,
-                token_source=snapshot.token_source or "env",
-                last_refreshed_at=snapshot.last_refreshed_at,
-                last_validated_at=now,
-            )
+        self._persist_runtime_state()
 
-    def _refresh_or_regenerate(self, *, reason: str) -> bool:
+    def _refresh_or_regenerate(self, *, reason: str, force: bool = False) -> bool:
         gen_before = self.snapshot().generation
         with self._renewal_lock:
             if self.snapshot().generation != gen_before:
                 return True
             snapshot = self.snapshot()
-            # Guard: don't nuke a token that has plenty of life left.
             now = datetime.now(timezone.utc)
-            if snapshot.access_token and snapshot.expires_at:
+            force_rotation = force or any(marker in reason.lower() for marker in ("auth", "profile", "missing"))
+            if not force_rotation and snapshot.access_token and snapshot.expires_at:
                 remaining = (snapshot.expires_at - now).total_seconds()
                 if remaining > max(settings.dhan_token_renewal_lead_seconds, 60):
                     logger.info("Token has %.0fh remaining, treating auth error as transient (%s)", remaining / 3600, reason)
                     return False
 
-            # Step 1: Re-read from shared file — the cron may have refreshed
-            old_token = snapshot.access_token
-            self._load_from_storage()
-            new_snapshot = self.snapshot()
-            if new_snapshot.access_token and new_snapshot.access_token != old_token:
-                logger.info("Picked up fresh token from shared file via %s", reason)
-                return True
-
-            # Step 2: Try RenewToken (only for non-TOTP tokens)
-            if new_snapshot.client_id and new_snapshot.access_token:
-                can_renew = new_snapshot.token_source not in ("totp",)
+            if snapshot.client_id and snapshot.access_token:
+                can_renew = snapshot.token_source not in ("totp",)
                 if can_renew:
                     try:
                         return self._renew_access_token(reason=reason)
                     except DhanApiError as exc:
                         logger.warning("Dhan token renewal failed (%s)", exc.reason)
 
-            # Step 3: TOTP regeneration as last resort — but only in production
-            # where the cron may not be running (Railway)
             if settings.dhan_pin and settings.dhan_totp_secret:
                 try:
                     return self._regenerate_access_token(reason=f"{reason}-totp-fallback")
@@ -498,6 +510,7 @@ class DhanCredentialService:
             raise DhanApiError("DHAN_TOKEN_RENEWAL_FAILED", f"Dhan renew token response did not include a token: {_extract_error_text(payload)}", auth_failed=True, payload=payload)
         expires_at = _parse_ist_datetime(str(payload.get("expiryTime") or "")) or _decode_token_expiry(next_token)
         refreshed_at = _parse_ist_datetime(str(payload.get("createTime") or "")) or datetime.now(timezone.utc)
+        profile = self._fetch_profile(snapshot.client_id, next_token)
         logger.info("Renewed Dhan access token for %s via %s", snapshot.client_id, reason)
         self._apply_new_token(
             client_id=snapshot.client_id,
@@ -506,6 +519,7 @@ class DhanCredentialService:
             token_source="renew",
             refreshed_at=refreshed_at,
         )
+        self._record_profile(profile)
         return True
 
     def _regenerate_access_token(self, *, reason: str) -> bool:
@@ -576,6 +590,7 @@ class DhanCredentialService:
         self._last_totp_generation_at = time.time()
         expires_at = _parse_ist_datetime(str(payload.get("expiryTime") or "")) or _decode_token_expiry(next_token)
         refreshed_at = datetime.now(timezone.utc)
+        profile = self._fetch_profile(client_id, next_token)
         logger.info("Regenerated Dhan access token for %s via %s", client_id, reason)
         self._apply_new_token(
             client_id=client_id,
@@ -584,6 +599,7 @@ class DhanCredentialService:
             token_source="totp",
             refreshed_at=refreshed_at,
         )
+        self._record_profile(profile)
         return True
 
     def _fetch_profile(self, client_id: str, access_token: str) -> dict[str, Any]:
@@ -674,6 +690,36 @@ class DhanCredentialService:
     def _looks_like_auth_error(self, payload: Any) -> bool:
         text = _extract_error_text(payload).lower()
         return any(marker in text for marker in AUTH_ERROR_MARKERS)
+
+    @staticmethod
+    def _next_preopen_rotation_after(now: datetime | None = None) -> datetime:
+        current = (now or datetime.now(timezone.utc)).astimezone(IST)
+        target_date = current.date()
+        target_time = dt_time(hour=8, minute=50)
+        while True:
+            if target_date.weekday() < 5 and not holiday_name(target_date):
+                candidate = datetime.combine(target_date, target_time, tzinfo=IST)
+                if candidate > current:
+                    return candidate.astimezone(timezone.utc)
+            target_date = target_date + timedelta(days=1)
+
+    async def _scheduler_loop(self) -> None:
+        while True:
+            stop_event = self._scheduler_stop
+            if stop_event is None:
+                return
+            next_run = self._next_preopen_rotation_after()
+            wait_seconds = max((next_run - datetime.now(timezone.utc)).total_seconds(), 1)
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=wait_seconds)
+                return
+            except asyncio.TimeoutError:
+                pass
+            try:
+                rotated = await asyncio.to_thread(self.scheduled_preopen_rotation)
+                logger.info("Scheduled Dhan pre-open rotation completed (rotated=%s)", rotated)
+            except Exception:  # noqa: BLE001
+                logger.exception("Scheduled Dhan pre-open rotation failed")
 
 
 dhan_credential_service = DhanCredentialService()

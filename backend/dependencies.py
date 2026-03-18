@@ -158,3 +158,14 @@ def require_agent_scope(*required: str) -> Callable:
         return key
 
     return dependency
+
+
+def require_dhan_authority_key(
+    authority_key: str | None = Header(default=None, alias="X-Dhan-Authority-Key"),
+) -> str:
+    expected = (settings.dhan_authority_shared_secret or "").strip()
+    if not expected:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="DHAN_AUTHORITY_NOT_CONFIGURED")
+    if not authority_key or authority_key != expected:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Dhan authority key")
+    return authority_key

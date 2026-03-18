@@ -79,6 +79,22 @@ def _run_migrations(eng) -> None:
                 conn.execute(text("ALTER TABLE agent_api_keys ADD COLUMN revoked_at TIMESTAMP WITH TIME ZONE"))
                 logger.info("Migration: added agent_api_keys.revoked_at column")
 
+    if "service_credentials" in inspector.get_table_names():
+        service_columns = [c["name"] for c in inspector.get_columns("service_credentials")]
+        with eng.begin() as conn:
+            if "generation" not in service_columns:
+                conn.execute(text("ALTER TABLE service_credentials ADD COLUMN generation INTEGER NOT NULL DEFAULT 0"))
+                logger.info("Migration: added service_credentials.generation column")
+            if "data_plan_status" not in service_columns:
+                conn.execute(text("ALTER TABLE service_credentials ADD COLUMN data_plan_status VARCHAR(64)"))
+                logger.info("Migration: added service_credentials.data_plan_status column")
+            if "data_valid_until" not in service_columns:
+                conn.execute(text("ALTER TABLE service_credentials ADD COLUMN data_valid_until TIMESTAMP WITH TIME ZONE"))
+                logger.info("Migration: added service_credentials.data_valid_until column")
+            if "last_lease_issued_at" not in service_columns:
+                conn.execute(text("ALTER TABLE service_credentials ADD COLUMN last_lease_issued_at TIMESTAMP WITH TIME ZONE"))
+                logger.info("Migration: added service_credentials.last_lease_issued_at column")
+
     if "orders" in inspector.get_table_names():
         order_columns = [c["name"] for c in inspector.get_columns("orders")]
         with eng.begin() as conn:

@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     dhan_access_token: str | None = Field(default=None, alias="DHAN_ACCESS_TOKEN")
     dhan_pin: str | None = Field(default=None, alias="DHAN_PIN")
     dhan_totp_secret: str | None = Field(default=None, alias="DHAN_TOTP_SECRET")
+    dhan_authority_shared_secret: str | None = Field(default=None, alias="DHAN_AUTHORITY_SHARED_SECRET")
     dhan_http_timeout_seconds: float = Field(default=20.0, alias="DHAN_HTTP_TIMEOUT_SECONDS")
     dhan_profile_check_seconds: int = Field(default=900, alias="DHAN_PROFILE_CHECK_SECONDS")
     dhan_token_renewal_lead_seconds: int = Field(default=3600, alias="DHAN_TOKEN_RENEWAL_LEAD_SECONDS")
