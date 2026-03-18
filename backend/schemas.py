@@ -852,5 +852,26 @@ class ParticipantHistoryResponse(BaseModel):
     snapshots: list[ParticipantSnapshot]
 
 
+class WebAuthnRegisterOptionsResponse(BaseModel):
+    options: dict
+
+
+class WebAuthnRegisterRequest(BaseModel):
+    credential: dict
+
+
+class WebAuthnAuthenticateOptionsRequest(BaseModel):
+    email: str
+
+
+class WebAuthnAuthenticateOptionsResponse(BaseModel):
+    options: dict
+
+
+class WebAuthnAuthenticateRequest(BaseModel):
+    credential: dict
+    email: str
+
+
 AgentProfileResponse.model_rebuild()
 AgentBootstrapResponse.model_rebuild()
