@@ -2192,6 +2192,7 @@ def test_market_candles_route_rejects_unsupported_symbol_format(client: TestClie
 
 
 def test_dhan_credential_service_renews_and_persists_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    _reset_test_runtime()
     now = datetime(2026, 3, 14, 3, 45, tzinfo=timezone.utc)
     current_token = _fake_dhan_token(issued_at=now - timedelta(hours=23), expires_at=now + timedelta(minutes=20))
     next_token = _fake_dhan_token(issued_at=now, expires_at=now + timedelta(days=1, hours=1))
@@ -2361,6 +2362,7 @@ def test_market_provider_health_route_reports_runtime_state(client: TestClient, 
 
 
 def test_market_data_incident_alerts_only_on_transition(monkeypatch: pytest.MonkeyPatch) -> None:
+    _reset_test_runtime()
     sent: list[str] = []
     now = datetime.now(timezone.utc)
 
