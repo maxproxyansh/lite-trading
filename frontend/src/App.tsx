@@ -27,7 +27,10 @@ import {
   fetchPositions,
   fetchSnapshot,
   refreshSession,
+  webauthnRegisterOptions,
+  webauthnRegister,
 } from './lib/api'
+import { supportsWebAuthn, createPasskey } from './lib/webauthn'
 import Analytics from './pages/Analytics'
 import Dashboard from './pages/Dashboard'
 import Desk from './pages/Desk'
@@ -153,6 +156,27 @@ export default function App() {
     setChainLoading: state.setChainLoading,
     addToast: state.addToast,
   })))
+
+  // Auto-prompt passkey registration after login
+  useEffect(() => {
+    if (!user || !supportsWebAuthn()) return
+    const passkeyEmail = localStorage.getItem('lite_passkey_email')
+    if (passkeyEmail === user.email) return // Already registered
+
+    const timer = setTimeout(async () => {
+      try {
+        const { options } = await webauthnRegisterOptions()
+        const credential = await createPasskey(options)
+        await webauthnRegister(credential)
+        localStorage.setItem('lite_passkey_email', user.email)
+        addToast('success', 'Fingerprint login enabled')
+      } catch {
+        // User cancelled or browser doesn't support — silently ignore
+      }
+    }, 1500)
+
+    return () => clearTimeout(timer)
+  }, [user, addToast])
 
   useEffect(() => {
     let active = true
