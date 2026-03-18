@@ -1,16 +1,9 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
+import { fetchGlobalMarkets } from '../lib/api'
+import type { GlobalQuote } from '../lib/api'
 
 interface Props {
   onClose: () => void
-}
-
-interface GlobalQuote {
-  ticker: string
-  name: string
-  group: string
-  close: number | null
-  change_pct: number | null
-  change_abs: number | null
 }
 
 const GREEN = '#22c55e'
@@ -95,9 +88,7 @@ export const GlobalMarketsModal = memo(function GlobalMarketsModal({ onClose }: 
     if (!silent) setLoading(true)
     setError(null)
     try {
-      const resp = await fetch('/api/v1/market/global', { credentials: 'include' })
-      if (!resp.ok) throw new Error(`${resp.status}`)
-      const data = await resp.json()
+      const data = await fetchGlobalMarkets()
       setQuotes(data.quotes ?? [])
       if (silent) {
         setFlash(true)

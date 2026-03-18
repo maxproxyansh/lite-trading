@@ -1,38 +1,39 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
-import { fetchParticipantsHistory } from '../lib/api'
-import type { ParticipantSnapshot } from '../lib/api'
+import { fetchGlobalMarkets, fetchParticipantsHistory } from '../lib/api'
+import type { GlobalQuote, ParticipantSnapshot } from '../lib/api'
 
-type Tab = 'calendar' | 'fiidii'
+type Tab = 'calendar' | 'fiidii' | 'global'
 
 export default function Desk() {
   const [tab, setTab] = useState<Tab>('fiidii')
+
+  const tabs: { key: Tab; label: string }[] = [
+    { key: 'fiidii', label: 'FII / DII' },
+    { key: 'global', label: 'Global Markets' },
+    { key: 'calendar', label: 'Macro Calendar' },
+  ]
 
   return (
     <div className="flex h-full flex-col">
       {/* Sub-tabs */}
       <div className="flex border-b border-border-secondary">
-        <button
-          onClick={() => setTab('fiidii')}
-          className={`flex flex-1 items-center justify-center py-2 text-[11px] font-medium transition-colors ${
-            tab === 'fiidii' ? 'border-b-2 border-brand text-brand' : 'text-text-muted'
-          }`}
-        >
-          FII / DII
-        </button>
-        <button
-          onClick={() => setTab('calendar')}
-          className={`flex flex-1 items-center justify-center py-2 text-[11px] font-medium transition-colors ${
-            tab === 'calendar' ? 'border-b-2 border-brand text-brand' : 'text-text-muted'
-          }`}
-        >
-          Macro Calendar
-        </button>
+        {tabs.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`flex flex-1 items-center justify-center py-2 text-[11px] font-medium transition-colors ${
+              tab === t.key ? 'border-b-2 border-brand text-brand' : 'text-text-muted'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
 
       {/* Content */}
       <div className="flex-1 min-h-0 overflow-y-auto">
-        {tab === 'calendar' ? <InlineMacroCalendar /> : <InlineFiiDii />}
+        {tab === 'calendar' ? <InlineMacroCalendar /> : tab === 'global' ? <InlineGlobalMarkets /> : <InlineFiiDii />}
       </div>
     </div>
   )
@@ -247,6 +248,102 @@ function MetricCell({ label, value, change, colorFn }: { label: string; value: n
       {change !== null && change !== 0 && (
         <div className="font-mono text-[9px] mt-0.5 leading-none" style={{ color: colorFn(change) }}>{signed(change)}</div>
       )}
+    </div>
+  )
+}
+
+/* ── Inline Global Markets ──────────────────────────────────── */
+
+const GLOBAL_ICONS: Record<string, { bg: string; bg2?: string; fg: string; label: string; border?: string }> = {
+  'SP:SPX':        { bg: '#dc2626', bg2: '#991b1b', fg: '#fff', label: '500' },
+  'DJ:DJI':        { bg: '#2563eb', bg2: '#1d4ed8', fg: '#fff', label: '30' },
+  'NASDAQ:IXIC':   { bg: '#7c3aed', bg2: '#5b21b6', fg: '#fff', label: 'N', border: '#a78bfa33' },
+  'NSE:NIFTY1!':   { bg: '#1e40af', bg2: '#1e3a8a', fg: '#60a5fa', label: 'N50', border: '#60a5fa33' },
+  'FX:UKOIL':      { bg: '#292524', bg2: '#1c1917', fg: '#a3e635', label: 'OIL', border: '#a3e63533' },
+  'TVC:GOLD':      { bg: 'linear-gradient(135deg, #f59e0b, #d97706)', fg: '#1a1a1a', label: 'G' },
+  'TVC:US10Y':     { bg: '#1e3a5f', bg2: '#172554', fg: '#60a5fa', label: 'T10', border: '#60a5fa33' },
+  'TVC:JP10Y':     { bg: '#fff', bg2: '#f0f0f0', fg: '#dc2626', label: 'J10', border: '#dc262633' },
+  'TVC:DXY':       { bg: '#065f46', bg2: '#064e3b', fg: '#34d399', label: 'DX', border: '#34d39933' },
+  'FX_IDC:USDINR': { bg: '#ea580c', bg2: '#c2410c', fg: '#fff', label: '₹' },
+}
+
+function globalFmt(n: number): string {
+  if (Math.abs(n) >= 10000) return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  if (Math.abs(n) >= 100) return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  if (Math.abs(n) >= 1) return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return n.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 })
+}
+
+function GlobalIcon({ ticker }: { ticker: string }) {
+  const icon = GLOBAL_ICONS[ticker]
+  if (!icon) return null
+  const bgStyle = icon.bg.startsWith('linear')
+    ? { backgroundImage: icon.bg }
+    : icon.bg2
+      ? { backgroundImage: `linear-gradient(145deg, ${icon.bg}, ${icon.bg2})` }
+      : { background: icon.bg }
+  return (
+    <div
+      className="flex items-center justify-center w-[28px] h-[28px] rounded-full shrink-0 text-[10px] font-extrabold leading-none tracking-tight shadow-sm"
+      style={{ ...bgStyle, color: icon.fg, border: icon.border ? `1.5px solid ${icon.border}` : undefined, textShadow: icon.fg === '#fff' ? '0 1px 2px rgba(0,0,0,0.3)' : undefined }}
+    >
+      {icon.label}
+    </div>
+  )
+}
+
+function InlineGlobalMarkets() {
+  const [quotes, setQuotes] = useState<GlobalQuote[]>([])
+  const [loading, setLoading] = useState(true)
+  const intervalRef = useRef<ReturnType<typeof setInterval>>(null)
+
+  const fetchData = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true)
+    try {
+      const data = await fetchGlobalMarkets()
+      setQuotes(data.quotes ?? [])
+    } catch { /* ignore */ }
+    finally { if (!silent) setLoading(false) }
+  }, [])
+
+  useEffect(() => {
+    void fetchData()
+    intervalRef.current = setInterval(() => void fetchData(true), 30_000)
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
+  }, [fetchData])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="h-5 w-5 animate-spin rounded-full border-2 border-[#333] border-t-[#3b82f6]" />
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <div className="grid grid-cols-[28px_1fr_auto_auto_auto] items-center gap-x-3 px-4 py-2 border-b border-[#333]">
+        <span />
+        <span className="text-[10px] font-semibold uppercase tracking-[1px] text-[#555]">Symbol</span>
+        <span className="text-[10px] font-semibold uppercase tracking-[1px] text-[#555] text-right min-w-[72px]">Last</span>
+        <span className="text-[10px] font-semibold uppercase tracking-[1px] text-[#555] text-right min-w-[60px]">Chg</span>
+        <span className="text-[10px] font-semibold uppercase tracking-[1px] text-[#555] text-right min-w-[54px]">Chg%</span>
+      </div>
+      {quotes.map((q) => {
+        const c = q.change_pct == null || q.change_pct === 0 ? '#888' : q.change_pct > 0 ? GREEN : RED
+        return (
+          <div key={q.ticker} className="grid grid-cols-[28px_1fr_auto_auto_auto] items-center gap-x-3 px-4 py-[9px] border-b border-[#222] hover:bg-[#1e1e1e] transition-colors">
+            <GlobalIcon ticker={q.ticker} />
+            <span className="text-[13px] text-[#e0e0e0] font-medium truncate">{q.name}</span>
+            <span className="text-[13px] font-mono text-[#e0e0e0] text-right tabular-nums min-w-[72px]">{q.close != null ? globalFmt(q.close) : '—'}</span>
+            <span className="text-[13px] font-mono text-right tabular-nums min-w-[60px]" style={{ color: c }}>{q.change_abs != null ? (q.change_abs >= 0 ? '+' : '') + globalFmt(q.change_abs) : '—'}</span>
+            <span className="text-[13px] font-mono text-right tabular-nums min-w-[54px]" style={{ color: c }}>{q.change_pct != null ? (q.change_pct >= 0 ? '+' : '') + q.change_pct.toFixed(2) + '%' : '—'}</span>
+          </div>
+        )
+      })}
+      <div className="py-2 text-center">
+        <span className="text-[9px] text-[#555]">Auto-refreshes every 30s</span>
+      </div>
     </div>
   )
 }

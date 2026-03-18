@@ -372,3 +372,26 @@ export async function fetchParticipantsToday() {
 export async function fetchParticipantsHistory(days = 30) {
   return rawFetch<ParticipantHistoryResponse>(`/api/v1/participants/history?days=${days}`)
 }
+
+export interface GlobalQuote {
+  ticker: string
+  name: string
+  group: string
+  close: number | null
+  change_pct: number | null
+  change_abs: number | null
+  high: number | null
+  low: number | null
+  open: number | null
+  prev_close: number | null
+  perf_w: number | null
+  perf_1m: number | null
+  perf_3m: number | null
+  perf_ytd: number | null
+  week52_high: number | null
+  week52_low: number | null
+}
+
+export async function fetchGlobalMarkets() {
+  return rawFetch<{ quotes: GlobalQuote[] }>('/api/v1/market/global')
+}
