@@ -110,6 +110,22 @@ def _fake_dhan_token(*, issued_at: datetime, expires_at: datetime) -> str:
     return f"{header}.{payload}.signature"
 
 
+def _reset_test_runtime() -> None:
+    Base.metadata.drop_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
+    _rate_buckets.clear()
+    _rate_windows.clear()
+    dhan_credential_service.reset_runtime_state()
+    dhan_credential_service.initialize(force_reload=True)
+    market_data_service.reset_runtime_state_for_tests()
+    db = SessionLocal()
+    try:
+        ensure_bootstrap_state(db)
+    finally:
+        db.close()
+    _seed_market()
+
+
 @pytest.fixture(autouse=True)
 def _freeze_market_open(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
@@ -166,19 +182,7 @@ def _bootstrap_agent(
 
 @pytest.fixture()
 def client():
-    Base.metadata.drop_all(bind=engine)
-    Base.metadata.create_all(bind=engine)
-    _rate_buckets.clear()
-    _rate_windows.clear()
-    dhan_credential_service.reset_runtime_state()
-    dhan_credential_service.initialize(force_reload=True)
-    market_data_service.reset_runtime_state_for_tests()
-    db = SessionLocal()
-    try:
-        ensure_bootstrap_state(db)
-    finally:
-        db.close()
-    _seed_market()
+    _reset_test_runtime()
     with TestClient(app) as test_client:
         yield test_client
 
@@ -2243,6 +2247,7 @@ def test_dhan_credential_service_renews_and_persists_token(monkeypatch: pytest.M
 
 
 def test_dhan_credential_service_falls_back_to_totp_regeneration(monkeypatch: pytest.MonkeyPatch) -> None:
+    _reset_test_runtime()
     now = datetime(2026, 3, 14, 4, 0, tzinfo=timezone.utc)
     expired_token = _fake_dhan_token(issued_at=now - timedelta(days=1, hours=1), expires_at=now - timedelta(minutes=5))
     regenerated_token = _fake_dhan_token(issued_at=now, expires_at=now + timedelta(days=1))
@@ -2294,6 +2299,37 @@ def test_dhan_credential_service_falls_back_to_totp_regeneration(monkeypatch: py
     assert snapshot.token_source == "totp"
     assert any(url.endswith("/RenewToken") for url in calls)
     assert any(url.endswith("/generateAccessToken") for url in calls)
+
+
+def test_market_refresh_rate_limit_enters_backoff_and_avoids_repeat_fetch(monkeypatch: pytest.MonkeyPatch) -> None:
+    _reset_test_runtime()
+    calls = {"count": 0}
+    market_data_service.reset_runtime_state_for_tests()
+    market_data_service.active_expiry = "2026-03-26"
+    market_data_service.expiries = ["2026-03-26"]
+    market_data_service.option_rows = [{"symbol": "cached"}]
+
+    async def fake_broadcast_snapshot() -> None:
+        return None
+
+    monkeypatch.setattr(market_data_service, "_has_dhan", lambda: True)
+    monkeypatch.setattr(market_data_service, "_ensure_runtime_ready", lambda *args, **kwargs: asyncio.sleep(0))
+    monkeypatch.setattr(market_data_service, "_fetch_expiries", lambda: ["2026-03-26"])
+    monkeypatch.setattr(market_data_service, "_broadcast_snapshot", fake_broadcast_snapshot)
+    monkeypatch.setattr(market_data_module.settings, "dhan_rate_limit_backoff_seconds", 300)
+
+    def fake_fetch_option_chain(expiry: str):
+        calls["count"] += 1
+        raise DhanApiError("DHAN_RATE_LIMITED", "option_chain failed: Too many requests")
+
+    monkeypatch.setattr(market_data_service, "_fetch_option_chain", fake_fetch_option_chain)
+
+    asyncio.run(market_data_service.refresh())
+    assert calls["count"] == 1
+    assert market_data_service._rest_backoff_until is not None
+
+    asyncio.run(market_data_service.refresh())
+    assert calls["count"] == 1
 
 
 def test_market_provider_health_route_reports_runtime_state(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
