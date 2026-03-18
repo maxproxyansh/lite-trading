@@ -145,6 +145,7 @@ class MarketDataService:
         self._snapshot_dirty = False
         self._pcr_dirty = False
         self._candle_cache: dict[tuple, tuple[float, dict[str, Any]]] = {}  # (sec_id, tf, from, to) -> (ts, data)
+        self._rest_backoff_until: datetime | None = None
 
     def set_broadcast(self, broadcast: BroadcastFn) -> None:
         self._broadcast = broadcast
@@ -227,6 +228,7 @@ class MarketDataService:
         self._dirty_quote_symbols = set()
         self._snapshot_dirty = False
         self._pcr_dirty = False
+        self._rest_backoff_until = None
         dhan_incident_service.reset_runtime_state_for_tests()
 
     def get_provider_health(self) -> DhanProviderHealth:
@@ -424,6 +426,10 @@ class MarketDataService:
 
         await self._close_incident()
 
+    @staticmethod
+    def _is_rate_limited(exc: DhanApiError) -> bool:
+        return exc.reason == "DHAN_RATE_LIMITED" or "too many request" in exc.message.lower()
+
     async def _snapshot_loop(self) -> None:
         interval = max(settings.option_chain_refresh_seconds, 1)
         while True:
@@ -586,9 +592,20 @@ class MarketDataService:
             await self._broadcast_snapshot()
             return
 
+        if self._rest_backoff_until and now < self._rest_backoff_until:
+            resume_at = self._rest_backoff_until.isoformat()
+            await self._open_incident(
+                "DHAN_RATE_LIMITED",
+                f"Dhan option-chain requests are rate limited; backing off until {resume_at}",
+            )
+            await self._broadcast_snapshot()
+            return
+
         try:
             chain = await asyncio.to_thread(self._fetch_option_chain, self.active_expiry)
         except DhanApiError as exc:
+            if self._is_rate_limited(exc):
+                self._rest_backoff_until = now + timedelta(seconds=max(settings.dhan_rate_limit_backoff_seconds, 60))
             await self._open_incident(exc.reason, exc.message)
             await self._broadcast_snapshot()
             return
@@ -601,6 +618,7 @@ class MarketDataService:
             await self._broadcast_snapshot()
             return
 
+        self._rest_backoff_until = None
         self._apply_chain_payload(chain, expiry=self.active_expiry, now=now)
 
         if not self.last_vix_refresh or now - self.last_vix_refresh > timedelta(minutes=5):

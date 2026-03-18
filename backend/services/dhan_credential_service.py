@@ -35,6 +35,8 @@ AUTH_ERROR_MARKERS = (
     "unauthorized",
     "401",
 )
+RATE_LIMIT_MARKERS = ("too many request", "too many requests", "429", "805")
+STATIC_IP_MARKERS = ("static ip", "whitelisted ip", "ip mismatch")
 
 
 class DhanApiError(RuntimeError):
@@ -657,8 +659,17 @@ class DhanCredentialService:
         if response.status_code >= 400:
             message = _extract_error_text(payload) or f"HTTP {response.status_code}"
             is_auth_failure = response.status_code in {401, 403} or self._looks_like_auth_error(payload)
+            lowered = message.lower()
+            if is_auth_failure:
+                reason = failure_reason
+            elif any(marker in lowered for marker in RATE_LIMIT_MARKERS) or response.status_code == 429:
+                reason = "DHAN_RATE_LIMITED"
+            elif any(marker in lowered for marker in STATIC_IP_MARKERS):
+                reason = "DHAN_STATIC_IP_REJECTED"
+            else:
+                reason = failure_reason
             raise DhanApiError(
-                failure_reason,
+                reason,
                 f"{url} failed: {message}",
                 auth_failed=auth_failed and is_auth_failure,
                 payload=payload,
@@ -680,8 +691,17 @@ class DhanCredentialService:
         payload = result.get("data")
         message = _extract_error_text(payload) or _extract_error_text(result.get("remarks")) or f"{operation_name} failed"
         auth_failed = self._looks_like_auth_error(payload) or self._looks_like_auth_error(result.get("remarks"))
+        lowered = message.lower()
+        if auth_failed:
+            reason = "DHAN_AUTH_FAILED"
+        elif any(marker in lowered for marker in RATE_LIMIT_MARKERS):
+            reason = "DHAN_RATE_LIMITED"
+        elif any(marker in lowered for marker in STATIC_IP_MARKERS):
+            reason = "DHAN_STATIC_IP_REJECTED"
+        else:
+            reason = "DHAN_UPSTREAM_FAILED"
         raise DhanApiError(
-            "DHAN_AUTH_FAILED" if auth_failed else "DHAN_UPSTREAM_FAILED",
+            reason,
             f"{operation_name} failed: {message}",
             auth_failed=auth_failed,
             payload=result,
