@@ -2661,3 +2661,80 @@ def test_dhan_incident_service_suppresses_non_auth_slack_alerts() -> None:
     )
 
     assert sent == []
+
+
+def test_apply_chain_payload_merges_greeks_without_overwriting_ltp(monkeypatch: pytest.MonkeyPatch) -> None:
+    """REST chain refresh should update Greeks/IV but preserve WebSocket-sourced LTP/OI/bid/ask."""
+    _reset_test_runtime()
+    market_data_service.reset_runtime_state_for_tests()
+
+    # Simulate WebSocket-updated quotes already in memory
+    market_data_service.quotes = {
+        "NIFTY_2026-03-26_24000_CE": {
+            "symbol": "NIFTY_2026-03-26_24000_CE",
+            "security_id": "12345",
+            "strike": 24000,
+            "option_type": "CE",
+            "expiry": "2026-03-26",
+            "ltp": 150.0,    # WebSocket live price
+            "bid": 149.5,    # WebSocket live bid
+            "ask": 150.5,    # WebSocket live ask
+            "bid_qty": 100,
+            "ask_qty": 200,
+            "iv": 15.0,
+            "oi": 50000.0,   # WebSocket live OI
+            "oi_lakhs": 0.5,
+            "volume": 1000.0,
+            "delta": 0.5,
+            "gamma": 0.01,
+            "theta": -5.0,
+            "vega": 10.0,
+        },
+    }
+    market_data_service._security_id_to_symbol = {"12345": "NIFTY_2026-03-26_24000_CE"}
+
+    # REST chain returns stale LTP but fresh Greeks
+    chain = {
+        "quotes": {
+            "NIFTY_2026-03-26_24000_CE": {
+                "symbol": "NIFTY_2026-03-26_24000_CE",
+                "security_id": "12345",
+                "strike": 24000,
+                "option_type": "CE",
+                "expiry": "2026-03-26",
+                "ltp": 145.0,    # Stale REST LTP — should NOT overwrite
+                "bid": 144.5,    # Stale REST bid — should NOT overwrite
+                "ask": 145.5,    # Stale REST ask — should NOT overwrite
+                "bid_qty": 80,
+                "ask_qty": 150,
+                "iv": 16.5,      # Fresh IV — SHOULD update
+                "oi": 48000.0,   # Stale REST OI — should NOT overwrite
+                "oi_lakhs": 0.48,
+                "volume": 900.0,
+                "delta": 0.55,   # Fresh delta — SHOULD update
+                "gamma": 0.012,  # Fresh gamma — SHOULD update
+                "theta": -5.5,   # Fresh theta — SHOULD update
+                "vega": 10.5,    # Fresh vega — SHOULD update
+            },
+        },
+        "rows": [{"strike": 24000, "is_atm": True, "call": {"symbol": "NIFTY_2026-03-26_24000_CE"}, "put": {"symbol": "NIFTY_2026-03-26_24000_PE"}}],
+        "security_id_to_symbol": {"12345": "NIFTY_2026-03-26_24000_CE"},
+        "snapshot": {"spot": 24000, "change": 100, "change_pct": 0.42, "vix": 14.0, "pcr": 1.0, "pcr_scope": "all_loaded_strikes_for_active_expiry", "call_oi_total": 50000, "put_oi_total": 50000, "market_status": "OPEN", "expiries": ["2026-03-26"], "active_expiry": "2026-03-26", "degraded": False, "degraded_reason": None, "updated_at": "2026-03-26T10:00:00"},
+    }
+
+    from datetime import datetime, timezone
+    market_data_service._apply_chain_payload(chain, expiry="2026-03-26", now=datetime.now(timezone.utc))
+
+    quote = market_data_service.quotes["NIFTY_2026-03-26_24000_CE"]
+    # WebSocket-sourced fields should be preserved
+    assert quote["ltp"] == 150.0, f"LTP should stay at WebSocket value, got {quote['ltp']}"
+    assert quote["bid"] == 149.5
+    assert quote["ask"] == 150.5
+    assert quote["oi"] == 50000.0
+    assert quote["volume"] == 1000.0
+    # Greeks/IV should be updated from REST
+    assert quote["iv"] == 16.5
+    assert quote["delta"] == 0.55
+    assert quote["gamma"] == 0.012
+    assert quote["theta"] == -5.5
+    assert quote["vega"] == 10.5

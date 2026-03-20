@@ -698,9 +698,48 @@ class MarketDataService:
 
     def _apply_chain_payload(self, chain: dict[str, Any], *, expiry: str, now: datetime) -> None:
         self.active_expiry = expiry
+        incoming_quotes = chain["quotes"]
+        incoming_sid_map = chain["security_id_to_symbol"]
+
+        # Fields that only REST provides (WebSocket doesn't have these)
+        REST_ONLY_FIELDS = ("iv", "delta", "gamma", "theta", "vega")
+
+        # Merge: update Greeks/IV from REST, preserve WebSocket-sourced fields
+        for symbol, incoming in incoming_quotes.items():
+            existing = self.quotes.get(symbol)
+            if existing:
+                for field in REST_ONLY_FIELDS:
+                    val = incoming.get(field)
+                    if val is not None:
+                        existing[field] = val
+                # Update security_id if it was missing
+                if not existing.get("security_id") and incoming.get("security_id"):
+                    existing["security_id"] = incoming["security_id"]
+            else:
+                # New strike not yet in quotes — take the full REST snapshot
+                self.quotes[symbol] = incoming
+
+        # Remove strikes that are no longer in the chain (expiry changed, etc.)
+        stale_symbols = set(self.quotes) - set(incoming_quotes)
+        for symbol in stale_symbols:
+            del self.quotes[symbol]
+
+        # Rebuild rows from current quotes (includes merged data)
         self.option_rows = chain["rows"]
-        self.quotes = chain["quotes"]
-        self._security_id_to_symbol = chain["security_id_to_symbol"]
+        # Update rows to reference current (merged) quotes
+        for row in self.option_rows:
+            call_sym = row["call"].get("symbol") if isinstance(row["call"], dict) else None
+            put_sym = row["put"].get("symbol") if isinstance(row["put"], dict) else None
+            if call_sym and call_sym in self.quotes:
+                row["call"] = self.quotes[call_sym]
+            if put_sym and put_sym in self.quotes:
+                row["put"] = self.quotes[put_sym]
+
+        self._security_id_to_symbol = {**self._security_id_to_symbol, **incoming_sid_map}
+        # Clean stale security_id mappings
+        valid_sids = {str(q.get("security_id")) for q in self.quotes.values() if q.get("security_id")}
+        self._security_id_to_symbol = {k: v for k, v in self._security_id_to_symbol.items() if k in valid_sids}
+
         self._health.last_option_chain_success_at = now
         self._health.last_market_data_at = now
         self.snapshot.update(chain["snapshot"])
