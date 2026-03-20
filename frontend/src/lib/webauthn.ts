@@ -20,15 +20,21 @@ export function supportsWebAuthn(): boolean {
 
 export async function createPasskey(options: any): Promise<object> {
   const publicKey: PublicKeyCredentialCreationOptions = {
-    ...options,
-    challenge: base64urlToBuffer(options.challenge),
+    rp: options.rp,
     user: {
-      ...options.user,
       id: base64urlToBuffer(options.user.id),
+      name: options.user.name,
+      displayName: options.user.displayName,
     },
+    challenge: base64urlToBuffer(options.challenge),
+    pubKeyCredParams: options.pubKeyCredParams,
+    timeout: options.timeout ?? 60000,
+    attestation: options.attestation ?? 'none',
+    authenticatorSelection: options.authenticatorSelection,
     excludeCredentials: (options.excludeCredentials ?? []).map((c: any) => ({
-      ...c,
+      type: c.type,
       id: base64urlToBuffer(c.id),
+      transports: c.transports,
     })),
   }
 
@@ -49,11 +55,14 @@ export async function createPasskey(options: any): Promise<object> {
 
 export async function getPasskey(options: any): Promise<object> {
   const publicKey: PublicKeyCredentialRequestOptions = {
-    ...options,
     challenge: base64urlToBuffer(options.challenge),
+    rpId: options.rpId,
+    timeout: options.timeout ?? 60000,
+    userVerification: options.userVerification ?? 'preferred',
     allowCredentials: (options.allowCredentials ?? []).map((c: any) => ({
-      ...c,
+      type: c.type,
       id: base64urlToBuffer(c.id),
+      transports: c.transports,
     })),
   }
 

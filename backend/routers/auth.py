@@ -235,22 +235,12 @@ def webauthn_register_options(
     user=Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    existing = db.query(WebAuthnCredential).filter(WebAuthnCredential.user_id == user.id).all()
-    exclude_credentials = [
-        PublicKeyCredentialDescriptor(id=base64.urlsafe_b64decode(c.credential_id + "=="))
-        for c in existing
-    ]
     options = generate_registration_options(
         rp_id=settings.webauthn_rp_id,
         rp_name=settings.webauthn_rp_name,
         user_id=user.id.encode(),
         user_name=user.email,
         user_display_name=user.display_name,
-        authenticator_selection=AuthenticatorSelectionCriteria(
-            resident_key=ResidentKeyRequirement.PREFERRED,
-            user_verification=UserVerificationRequirement.REQUIRED,
-        ),
-        exclude_credentials=exclude_credentials,
     )
     _webauthn_challenges[user.id] = options.challenge
     return {"options": json.loads(options_to_json(options))}
