@@ -2007,6 +2007,19 @@ def test_market_data_feed_packets_update_live_snapshot_and_quote_batch() -> None
     assert batch["quotes"][0]["ltp"] == 118.5
 
 
+def test_build_feed_instruments_includes_vix() -> None:
+    """VIX (security_id 21) should be subscribed on the WebSocket feed."""
+    _reset_test_runtime()
+    market_data_service.reset_runtime_state_for_tests()
+    market_data_service.quotes = {
+        "NIFTY_2026-03-26_24000_CE": {"security_id": "12345"},
+    }
+
+    instruments = market_data_service._build_feed_instruments()
+    security_ids = {sid for _, sid, _ in instruments}
+    assert "21" in security_ids, f"VIX security_id 21 should be in feed instruments, got {security_ids}"
+
+
 def test_fetch_candles_returns_full_intraday_window_without_legacy_truncation(monkeypatch: pytest.MonkeyPatch) -> None:
     base = int(datetime(2026, 3, 10, 3, 45, tzinfo=timezone.utc).timestamp())
     timestamps = [base + index * 900 for index in range(600)]

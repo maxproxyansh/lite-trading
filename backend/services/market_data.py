@@ -652,15 +652,7 @@ class MarketDataService:
         self._rest_backoff_until = None
         self._apply_chain_payload(chain, expiry=self.active_expiry, now=now)
 
-        if not self.last_vix_refresh or now - self.last_vix_refresh > timedelta(minutes=5):
-            try:
-                vix = await asyncio.to_thread(self._fetch_vix)
-            except DhanApiError as exc:
-                logger.warning("Dhan VIX refresh failed: %s", exc.message)
-            else:
-                if vix is not None:
-                    self.snapshot["vix"] = vix
-            self.last_vix_refresh = now
+        # VIX is now sourced from the WebSocket feed (_apply_vix_tick).
 
         await self._evaluate_provider_health()
         await self._broadcast_snapshot()
@@ -999,24 +991,6 @@ class MarketDataService:
                 expiries.append(candidate)
         return expiries
 
-    def _fetch_vix(self) -> float | None:
-        today = date.today()
-        from_date = (today - timedelta(days=5)).strftime("%Y-%m-%d")
-        to_date = today.strftime("%Y-%m-%d")
-        result = dhan_credential_service.call(
-            "historical_daily_data.vix",
-            lambda client: client.historical_daily_data(
-                security_id=VIX_INDEX_SECURITY_ID,
-                exchange_segment=INDEX_EXCHANGE_SEGMENT,
-                instrument_type=INDEX_INSTRUMENT_TYPE,
-                from_date=from_date,
-                to_date=to_date,
-            ),
-        )
-        payload = result if isinstance(result, dict) else {}
-        closes = payload.get("close", []) if isinstance(payload, dict) else []
-        return float(closes[-1]) if closes else None
-
     def _fetch_option_chain(self, expiry: str) -> dict[str, Any] | None:
         response = dhan_credential_service.call(
             "option_chain",
@@ -1199,7 +1173,10 @@ class MarketDataService:
         }
 
     def _build_feed_instruments(self) -> set[tuple[int, str, int]]:
-        instruments: set[tuple[int, str, int]] = {(IDX, "13", Quote)}
+        instruments: set[tuple[int, str, int]] = {
+            (IDX, NIFTY_INDEX_SECURITY_ID, Quote),
+            (IDX, VIX_INDEX_SECURITY_ID, Quote),  # VIX live via feed
+        }
         for quote in self.quotes.values():
             security_id = quote.get("security_id")
             if security_id:
@@ -1225,8 +1202,10 @@ class MarketDataService:
         self._health.last_market_data_at = now
 
         security_id_str = str(security_id)
-        if security_id_str == "13":
+        if security_id_str == NIFTY_INDEX_SECURITY_ID:
             self._apply_index_tick(payload)
+        elif security_id_str == VIX_INDEX_SECURITY_ID:
+            self._apply_vix_tick(payload)
 
         symbol = self._security_id_to_symbol.get(security_id_str)
         if symbol:
@@ -1265,6 +1244,15 @@ class MarketDataService:
         self.snapshot["market_status"] = market_status()
         self.snapshot["updated_at"] = datetime.now(timezone.utc)
         self._snapshot_dirty = True
+
+    def _apply_vix_tick(self, payload: dict[str, Any]) -> None:
+        ltp = self._safe_float(payload.get("LTP"))
+        if ltp is None or ltp <= 0:
+            return
+        if self.snapshot.get("vix") != ltp:
+            self.snapshot["vix"] = ltp
+            self.last_vix_refresh = datetime.now(timezone.utc)
+            self._snapshot_dirty = True
 
     def _apply_option_tick(self, symbol: str, payload: dict[str, Any]) -> None:
         quote = self.quotes.get(symbol)
