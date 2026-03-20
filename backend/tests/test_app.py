@@ -2703,7 +2703,8 @@ def test_apply_chain_payload_merges_greeks_without_overwriting_ltp(monkeypatch: 
         },
         "rows": [{"strike": 24000, "is_atm": True, "call": {"symbol": "NIFTY_2026-03-26_24000_CE"}, "put": {"symbol": "NIFTY_2026-03-26_24000_PE"}}],
         "security_id_to_symbol": {"12345": "NIFTY_2026-03-26_24000_CE"},
-        "snapshot": {"spot": 24000, "change": 100, "change_pct": 0.42, "vix": 14.0, "pcr": 1.0, "pcr_scope": "all_loaded_strikes_for_active_expiry", "call_oi_total": 50000, "put_oi_total": 50000, "market_status": "OPEN", "expiries": ["2026-03-26"], "active_expiry": "2026-03-26", "degraded": False, "degraded_reason": None, "updated_at": "2026-03-26T10:00:00"},
+        "total_call_oi": 50000.0,
+        "total_put_oi": 50000.0,
     }
 
     from datetime import datetime, timezone

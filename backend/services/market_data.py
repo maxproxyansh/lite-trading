@@ -716,7 +716,13 @@ class MarketDataService:
 
         self._health.last_option_chain_success_at = now
         self._health.last_market_data_at = now
-        self.snapshot.update(chain["snapshot"])
+
+        # Only update OI/PCR and metadata — NEVER touch spot/change/vix (WebSocket owns those)
+        pcr = round(chain["total_put_oi"] / chain["total_call_oi"], 2) if chain.get("total_call_oi") else None
+        self.snapshot["pcr"] = pcr
+        self.snapshot["pcr_scope"] = PCR_SCOPE
+        self.snapshot["call_oi_total"] = round(chain.get("total_call_oi", 0), 2)
+        self.snapshot["put_oi_total"] = round(chain.get("total_put_oi", 0), 2)
         self.snapshot["expiries"] = self.expiries
         self.snapshot["active_expiry"] = expiry
         self.snapshot["market_status"] = market_status()
@@ -996,57 +1002,10 @@ class MarketDataService:
         quotes: dict[str, dict[str, Any]] = {}
         rows: list[dict[str, Any]] = []
         security_id_to_symbol: dict[str, str] = {}
-        spot = float(body.get("last_price") or 0.0)
 
-        # Always derive prev_close from historical daily candles — the option
-        # chain's prev_close field can be stale (e.g. returns Friday's close
-        # instead of Monday's after a weekend).
-        prev_close = 0.0
-        if self.last_known_prev_close == 0.0:
-            try:
-                today = date.today()
-                from_dt = (today - timedelta(days=6)).strftime("%Y-%m-%d")
-                to_dt = today.strftime("%Y-%m-%d")
-                payload = dhan_credential_service.call(
-                    "historical_daily_data.prev_close",
-                    lambda client: client.historical_daily_data(
-                        security_id=NIFTY_INDEX_SECURITY_ID,
-                        exchange_segment=INDEX_EXCHANGE_SEGMENT,
-                        instrument_type=INDEX_INSTRUMENT_TYPE,
-                        from_date=from_dt,
-                        to_date=to_dt,
-                    ),
-                )
-                payload = payload if isinstance(payload, dict) else {}
-                closes = payload.get("close", []) if isinstance(payload, dict) else []
-                if len(closes) >= 2:
-                    # If the last candle is today's (close matches spot), use
-                    # the one before it. Otherwise the last candle IS prev day.
-                    if spot > 0 and abs(closes[-1] - spot) / spot < 0.005:
-                        prev_close = float(closes[-2])
-                    else:
-                        prev_close = float(closes[-1])
-                    logger.info("Derived prev_close=%.2f from %d daily candles (spot=%.2f, last_candle=%.2f)", prev_close, len(closes), spot, closes[-1])
-                elif closes:
-                    prev_close = float(closes[-1])
-            except Exception:  # noqa: BLE001
-                logger.warning("Failed to fetch historical candles for prev_close", exc_info=True)
-
-        if spot > 0:
-            self.last_known_spot = spot
-        if prev_close > 0:
-            self.last_known_prev_close = prev_close
-
-        effective_spot = spot if spot > 0 else self.last_known_spot
-        effective_prev = prev_close if prev_close > 0 else self.last_known_prev_close
-        atm = round(effective_spot / 50) * 50 if effective_spot else None
-
-        change = round(effective_spot - effective_prev, 2) if effective_prev else self.last_known_change
-        change_pct = round((change / effective_prev) * 100, 2) if effective_prev else self.last_known_change_pct
-
-        if effective_spot > 0:
-            self.last_known_change = change
-            self.last_known_change_pct = change_pct
+        # Use live WebSocket spot for ATM calculation, fallback to REST
+        spot = self.last_known_spot or float(body.get("last_price") or 0.0)
+        atm = round(spot / 50) * 50 if spot else None
 
         strike_range = 2000
         total_call_oi = 0.0
@@ -1079,28 +1038,12 @@ class MarketDataService:
                 }
             )
 
-        pcr = round(total_put_oi / total_call_oi, 2) if total_call_oi else None
         return {
             "quotes": quotes,
             "rows": rows,
             "security_id_to_symbol": security_id_to_symbol,
-            "snapshot": {
-                "spot_symbol": "NIFTY 50",
-                "spot": effective_spot,
-                "change": change,
-                "change_pct": change_pct,
-                "vix": self.snapshot.get("vix"),
-                "pcr": pcr,
-                "pcr_scope": PCR_SCOPE,
-                "call_oi_total": round(total_call_oi, 2),
-                "put_oi_total": round(total_put_oi, 2),
-                "market_status": market_status(),
-                "expiries": self.expiries,
-                "active_expiry": expiry,
-                "degraded": False,
-                "degraded_reason": None,
-                "updated_at": datetime.now(timezone.utc),
-            },
+            "total_call_oi": total_call_oi,
+            "total_put_oi": total_put_oi,
         }
 
     def _map_option_quote(self, payload: dict[str, Any], expiry: str, strike: int, option_type: str) -> dict[str, Any]:
