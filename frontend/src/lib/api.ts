@@ -415,8 +415,10 @@ export async function webauthnAuthenticateOptions(email: string) {
 }
 
 export async function webauthnAuthenticate(credential: object, email: string) {
-  return rawFetch<TokenEnvelope>('/api/v1/auth/webauthn/authenticate', {
+  const envelope = await rawFetch<TokenEnvelope>('/api/v1/auth/webauthn/authenticate', {
     method: 'POST',
     body: JSON.stringify({ credential, email }),
-  })
+  }, false)
+  setSession(envelope.access_token, envelope.user)
+  return envelope
 }
