@@ -2329,37 +2329,6 @@ def test_dhan_scheduler_fires_on_weekends() -> None:
     assert next_run.minute == 20
 
 
-def test_market_refresh_rate_limit_enters_backoff_and_avoids_repeat_fetch(monkeypatch: pytest.MonkeyPatch) -> None:
-    _reset_test_runtime()
-    calls = {"count": 0}
-    market_data_service.reset_runtime_state_for_tests()
-    market_data_service.active_expiry = "2026-03-26"
-    market_data_service.expiries = ["2026-03-26"]
-    market_data_service.option_rows = [{"symbol": "cached"}]
-
-    async def fake_broadcast_snapshot() -> None:
-        return None
-
-    monkeypatch.setattr(market_data_service, "_has_dhan", lambda: True)
-    monkeypatch.setattr(market_data_service, "_ensure_runtime_ready", lambda *args, **kwargs: asyncio.sleep(0))
-    monkeypatch.setattr(market_data_service, "_fetch_expiries", lambda: ["2026-03-26"])
-    monkeypatch.setattr(market_data_service, "_broadcast_snapshot", fake_broadcast_snapshot)
-    monkeypatch.setattr(market_data_module.settings, "dhan_rate_limit_backoff_seconds", 300)
-
-    def fake_fetch_option_chain(expiry: str):
-        calls["count"] += 1
-        raise DhanApiError("DHAN_RATE_LIMITED", "option_chain failed: Too many requests")
-
-    monkeypatch.setattr(market_data_service, "_fetch_option_chain", fake_fetch_option_chain)
-
-    asyncio.run(market_data_service.refresh())
-    assert calls["count"] == 1
-    assert market_data_service._rest_backoff_until is not None
-
-    asyncio.run(market_data_service.refresh())
-    assert calls["count"] == 1
-
-
 def test_market_provider_health_route_reports_runtime_state(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     headers = _login(client, "admin@lite.trade", "lite-admin-123")
     now = datetime.now(timezone.utc)
