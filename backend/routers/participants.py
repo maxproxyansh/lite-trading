@@ -5,7 +5,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from config import get_settings
-from dependencies import get_current_user
+from dependencies import get_current_user_or_agent
 from schemas import ParticipantHistoryResponse, ParticipantPositions, ParticipantSnapshot
 from services import participant_service
 
@@ -26,7 +26,7 @@ def _to_schema(raw: dict) -> ParticipantSnapshot:
 
 
 @router.get("/today", response_model=ParticipantSnapshot)
-def get_today(user=Depends(get_current_user)):
+def get_today(user=Depends(get_current_user_or_agent)):
     data = participant_service.get_latest()
     if data is None:
         raise HTTPException(
@@ -39,7 +39,7 @@ def get_today(user=Depends(get_current_user)):
 @router.get("/history", response_model=ParticipantHistoryResponse)
 def get_history(
     days: int = Query(default=30, ge=1, le=90),
-    user=Depends(get_current_user),
+    user=Depends(get_current_user_or_agent),
 ):
     snapshots = participant_service.get_history(days)
     return ParticipantHistoryResponse(
