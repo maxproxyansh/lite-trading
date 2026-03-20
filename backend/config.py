@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     dhan_realtime_stale_seconds: int = Field(default=20, alias="DHAN_REALTIME_STALE_SECONDS")
     dhan_rest_stale_seconds: int = Field(default=45, alias="DHAN_REST_STALE_SECONDS")
     dhan_rate_limit_backoff_seconds: int = Field(default=300, alias="DHAN_RATE_LIMIT_BACKOFF_SECONDS")
+    dhan_api_rate_limit_per_minute: int = Field(default=20, alias="DHAN_API_RATE_LIMIT_PER_MINUTE")
     dhan_incident_alert_cooldown_seconds: int = Field(default=28800, alias="DHAN_INCIDENT_ALERT_COOLDOWN_SECONDS")
     dhan_p0_slack_webhook_url: str | None = Field(default=None, alias="DHAN_P0_SLACK_WEBHOOK_URL")
     allow_public_signup: bool = Field(default=True, alias="ALLOW_PUBLIC_SIGNUP")

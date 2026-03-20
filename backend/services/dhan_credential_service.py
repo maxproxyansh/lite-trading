@@ -108,6 +108,38 @@ def _classify(msg: str, status: int = 0) -> tuple[str, bool]:
     return ("DHAN_AUTH_FAILED" if is_auth else ""), is_auth
 
 
+class DhanRateLimiter:
+    """Thread-safe token bucket rate limiter for Dhan API calls."""
+
+    def __init__(self, rate_per_second: float, capacity: int) -> None:
+        self._rate = rate_per_second
+        self._capacity = capacity
+        self._tokens = float(capacity)
+        self._last = time.monotonic()
+        self._lock = threading.Lock()
+
+    def acquire(self, timeout: float = 30.0) -> bool:
+        deadline = time.monotonic() + timeout
+        while True:
+            with self._lock:
+                now = time.monotonic()
+                self._tokens = min(self._capacity, self._tokens + (now - self._last) * self._rate)
+                self._last = now
+                if self._tokens >= 1.0:
+                    self._tokens -= 1.0
+                    return True
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            time.sleep(min(0.05, remaining))
+
+
+_api_rate_limiter = DhanRateLimiter(
+    rate_per_second=max(settings.dhan_api_rate_limit_per_minute, 1) / 60.0,
+    capacity=max(settings.dhan_api_rate_limit_per_minute, 1),
+)
+
+
 class DhanCredentialService:
     def __init__(self) -> None:
         self._lock = threading.RLock()
@@ -127,6 +159,8 @@ class DhanCredentialService:
         self._data_valid_until: datetime | None = None
         self._generation = 0
         self._last_totp_generation_at: float = 0.0
+        self._global_backoff_until: float | None = None
+        self._backoff_count: int = 0
 
     def initialize(self, *, force_reload: bool = False) -> None:
         with self._lock:
@@ -192,6 +226,13 @@ class DhanCredentialService:
         return self._regenerate_via_totp(reason="scheduled-renewal") if needs_renewal else False
 
     def call(self, operation_name: str, fn: Callable[[Dhanhq], T], *, allow_auth_retry: bool = True) -> T:
+        if self._global_backoff_until:
+            now = time.monotonic()
+            if now < self._global_backoff_until:
+                remaining = self._global_backoff_until - now
+                raise DhanApiError("DHAN_RATE_LIMITED", f"{operation_name} blocked: global backoff active ({remaining:.0f}s remaining)")
+        if not _api_rate_limiter.acquire(timeout=30.0):
+            raise DhanApiError("DHAN_RATE_LIMITED", f"{operation_name} blocked: rate limiter exhausted")
         self.ensure_token_fresh()
         for attempt in (1, 2):
             try:
@@ -201,13 +242,28 @@ class DhanCredentialService:
             try:
                 data = self._unwrap_sdk_result(operation_name, result)
             except DhanApiError as exc:
+                if exc.reason == "DHAN_RATE_LIMITED":
+                    self._apply_global_backoff()
                 if exc.auth_failed and allow_auth_retry and attempt == 1:
                     self._regenerate_via_totp(reason=f"{operation_name}-auth-retry")
                     continue
                 raise
             with self._lock:
                 self._last_rest_success_at = datetime.now(timezone.utc)
+                self._backoff_count = 0
+                self._global_backoff_until = None
             return data
+
+    def _apply_global_backoff(self) -> None:
+        self._backoff_count += 1
+        backoff_seconds = min(60 * (2 ** (self._backoff_count - 1)), max(settings.dhan_rate_limit_backoff_seconds, 60))
+        self._global_backoff_until = time.monotonic() + backoff_seconds
+        logger.warning("Dhan global backoff activated: %ds (consecutive=%d)", backoff_seconds, self._backoff_count)
+
+    def clear_backoff(self) -> None:
+        if self._global_backoff_until:
+            self._backoff_count = 0
+            self._global_backoff_until = None
 
     def issue_lease(self) -> DhanCredentialSnapshot:
         self.ensure_token_fresh()

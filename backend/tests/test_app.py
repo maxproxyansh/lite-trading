@@ -1192,6 +1192,52 @@ def test_rate_limit_does_not_prune_longer_window_buckets() -> None:
     assert _rate_buckets["long-window:ip:testclient"] == [now - 120]
 
 
+def test_dhan_rate_limiter_blocks_when_exhausted() -> None:
+    """Token bucket should block when tokens are exhausted."""
+    from services.dhan_credential_service import DhanRateLimiter
+
+    limiter = DhanRateLimiter(rate_per_second=10.0, capacity=2)
+    assert limiter.acquire(timeout=0.01) is True
+    assert limiter.acquire(timeout=0.01) is True
+    assert limiter.acquire(timeout=0.01) is False
+
+
+def test_dhan_rate_limiter_refills_over_time() -> None:
+    """Token bucket should refill tokens based on elapsed time."""
+    from services.dhan_credential_service import DhanRateLimiter
+    import time
+
+    limiter = DhanRateLimiter(rate_per_second=100.0, capacity=1)
+    assert limiter.acquire(timeout=0) is True
+    assert limiter.acquire(timeout=0) is False
+    time.sleep(0.02)
+    assert limiter.acquire(timeout=0) is True
+
+
+def test_dhan_call_activates_global_backoff_on_rate_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    _reset_test_runtime()
+    from services.dhan_credential_service import dhan_credential_service, DhanApiError
+
+    monkeypatch.setattr(dhan_credential_service, "_global_backoff_until", None)
+    monkeypatch.setattr(dhan_credential_service, "_backoff_count", 0)
+
+    def fake_unwrap(op, result):
+        raise DhanApiError("DHAN_RATE_LIMITED", "Too many requests")
+
+    monkeypatch.setattr(dhan_credential_service, "_unwrap_sdk_result", fake_unwrap)
+    monkeypatch.setattr(dhan_credential_service, "ensure_token_fresh", lambda: None)
+    monkeypatch.setattr(dhan_credential_service, "create_client", lambda: None)
+
+    with pytest.raises(DhanApiError, match="Too many requests"):
+        dhan_credential_service.call("test_op", lambda c: {})
+
+    assert dhan_credential_service._global_backoff_until is not None
+    assert dhan_credential_service._backoff_count == 1
+
+    with pytest.raises(DhanApiError, match="global backoff active"):
+        dhan_credential_service.call("test_op2", lambda c: {})
+
+
 def test_agent_webhooks_register_and_deliver_signed_events(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     bootstrap = _bootstrap_agent(
         client,
