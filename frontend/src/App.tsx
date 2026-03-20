@@ -170,8 +170,8 @@ export default function App() {
         await webauthnRegister(credential)
         localStorage.setItem('lite_passkey_email', user.email)
         addToast('success', 'Fingerprint login enabled')
-      } catch {
-        // User cancelled or browser doesn't support — silently ignore
+      } catch (err) {
+        console.warn('[WebAuthn] Registration failed:', err)
       }
     }, 1500)
 
