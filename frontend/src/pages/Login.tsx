@@ -55,7 +55,11 @@ export default function Login() {
       addToast('success', 'Signed in')
       navigate('/')
     } catch (error) {
-      addToast('error', error instanceof Error ? error.message : 'Passkey login failed')
+      // If passkey not found on server, clear stale local state
+      localStorage.removeItem('lite_passkey_email')
+      setHasPasskey(false)
+      setSavedEmail('')
+      addToast('error', 'Passkey not found — please login and re-enable')
     } finally {
       setLoading(false)
     }
