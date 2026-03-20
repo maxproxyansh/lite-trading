@@ -35,9 +35,13 @@ from services.auth_service import (
     rotate_refresh_token,
     signup_user,
 )
-from webauthn.registration import generate_registration_options, verify_registration_response
-from webauthn.authentication import generate_authentication_options, verify_authentication_response
-from webauthn.helpers import options_to_json
+from webauthn import (
+    generate_registration_options,
+    verify_registration_response,
+    generate_authentication_options,
+    verify_authentication_response,
+    options_to_json,
+)
 from webauthn.helpers.structs import (
     AuthenticatorSelectionCriteria,
     ResidentKeyRequirement,
