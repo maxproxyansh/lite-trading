@@ -370,7 +370,9 @@ export default function App() {
                 localStorage.setItem('lite_passkey_email', user!.email)
                 addToast('success', 'Fingerprint login enabled')
               } catch (err) {
-                console.warn('[WebAuthn] Registration failed:', err)
+                const msg = err instanceof Error ? err.message : String(err)
+                console.warn('[WebAuthn] Registration failed:', msg, err)
+                addToast('error', `Passkey: ${msg}`)
               }
             }}
             className="rounded bg-[#3b82f6] px-3 py-1 text-[12px] font-medium text-white hover:bg-[#2563eb] transition-colors"
