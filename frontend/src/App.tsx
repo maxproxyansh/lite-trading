@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { useShallow } from 'zustand/react/shallow'
 
@@ -157,26 +157,15 @@ export default function App() {
     addToast: state.addToast,
   })))
 
-  // Auto-prompt passkey registration after login
+  // Offer passkey registration after login
+  const [showPasskeyPrompt, setShowPasskeyPrompt] = useState(false)
   useEffect(() => {
     if (!user || !supportsWebAuthn()) return
     const passkeyEmail = localStorage.getItem('lite_passkey_email')
-    if (passkeyEmail === user.email) return // Already registered
-
-    const timer = setTimeout(async () => {
-      try {
-        const { options } = await webauthnRegisterOptions()
-        const credential = await createPasskey(options)
-        await webauthnRegister(credential)
-        localStorage.setItem('lite_passkey_email', user.email)
-        addToast('success', 'Fingerprint login enabled')
-      } catch (err) {
-        console.warn('[WebAuthn] Registration failed:', err)
-      }
-    }, 1500)
-
+    if (passkeyEmail === user.email) return
+    const timer = setTimeout(() => setShowPasskeyPrompt(true), 1500)
     return () => clearTimeout(timer)
-  }, [user, addToast])
+  }, [user])
 
   useEffect(() => {
     let active = true
@@ -368,6 +357,34 @@ export default function App() {
       {macroCalendarOpen && <MacroCalendarModal onClose={() => setMacroCalendarOpen(false)} />}
       {fiiDiiOpen && <FiiDiiModal onClose={() => setFiiDiiOpen(false)} />}
       {globalMarketsOpen && <GlobalMarketsModal onClose={() => setGlobalMarketsOpen(false)} />}
+      {showPasskeyPrompt && (
+        <div className="fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-lg border border-[#333] bg-[#1a1a1a] px-4 py-3 shadow-[0_8px_32px_rgba(0,0,0,0.5)]">
+          <span className="text-[13px] text-[#e0e0e0]">Enable fingerprint login?</span>
+          <button
+            onClick={async () => {
+              setShowPasskeyPrompt(false)
+              try {
+                const { options } = await webauthnRegisterOptions()
+                const credential = await createPasskey(options)
+                await webauthnRegister(credential)
+                localStorage.setItem('lite_passkey_email', user!.email)
+                addToast('success', 'Fingerprint login enabled')
+              } catch (err) {
+                console.warn('[WebAuthn] Registration failed:', err)
+              }
+            }}
+            className="rounded bg-[#3b82f6] px-3 py-1 text-[12px] font-medium text-white hover:bg-[#2563eb] transition-colors"
+          >
+            Enable
+          </button>
+          <button
+            onClick={() => setShowPasskeyPrompt(false)}
+            className="text-[12px] text-[#666] hover:text-[#999] transition-colors"
+          >
+            Skip
+          </button>
+        </div>
+      )}
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/*" element={
