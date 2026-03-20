@@ -43,8 +43,7 @@ from webauthn import (
     options_to_json,
 )
 from webauthn.helpers.structs import (
-    AuthenticatorSelectionCriteria,
-    ResidentKeyRequirement,
+    AuthenticatorTransport,
     UserVerificationRequirement,
     PublicKeyCredentialDescriptor,
 )
@@ -289,10 +288,16 @@ def webauthn_authenticate_options(
     if not credentials:
         raise HTTPException(status_code=404, detail="No passkey found")
 
+    def _parse_transports(raw: list | None) -> list[AuthenticatorTransport]:
+        if not raw:
+            return []
+        mapping = {t.value: t for t in AuthenticatorTransport}
+        return [mapping[v] for v in raw if v in mapping]
+
     allow_credentials = [
         PublicKeyCredentialDescriptor(
             id=base64.urlsafe_b64decode(c.credential_id + "=="),
-            transports=c.transports or [],
+            transports=_parse_transports(c.transports),
         )
         for c in credentials
     ]
