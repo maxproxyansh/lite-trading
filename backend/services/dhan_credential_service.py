@@ -74,8 +74,8 @@ class DhanCredentialService:
     def initialize(self, *, force_reload: bool = False) -> None:
         with self._lock:
             if self._initialized and not force_reload: return
+            self._load_from_storage()
             self._initialized = True
-        self._load_from_storage()
 
     def reset_runtime_state(self) -> None:
         with self._lock:
