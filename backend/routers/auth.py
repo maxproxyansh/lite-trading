@@ -257,7 +257,7 @@ def webauthn_register(
         raise HTTPException(status_code=400, detail="No pending registration challenge")
 
     verification = verify_registration_response(
-        credential=payload.credential,
+        credential=json.dumps(payload.credential),
         expected_challenge=challenge,
         expected_rp_id=settings.webauthn_rp_id,
         expected_origin=settings.webauthn_origin,
@@ -329,7 +329,7 @@ def webauthn_authenticate(
         raise HTTPException(status_code=401, detail="Authentication failed")
 
     verification = verify_authentication_response(
-        credential=payload.credential,
+        credential=json.dumps(payload.credential),
         expected_challenge=challenge,
         expected_rp_id=settings.webauthn_rp_id,
         expected_origin=settings.webauthn_origin,
