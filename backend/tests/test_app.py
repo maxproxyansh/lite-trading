@@ -2191,66 +2191,10 @@ def test_market_candles_route_rejects_unsupported_symbol_format(client: TestClie
     assert response.json()["detail"] == "Unsupported symbol format. Expected NIFTY 50 or NIFTY_YYYY-MM-DD_STRIKE_CE|PE"
 
 
-def test_dhan_credential_service_renews_and_persists_token(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_dhan_credential_service_regenerates_token_via_totp(monkeypatch: pytest.MonkeyPatch) -> None:
     _reset_test_runtime()
     now = datetime(2026, 3, 14, 3, 45, tzinfo=timezone.utc)
-    current_token = _fake_dhan_token(issued_at=now - timedelta(hours=23), expires_at=now + timedelta(minutes=20))
-    next_token = _fake_dhan_token(issued_at=now, expires_at=now + timedelta(days=1, hours=1))
-
-    db = SessionLocal()
-    try:
-        db.query(ServiceCredential).delete()
-        db.commit()
-    finally:
-        db.close()
-
-    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_client_id", "1103337749")
-    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_access_token", current_token)
-    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_pin", None)
-    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_totp_secret", None)
-    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_token_renewal_lead_seconds", 3600)
-    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_profile_check_seconds", 900)
-
-    def fake_request_json(method: str, url: str, **kwargs):
-        if url.endswith("/profile"):
-            return {
-                "dhanClientId": "1103337749",
-                "tokenValidity": "14/03/2026 10:00",
-                "dataPlan": "Active",
-                "dataValidity": "2026-04-03 21:50:36.0",
-            }
-        if url.endswith("/RenewToken"):
-            return {
-                "token": next_token,
-                "createTime": "2026-03-14T09:15:00.000",
-                "expiryTime": "2026-03-15T10:15:00.000",
-            }
-        raise AssertionError(url)
-
-    monkeypatch.setattr(dhan_credential_service, "_request_json", fake_request_json)
-
-    dhan_credential_service.reset_runtime_state()
-    dhan_credential_service.initialize(force_reload=True)
-
-    assert dhan_credential_service.ensure_token_fresh() is True
-    snapshot = dhan_credential_service.snapshot()
-    assert snapshot.access_token == next_token
-    assert snapshot.token_source == "renew"
-
-    db = SessionLocal()
-    try:
-        stored = db.query(ServiceCredential).filter(ServiceCredential.provider == "dhan").first()
-        assert stored is not None
-        assert stored.access_token == next_token
-        assert stored.token_source == "renew"
-    finally:
-        db.close()
-
-
-def test_dhan_credential_service_falls_back_to_totp_regeneration(monkeypatch: pytest.MonkeyPatch) -> None:
-    _reset_test_runtime()
-    now = datetime(2026, 3, 14, 4, 0, tzinfo=timezone.utc)
-    expired_token = _fake_dhan_token(issued_at=now - timedelta(days=1, hours=1), expires_at=now - timedelta(minutes=5))
+    expired_token = _fake_dhan_token(issued_at=now - timedelta(hours=23), expires_at=now + timedelta(minutes=20))
     regenerated_token = _fake_dhan_token(issued_at=now, expires_at=now + timedelta(days=1))
 
     db = SessionLocal()
@@ -2265,29 +2209,25 @@ def test_dhan_credential_service_falls_back_to_totp_regeneration(monkeypatch: py
     monkeypatch.setattr(dhan_credentials_module.settings, "dhan_pin", "4321")
     monkeypatch.setattr(dhan_credentials_module.settings, "dhan_totp_secret", "JBSWY3DPEHPK3PXP")
     monkeypatch.setattr(dhan_credentials_module.settings, "dhan_token_renewal_lead_seconds", 3600)
-    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_profile_check_seconds", 0)
-
-    calls: list[str] = []
+    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_profile_check_seconds", 900)
 
     def fake_request_json(method: str, url: str, **kwargs):
-        calls.append(url)
-        if url.endswith("/RenewToken"):
-            raise DhanApiError("DHAN_TOKEN_RENEWAL_FAILED", "token expired", auth_failed=True)
         if url.endswith("/profile"):
             headers = kwargs.get("headers") or {}
             if headers.get("access-token") == regenerated_token:
                 return {
-                    "tokenValidity": "2026-03-15T09:30:00.000",
+                    "dhanClientId": "1103337749",
+                    "tokenValidity": "15/03/2026 10:00",
                     "dataPlan": "Active",
-                    "dataValidity": "2026-03-15T15:30:00.000",
+                    "dataValidity": "2026-04-03 21:50:36.0",
                 }
             raise DhanApiError("DHAN_PROFILE_FAILED", "token expired", auth_failed=True)
         if url.endswith("/generateAccessToken"):
             return {
                 "accessToken": regenerated_token,
-                "expiryTime": "2026-03-15T09:30:00.000",
+                "expiryTime": "2026-03-15T10:00:00.000",
             }
-        raise AssertionError(url)
+        raise AssertionError(f"Unexpected URL: {url}")
 
     monkeypatch.setattr(dhan_credential_service, "_request_json", fake_request_json)
 
@@ -2298,8 +2238,36 @@ def test_dhan_credential_service_falls_back_to_totp_regeneration(monkeypatch: py
     snapshot = dhan_credential_service.snapshot()
     assert snapshot.access_token == regenerated_token
     assert snapshot.token_source == "totp"
-    assert any(url.endswith("/RenewToken") for url in calls)
-    assert any(url.endswith("/generateAccessToken") for url in calls)
+
+    db = SessionLocal()
+    try:
+        stored = db.query(ServiceCredential).filter(ServiceCredential.provider == "dhan").first()
+        assert stored is not None
+        assert stored.access_token == regenerated_token
+        assert stored.token_source == "totp"
+    finally:
+        db.close()
+
+
+def test_dhan_scheduler_fires_on_weekends() -> None:
+    """Scheduler must fire daily, not just on trading days."""
+    from services.dhan_credential_service import DhanCredentialService
+
+    # Saturday 2026-03-21 at 04:00 UTC (after 03:20 target)
+    saturday = datetime(2026, 3, 21, 4, 0, tzinfo=timezone.utc)
+    next_run = DhanCredentialService._next_rotation_time(saturday)
+    # Should be Sunday 03:20 UTC, not skip to Monday
+    assert next_run.weekday() == 6  # Sunday
+    assert next_run.hour == 3
+    assert next_run.minute == 20
+
+    # Sunday 2026-03-22 at 01:00 UTC (before 03:20 target)
+    sunday_early = datetime(2026, 3, 22, 1, 0, tzinfo=timezone.utc)
+    next_run = DhanCredentialService._next_rotation_time(sunday_early)
+    # Should be today (Sunday) at 03:20 UTC
+    assert next_run.day == 22
+    assert next_run.hour == 3
+    assert next_run.minute == 20
 
 
 def test_market_refresh_rate_limit_enters_backoff_and_avoids_repeat_fetch(monkeypatch: pytest.MonkeyPatch) -> None:

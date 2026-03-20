@@ -171,16 +171,20 @@ class DhanCredentialService:
         if cid and tok: self._persist_runtime_state()
 
     def _persist_runtime_state(self) -> None:
-        s = self.snapshot()
-        if not s.client_id or not s.access_token: return
+        with self._lock:
+            cid, tok, exp = self._client_id, self._access_token, self._expires_at
+            src, gen = self._token_source, self._generation
+            ref, val = self._last_refreshed_at, self._last_profile_checked_at
+            dp, dv, lei = self._data_plan_status, self._data_valid_until, self._last_lease_issued_at
+        if not cid or not tok: return
         db = SessionLocal()
         try:
             r = db.query(ServiceCredential).filter(ServiceCredential.provider == "dhan").first()
-            if not r: r = ServiceCredential(provider="dhan", client_id=s.client_id, access_token=s.access_token)
-            r.client_id, r.access_token, r.expires_at = s.client_id, s.access_token, s.expires_at
-            r.token_source, r.generation = s.token_source or "authority", s.generation
-            r.last_refreshed_at, r.last_validated_at = s.last_refreshed_at, s.last_profile_checked_at
-            r.data_plan_status, r.data_valid_until, r.last_lease_issued_at = s.data_plan_status, s.data_valid_until, s.last_lease_issued_at
+            if not r: r = ServiceCredential(provider="dhan", client_id=cid, access_token=tok)
+            r.client_id, r.access_token, r.expires_at = cid, tok, exp
+            r.token_source, r.generation = src or "authority", gen
+            r.last_refreshed_at, r.last_validated_at = ref, val
+            r.data_plan_status, r.data_valid_until, r.last_lease_issued_at = dp, dv, lei
             db.add(r); db.commit()
         finally: db.close()
 
