@@ -115,6 +115,8 @@ def _reset_test_runtime() -> None:
     Base.metadata.create_all(bind=engine)
     _rate_buckets.clear()
     _rate_windows.clear()
+    dhan_credential_service._global_backoff_until = None
+    dhan_credential_service._backoff_count = 0
     dhan_credential_service.reset_runtime_state()
     dhan_credential_service.initialize(force_reload=True)
     market_data_service.reset_runtime_state_for_tests()
@@ -2720,3 +2722,25 @@ def test_apply_chain_payload_merges_greeks_without_overwriting_ltp(monkeypatch: 
     assert quote["gamma"] == 0.012
     assert quote["theta"] == -5.5
     assert quote["vega"] == 10.5
+
+
+def test_candle_cache_hits_for_current_window_regardless_of_date_shift(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Current-window candle requests (before=None) should cache on (security_id, timeframe) only."""
+    _reset_test_runtime()
+    market_data_service.reset_runtime_state_for_tests()
+
+    call_count = {"n": 0}
+    def fake_call(op, fn, **kw):
+        call_count["n"] += 1
+        return {"open": [100], "high": [105], "low": [95], "close": [102], "volume": [1000], "timestamp": [1711400000]}
+
+    monkeypatch.setattr("services.market_data.dhan_credential_service.call", fake_call)
+    market_data_service._candle_cache.clear()
+
+    # First call — should hit Dhan
+    market_data_service._fetch_candles("D", before=None, symbol="NIFTY 50")
+    assert call_count["n"] == 1
+
+    # Second call immediately — should hit cache
+    market_data_service._fetch_candles("D", before=None, symbol="NIFTY 50")
+    assert call_count["n"] == 1, f"Expected cache hit, but Dhan was called {call_count['n']} times"

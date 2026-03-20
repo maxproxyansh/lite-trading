@@ -455,10 +455,6 @@ class MarketDataService:
 
         await self._close_incident()
 
-    @staticmethod
-    def _is_rate_limited(exc: DhanApiError) -> bool:
-        return exc.reason == "DHAN_RATE_LIMITED" or "too many request" in exc.message.lower()
-
     async def _snapshot_loop(self) -> None:
         interval = max(settings.option_chain_refresh_seconds, 1)
         while True:
@@ -1387,7 +1383,13 @@ class MarketDataService:
         lower_date, upper_date, oldest_date = self._history_window(timeframe, before)
 
         # --- candle cache lookup / fetch ---
-        cache_key = (target.security_id, timeframe, lower_date.isoformat(), upper_date.isoformat())
+        # For the current window (not scrolling back), key on (security_id, timeframe)
+        # so that daily date boundary shifts don't invalidate the cache.
+        # For historical pages (before != None), include dates since those are fixed ranges.
+        if before is None:
+            cache_key = (target.security_id, timeframe, "_current_")
+        else:
+            cache_key = (target.security_id, timeframe, lower_date.isoformat(), upper_date.isoformat())
         ttl = CANDLE_CACHE_TTL.get(timeframe, 60)
         now = time.monotonic()
         cached = self._candle_cache.get(cache_key)
