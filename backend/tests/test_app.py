@@ -2055,6 +2055,60 @@ def test_fetch_candles_returns_full_intraday_window_without_legacy_truncation(mo
     assert fake_client.last_kwargs["interval"] == 15
 
 
+def test_seed_spot_from_history_preserves_live_spot_when_backfilling_prev_close(monkeypatch: pytest.MonkeyPatch) -> None:
+    _reset_test_runtime()
+    market_data_service.last_known_spot = 22555.25
+    market_data_service.snapshot["spot"] = 22555.25
+
+    monkeypatch.setattr(
+        dhan_credential_service,
+        "call",
+        lambda operation_name, fn, **kwargs: {
+            "timestamp": [
+                "2026-03-19T00:00:00+00:00",
+                "2026-03-20T00:00:00+00:00",
+            ],
+            "close": [22450.0, 22500.0],
+        },
+    )
+    monkeypatch.setattr(market_data_module, "is_market_open", lambda: True)
+
+    asyncio.run(market_data_service._seed_spot_from_history())
+
+    assert market_data_service.snapshot["spot"] == 22555.25
+    assert market_data_service.last_known_spot == 22555.25
+    assert market_data_service.last_known_prev_close == 22500.0
+    assert market_data_service.snapshot["change"] == 55.25
+    assert market_data_service.snapshot["change_pct"] == 0.25
+
+
+def test_seed_spot_from_history_uses_last_two_daily_closes_when_live_spot_is_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+    _reset_test_runtime()
+    market_data_service.last_known_spot = 0.0
+    market_data_service.snapshot["spot"] = 0.0
+
+    monkeypatch.setattr(
+        dhan_credential_service,
+        "call",
+        lambda operation_name, fn, **kwargs: {
+            "timestamp": [
+                "2026-03-19T00:00:00+00:00",
+                "2026-03-20T00:00:00+00:00",
+            ],
+            "close": [22450.0, 22500.0],
+        },
+    )
+    monkeypatch.setattr(market_data_module, "is_market_open", lambda: False)
+
+    asyncio.run(market_data_service._seed_spot_from_history())
+
+    assert market_data_service.snapshot["spot"] == 22500.0
+    assert market_data_service.last_known_spot == 22500.0
+    assert market_data_service.last_known_prev_close == 22450.0
+    assert market_data_service.snapshot["change"] == 50.0
+    assert market_data_service.snapshot["change_pct"] == 0.22
+
+
 def test_fetch_candles_aggregates_weekly_and_monthly_from_daily_history(monkeypatch: pytest.MonkeyPatch) -> None:
     timestamps = [
         "2026-01-26T00:00:00+00:00",
@@ -2113,6 +2167,34 @@ def test_fetch_candles_aggregates_weekly_and_monthly_from_daily_history(monkeypa
     assert monthly["candles"][1]["close"] == 114.0
     assert monthly["candles"][1]["volume"] == 130.0
     assert fake_client.last_kwargs["instrument_type"] == "INDEX"
+
+
+def test_apply_index_tick_updates_day_extremes_even_when_price_is_unchanged() -> None:
+    _reset_test_runtime()
+    market_data_service.last_known_prev_close = 22450.0
+    market_data_service.snapshot["spot"] = 22555.25
+    market_data_service.snapshot["change"] = 105.25
+    market_data_service.snapshot["change_pct"] = 0.47
+    market_data_service.snapshot["day_high"] = 22560.0
+    market_data_service.snapshot["day_low"] = 22440.0
+    market_data_service._snapshot_dirty = False
+
+    market_data_service._apply_index_tick(
+        {
+            "type": "Full Data",
+            "security_id": 13,
+            "LTP": "22555.25",
+            "close": "22450.00",
+            "high": "22580.00",
+            "low": "22430.00",
+        }
+    )
+
+    assert market_data_service.snapshot["spot"] == 22555.25
+    assert market_data_service.snapshot["change"] == 105.25
+    assert market_data_service.snapshot["day_high"] == 22580.0
+    assert market_data_service.snapshot["day_low"] == 22430.0
+    assert market_data_service._snapshot_dirty is True
 
 
 def test_market_candles_route_supports_before_cursor(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:

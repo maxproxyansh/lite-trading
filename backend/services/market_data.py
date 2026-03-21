@@ -220,7 +220,7 @@ class MarketDataService:
             await self.refresh()
         except Exception as exc:
             logger.error("Initial market data refresh failed (background loops will retry): %s", exc)
-        if not self.last_known_spot:
+        if not self.last_known_spot or not self.last_known_prev_close:
             await self._seed_spot_from_history()
             await self._broadcast_snapshot()
         self._snapshot_task = asyncio.create_task(self._snapshot_loop())
@@ -243,23 +243,29 @@ class MarketDataService:
                     ),
                 ),
             )
-            candles = self._map_candles(payload if isinstance(payload, dict) else {})
+            candles = self._map_candles(payload if isinstance(payload, dict) else {}, normalize_daily=True)
             if candles:
                 last = candles[-1]
-                self.last_known_spot = float(last["close"])
-                self.snapshot["spot"] = self.last_known_spot
+                last_close = float(last["close"])
+                had_live_spot = self.last_known_spot > 0
+                effective_spot = self.last_known_spot if had_live_spot else last_close
+                if not had_live_spot:
+                    self.last_known_spot = last_close
+                    self.snapshot["spot"] = last_close
                 self.snapshot["updated_at"] = datetime.now(timezone.utc)
-                # If we have at least 2 candles, compute change from prev close
                 if len(candles) >= 2:
-                    prev_close = float(candles[-2]["close"])
+                    last_candle_date = datetime.fromtimestamp(int(last["time"]), timezone.utc).astimezone(IST).date()
+                    current_ist_date = datetime.now(IST).date()
+                    use_latest_close_as_prev = had_live_spot and is_market_open() and last_candle_date < current_ist_date
+                    prev_close = float(last["close"] if use_latest_close_as_prev else candles[-2]["close"])
                     self.last_known_prev_close = prev_close
-                    change = round(self.last_known_spot - prev_close, 2)
+                    change = round(effective_spot - prev_close, 2)
                     change_pct = round((change / prev_close) * 100, 2) if prev_close else 0.0
                     self.last_known_change = change
                     self.last_known_change_pct = change_pct
                     self.snapshot["change"] = change
                     self.snapshot["change_pct"] = change_pct
-                logger.info("Seeded spot from history: %.2f", self.last_known_spot)
+                logger.info("Seeded spot/change from history: spot=%.2f prev_close=%.2f", effective_spot, self.last_known_prev_close)
         except Exception as exc:
             logger.warning("Failed to seed spot from history: %s", exc)
 
@@ -1220,8 +1226,22 @@ class MarketDataService:
         effective_prev = self.last_known_prev_close
         change = round(ltp - effective_prev, 2) if effective_prev else self.last_known_change
         change_pct = round((change / effective_prev) * 100, 2) if effective_prev else self.last_known_change_pct
+        next_day_high = self.snapshot.get("day_high")
+        next_day_low = self.snapshot.get("day_low")
+        if day_high and day_high > 0:
+            next_day_high = day_high
+        if day_low and day_low > 0:
+            next_day_low = day_low
+        next_market_status = market_status()
 
-        if self.snapshot.get("spot") == ltp and self.snapshot.get("change") == change and self.snapshot.get("change_pct") == change_pct:
+        if (
+            self.snapshot.get("spot") == ltp
+            and self.snapshot.get("change") == change
+            and self.snapshot.get("change_pct") == change_pct
+            and self.snapshot.get("day_high") == next_day_high
+            and self.snapshot.get("day_low") == next_day_low
+            and self.snapshot.get("market_status") == next_market_status
+        ):
             return
 
         self.last_known_spot = ltp
@@ -1230,11 +1250,11 @@ class MarketDataService:
         self.snapshot["spot"] = ltp
         self.snapshot["change"] = change
         self.snapshot["change_pct"] = change_pct
-        if day_high and day_high > 0:
-            self.snapshot["day_high"] = day_high
-        if day_low and day_low > 0:
-            self.snapshot["day_low"] = day_low
-        self.snapshot["market_status"] = market_status()
+        if next_day_high is not None:
+            self.snapshot["day_high"] = next_day_high
+        if next_day_low is not None:
+            self.snapshot["day_low"] = next_day_low
+        self.snapshot["market_status"] = next_market_status
         self.snapshot["updated_at"] = datetime.now(timezone.utc)
         self._snapshot_dirty = True
 
