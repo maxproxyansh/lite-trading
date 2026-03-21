@@ -2,6 +2,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useShallow } from 'zustand/react/shallow'
 
 import Logo from '../components/Logo'
+import WidgetButton from '../components/WidgetButton'
 import { logout } from '../lib/api'
 import { useStore } from '../store/useStore'
 
@@ -13,7 +14,7 @@ const navItems = [
   { label: 'Analytics', path: '/analytics' },
 ]
 
-export default function Header() {
+export default function Header({ onPulseSetup }: { onPulseSetup?: () => void }) {
   const navigate = useNavigate()
   const location = useLocation()
   const {
@@ -53,6 +54,7 @@ export default function Header() {
             </span>
           )}
         </div>
+        <WidgetButton onSetupNeeded={onPulseSetup ?? (() => {})} />
       </div>
 
       {/* Center: Navigation — hidden on mobile */}

@@ -422,3 +422,19 @@ export async function webauthnAuthenticate(credential: object, email: string) {
   setSession(envelope.access_token, envelope.user)
   return envelope
 }
+
+export async function pulseSetup(): Promise<{ claim_token: string; apk_url: string; key_prefix: string }> {
+  return rawFetch('/api/v1/agent/pulse/setup', { method: 'POST' })
+}
+
+export async function pulseClaim(token: string): Promise<{ api_key: string }> {
+  return rawFetch('/api/v1/agent/pulse/claim', { method: 'POST', body: JSON.stringify({ token }) })
+}
+
+export async function pulseDisconnect(): Promise<void> {
+  await rawFetch('/api/v1/agent/pulse/setup', { method: 'DELETE' })
+}
+
+export async function pulseStatus(): Promise<{ connected: boolean; key_prefix: string | null; created_at: string | null }> {
+  return rawFetch('/api/v1/agent/pulse/status')
+}
