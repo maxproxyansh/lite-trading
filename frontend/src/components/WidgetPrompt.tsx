@@ -14,9 +14,13 @@ export default function WidgetPrompt({ onClose }: { onClose: () => void }) {
   const handleDownload = async () => {
     setLoading(true)
     try {
-      const { claim_token, apk_url } = await pulseSetup()
+      const { claim_token } = await pulseSetup()
       setClaimToken(claim_token)
-      window.open(apk_url, '_blank')
+      // Download APK directly from Vercel static file
+      const link = document.createElement('a')
+      link.href = '/lite-pulse.apk'
+      link.download = 'lite-pulse.apk'
+      link.click()
       setStep(2)
     } catch {
       // setup failed silently
