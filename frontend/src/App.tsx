@@ -14,7 +14,6 @@ import OrderModal from './components/OrderModal'
 import Sidebar from './components/Sidebar'
 import Toast from './components/Toast'
 import TriggeredAlertModal from './components/TriggeredAlertModal'
-import WidgetPrompt from './components/WidgetPrompt'
 import useKeyboardShortcuts from './hooks/useKeyboardShortcuts'
 import { useWebSocket } from './hooks/useWebSocket'
 import {
@@ -46,7 +45,7 @@ import Settings from './pages/Settings'
 import Trading from './pages/Trading'
 import { useStore } from './store/useStore'
 
-function ProtectedLayout({ onOpenMacroCalendar, onOpenFiiDii, onOpenGlobalMarkets, onPulseSetup }: { onOpenMacroCalendar: () => void; onOpenFiiDii: () => void; onOpenGlobalMarkets: () => void; onPulseSetup?: () => void }) {
+function ProtectedLayout({ onOpenMacroCalendar, onOpenFiiDii, onOpenGlobalMarkets }: { onOpenMacroCalendar: () => void; onOpenFiiDii: () => void; onOpenGlobalMarkets: () => void }) {
   const { user, spot } = useStore(useShallow((state) => ({
     user: state.user,
     spot: state.snapshot?.spot ?? null,
@@ -80,7 +79,7 @@ function ProtectedLayout({ onOpenMacroCalendar, onOpenFiiDii, onOpenGlobalMarket
   return (
     <ErrorBoundary>
       <div className="flex h-dvh flex-col bg-bg-primary text-text-primary">
-        <Header onPulseSetup={onPulseSetup} />
+        <Header />
         <div className="flex flex-1 overflow-hidden pb-14 md:pb-0">
           <Sidebar onOpenMacroCalendar={onOpenMacroCalendar} onOpenFiiDii={onOpenFiiDii} onOpenGlobalMarkets={onOpenGlobalMarkets} />
           <main className="md:ml-10 flex-1 overflow-auto animate-fade-in" key={location.pathname}>
@@ -167,20 +166,6 @@ export default function App() {
     if (passkeyEmail === user.email) return
     const timer = setTimeout(() => setShowPasskeyPrompt(true), 1500)
     return () => clearTimeout(timer)
-  }, [user])
-
-  // Offer Lite Pulse widget on Android after 3+ logins
-  const [showPulsePrompt, setShowPulsePrompt] = useState(false)
-  useEffect(() => {
-    if (!user) return
-    const isAndroid = /android/i.test(navigator.userAgent)
-    const count = parseInt(localStorage.getItem('login-count') ?? '0', 10)
-    const dismissed = localStorage.getItem('pulse-prompt-dismissed') === 'true'
-    const connected = localStorage.getItem('pulse-connected') === 'true'
-    if (isAndroid && count >= 3 && !dismissed && !connected) {
-      const timer = setTimeout(() => setShowPulsePrompt(true), 2000)
-      return () => clearTimeout(timer)
-    }
   }, [user])
 
   useEffect(() => {
@@ -414,12 +399,6 @@ export default function App() {
           </div>
         </div>
       )}
-      {showPulsePrompt && (
-        <WidgetPrompt onClose={() => {
-          setShowPulsePrompt(false)
-          localStorage.setItem('pulse-prompt-dismissed', 'true')
-        }} />
-      )}
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/*" element={
@@ -427,7 +406,6 @@ export default function App() {
             onOpenMacroCalendar={() => setMacroCalendarOpen(true)}
             onOpenFiiDii={() => setFiiDiiOpen(true)}
             onOpenGlobalMarkets={() => setGlobalMarketsOpen(true)}
-            onPulseSetup={() => setShowPulsePrompt(true)}
           />
         } />
       </Routes>

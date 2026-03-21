@@ -22,6 +22,7 @@ import { OscillatorPane } from './chart/OscillatorPane'
 import { DrawingManager } from '../lib/chart/drawing-manager'
 import { IndicatorManager } from '../lib/chart/indicator-manager'
 import { CHANNEL_DEFAULT_STYLE, DEFAULT_DRAWING_STYLE, OSCILLATOR_INDICATORS } from '../lib/chart/types'
+import WidgetButton from './WidgetButton'
 import { computeRSI, computeMACD, computeADX } from '../lib/chart/indicators'
 
 const TIMEFRAMES = ['1m', '5m', '15m', '1h', 'D', 'W', 'M'] as const
@@ -1339,6 +1340,7 @@ export default function NiftyChart() {
         <div className="flex min-w-0 items-center gap-2 px-3 py-1">
           <div className="flex min-w-0 items-center gap-2">
             <span className={`shrink-0 text-[12px] font-medium ${chartQuote ? 'text-brand' : 'text-text-primary'}`}>{chartLabel}</span>
+            {!chartQuote && <WidgetButton />}
             {chartQuote && (
               <>
                 <span className="shrink-0 text-[10px] text-text-muted">{chartQuote.expiry}</span>

@@ -1,4 +1,5 @@
-const isAndroid = typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent)
+import { useState } from 'react'
+import WidgetPrompt from './WidgetPrompt'
 
 function launchApp(path: string) {
   const iframe = document.createElement('iframe')
@@ -8,8 +9,9 @@ function launchApp(path: string) {
   setTimeout(() => iframe.remove(), 500)
 }
 
-export default function WidgetButton({ onSetupNeeded }: { onSetupNeeded: () => void }) {
-  // Show on all mobile devices for now (remove Android gate during debugging)
+export default function WidgetButton() {
+  const [showPrompt, setShowPrompt] = useState(false)
+
   const handleTap = (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
@@ -17,27 +19,35 @@ export default function WidgetButton({ onSetupNeeded }: { onSetupNeeded: () => v
     if (connected) {
       launchApp('litewidget://start')
     } else {
-      onSetupNeeded()
+      setShowPrompt(true)
     }
   }
 
   return (
-    <button
-      onClick={handleTap}
-      className="md:hidden flex h-7 w-7 items-center justify-center rounded-full bg-bg-hover transition-colors hover:bg-bg-primary"
-      title="Lite Pulse"
-    >
-      <svg
-        viewBox="0 0 24 24"
-        className="h-4 w-4"
-        fill="none"
-        stroke="#a3e635"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
+    <>
+      <button
+        onClick={handleTap}
+        className="md:hidden shrink-0 flex h-6 w-6 items-center justify-center rounded-full bg-bg-secondary border border-border-primary transition-colors hover:bg-bg-hover"
+        title="Lite Pulse"
       >
-        <polyline points="2,12 6,12 9,4 12,20 15,8 18,12 22,12" />
-      </svg>
-    </button>
+        <svg
+          viewBox="0 0 24 24"
+          className="h-3.5 w-3.5"
+          fill="none"
+          stroke="#a3e635"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <polyline points="2,12 6,12 9,4 12,20 15,8 18,12 22,12" />
+        </svg>
+      </button>
+      {showPrompt && (
+        <WidgetPrompt onClose={() => {
+          setShowPrompt(false)
+          localStorage.setItem('pulse-prompt-dismissed', 'true')
+        }} />
+      )}
+    </>
   )
 }
