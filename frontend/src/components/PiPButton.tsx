@@ -18,28 +18,28 @@ export default function PiPButton() {
     <>
       <button
         onClick={handleClick}
-        className="flex items-center justify-center rounded p-0.5 text-text-muted transition-colors hover:text-text-primary"
+        className="flex items-center justify-center rounded p-1 text-brand transition-colors hover:bg-bg-hover"
         title={isOpen ? 'Close floating price' : 'Float price'}
       >
         <svg
           viewBox="0 0 24 24"
-          className="h-3.5 w-3.5"
+          className="h-4.5 w-4.5"
           fill="none"
           stroke="currentColor"
-          strokeWidth="2"
+          strokeWidth="2.5"
           strokeLinecap="round"
           strokeLinejoin="round"
         >
           {isOpen ? (
             <>
-              <rect x="2" y="2" width="20" height="20" rx="2" />
+              <rect x="2" y="2" width="20" height="20" rx="3" />
               <line x1="9" y1="9" x2="15" y2="15" />
               <line x1="15" y1="9" x2="9" y2="15" />
             </>
           ) : (
             <>
-              <rect x="2" y="2" width="20" height="20" rx="2" />
-              <rect x="12" y="10" width="8" height="8" rx="1" />
+              <rect x="1" y="1" width="22" height="14" rx="3" />
+              <rect x="11" y="11" width="12" height="10" rx="2" />
             </>
           )}
         </svg>
