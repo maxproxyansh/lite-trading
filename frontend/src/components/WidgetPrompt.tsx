@@ -2,8 +2,7 @@ import { useState } from 'react'
 import { pulseSetup } from '../lib/api'
 
 function launchApp(path: string) {
-  const intentUrl = `intent://start${path.includes('?') ? path.substring(path.indexOf('?')) : ''}#Intent;scheme=litewidget;package=com.lite.widget;end`
-  window.location.href = intentUrl
+  window.location.href = path
 }
 
 export default function WidgetPrompt({ onClose }: { onClose: () => void }) {

@@ -2,9 +2,7 @@ import { useState } from 'react'
 import WidgetPrompt from './WidgetPrompt'
 
 function launchApp(path: string) {
-  // Use intent:// URI for Android Chrome — iframes with custom schemes are unreliable
-  const intentUrl = `intent://start${path.includes('?') ? path.substring(path.indexOf('?')) : ''}#Intent;scheme=litewidget;package=com.lite.widget;end`
-  window.location.href = intentUrl
+  window.location.href = path
 }
 
 export default function WidgetButton() {
