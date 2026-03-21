@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 
+import PulseSettings from '../components/PulseSettings'
 import { createAgentKey, createUser } from '../lib/api'
 import { useStore } from '../store/useStore'
 
@@ -79,6 +80,8 @@ export default function Settings() {
             </div>
           )}
         </div>
+
+        <PulseSettings />
 
         {user?.role === 'admin' && (
           <div className="rounded bg-bg-secondary p-4 xl:col-span-2">
