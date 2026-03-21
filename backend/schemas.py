@@ -45,11 +45,20 @@ class HealthResponse(BaseModel):
     status: str
     app: str
     environment: str
+    version: str | None = None
+    commit_sha: str | None = None
     api_prefix: str | None = None
     meta_url: str | None = None
     docs_url: str | None = None
     openapi_url: str | None = None
     redoc_url: str | None = None
+
+
+class VersionResponse(BaseModel):
+    version: str
+    commit_sha: str | None = None
+    cors_regex: str | None = None
+    origin: str
 
 
 class WebSocketEventMeta(BaseModel):
@@ -97,6 +106,7 @@ class MarketDataContractMeta(BaseModel):
 class ApiMetaResponse(BaseModel):
     app: str
     version: str
+    commit_sha: str | None = None
     api_prefix: str
     base_url: str
     meta_url: str

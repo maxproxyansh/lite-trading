@@ -11,7 +11,7 @@ from fastapi.responses import RedirectResponse, Response
 from config import get_settings
 from database import SessionLocal, init_db
 from routers import admin, agent, alerts, analytics, auth, funds, internal, market, meta, orders, participants, portfolios, positions, signals, websocket
-from schemas import HealthResponse
+from schemas import HealthResponse, VersionResponse
 from services.alert_service import sync_alerts
 from services.market_data import market_data_service
 from services.auth_service import ensure_bootstrap_state
@@ -147,6 +147,8 @@ def root(request: Request):
         status="ok",
         app=settings.app_name,
         environment=settings.app_env,
+        version=settings.app_version,
+        commit_sha=settings.app_commit_sha,
         api_prefix=settings.api_prefix,
         meta_url=f"{base_url}{META_URL}",
         docs_url=f"{base_url}{DOCS_URL}",
@@ -155,9 +157,14 @@ def root(request: Request):
     )
 
 
-@app.get("/version")
+@app.get("/version", response_model=VersionResponse)
 def version():
-    return {"version": APP_VERSION, "cors_regex": settings.frontend_origin_regex, "origin": settings.frontend_origin}
+    return VersionResponse(
+        version=APP_VERSION,
+        commit_sha=settings.app_commit_sha,
+        cors_regex=settings.frontend_origin_regex,
+        origin=settings.frontend_origin,
+    )
 
 
 @app.get("/docs", include_in_schema=False)

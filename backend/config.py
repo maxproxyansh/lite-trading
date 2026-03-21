@@ -6,7 +6,7 @@ from secrets import token_urlsafe
 from typing import Literal
 
 from dotenv import load_dotenv
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,6 +19,16 @@ class Settings(BaseSettings):
 
     app_name: str = "Lite Options Terminal"
     app_version: str = "2.3.0"
+    app_commit_sha: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "APP_GIT_SHA",
+            "RAILWAY_GIT_COMMIT_SHA",
+            "VERCEL_GIT_COMMIT_SHA",
+            "GITHUB_SHA",
+            "COMMIT_SHA",
+        ),
+    )
     app_env: Literal["development", "staging", "production"] = "development"
     api_prefix: str = "/api/v1"
     frontend_origin: str = "http://localhost:5173"

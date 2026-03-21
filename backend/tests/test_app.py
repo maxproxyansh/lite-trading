@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import importlib
 import json
 import os
 import sys
@@ -37,6 +38,7 @@ os.environ["BOOTSTRAP_AGENT_KEY"] = "lite-agent-dev-key"
 os.environ["BOOTSTRAP_AGENT_NAME"] = "bootstrap-agent"
 
 from database import Base, SessionLocal, engine  # noqa: E402
+import main as main_module  # noqa: E402
 from main import _process_market_side_effects, app  # noqa: E402
 from models import DhanConsumerState, ServiceCredential  # noqa: E402
 from rate_limit import _rate_buckets, _rate_windows, rate_limit  # noqa: E402
@@ -54,6 +56,9 @@ from services.signal_adapter import signal_adapter  # noqa: E402
 from services.trading_service import process_open_orders_sync  # noqa: E402
 from services.webhook_service import process_webhook_deliveries_once, webhook_signature  # noqa: E402
 import market_hours  # noqa: E402
+
+
+meta_router_module = importlib.import_module("routers.meta")
 
 
 def _seed_market() -> None:
@@ -280,6 +285,26 @@ def test_root_meta_docs_and_openapi_are_agent_discoverable(client: TestClient) -
     assert payload["market_data"]["pcr_scope"] == "all_loaded_strikes_for_active_expiry"
     event_types = {event["type"] for event in payload["websocket"]["events"]}
     assert {"market.snapshot", "option.chain", "option.quotes", "alert.triggered", "portfolio.refresh", "signal.updated"} <= event_types
+
+
+def test_root_version_and_meta_expose_commit_sha(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    commit_sha = "8841172abcdef1234567890abcdef1234567890"
+    monkeypatch.setattr(main_module.settings, "app_commit_sha", commit_sha)
+    monkeypatch.setattr(meta_router_module.settings, "app_commit_sha", commit_sha)
+
+    root = client.get("/")
+    assert root.status_code == 200, root.text
+    assert root.json()["version"] == "2.3.0"
+    assert root.json()["commit_sha"] == commit_sha
+
+    version = client.get("/version")
+    assert version.status_code == 200, version.text
+    assert version.json()["version"] == "2.3.0"
+    assert version.json()["commit_sha"] == commit_sha
+
+    meta = client.get("/api/v1/meta")
+    assert meta.status_code == 200, meta.text
+    assert meta.json()["commit_sha"] == commit_sha
 
 
 def test_meta_uses_forwarded_host_headers_for_public_urls(client: TestClient) -> None:

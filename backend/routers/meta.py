@@ -48,6 +48,7 @@ def api_meta(request: Request):
     return ApiMetaResponse(
         app=settings.app_name,
         version=settings.app_version,
+        commit_sha=settings.app_commit_sha,
         api_prefix=settings.api_prefix,
         base_url=_request_origin(request),
         meta_url=_absolute_http_url(request, f"{settings.api_prefix}/meta"),
