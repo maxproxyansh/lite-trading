@@ -2,11 +2,8 @@ import { useState } from 'react'
 import { pulseSetup } from '../lib/api'
 
 function launchApp(path: string) {
-  const iframe = document.createElement('iframe')
-  iframe.style.display = 'none'
-  iframe.src = path
-  document.body.appendChild(iframe)
-  setTimeout(() => iframe.remove(), 500)
+  const intentUrl = `intent://start${path.includes('?') ? path.substring(path.indexOf('?')) : ''}#Intent;scheme=litewidget;package=com.lite.widget;end`
+  window.location.href = intentUrl
 }
 
 export default function WidgetPrompt({ onClose }: { onClose: () => void }) {
