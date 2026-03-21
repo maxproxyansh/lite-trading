@@ -1,11 +1,10 @@
 // frontend/src/components/PiPButton.tsx
-import { createPortal } from 'react-dom'
 import { usePiP, isPiPSupported } from '../hooks/usePiP'
 import PiPWidget from './PiPWidget'
 import { useStore } from '../store/useStore'
 
 export default function PiPButton() {
-  const { isOpen, portalTarget, open, close } = usePiP()
+  const { isOpen, containerRef, open, close } = usePiP()
   const addToast = useStore((s) => s.addToast)
 
   if (!isPiPSupported) return null
@@ -53,7 +52,13 @@ export default function PiPButton() {
           )}
         </svg>
       </button>
-      {isOpen && portalTarget && createPortal(<PiPWidget />, portalTarget)}
+      {/* Hidden offscreen container — PiPWidget renders here so the canvas can read DOM values */}
+      <div
+        ref={containerRef}
+        style={{ position: 'fixed', top: -9999, left: -9999, pointerEvents: 'none' }}
+      >
+        <PiPWidget />
+      </div>
     </>
   )
 }

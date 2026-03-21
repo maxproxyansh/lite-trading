@@ -1,145 +1,192 @@
 // frontend/src/hooks/usePiP.ts
+// Uses Video PiP with canvas rendering — works on Android Chrome natively.
+// Renders pill content to an offscreen div, paints it onto a canvas,
+// captures as a video stream, and enters PiP via video.requestPictureInPicture().
 import { useState, useCallback, useEffect, useRef } from 'react'
 
-export const isPiPSupported = typeof window !== 'undefined' && 'documentPictureInPicture' in window
-
-const PIP_STYLES = `
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    background: transparent;
-    overflow: hidden;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-  }
-  .pip-pill {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 2px;
-    width: 100%;
-    height: 100%;
-    padding: 6px 12px;
-    background: #1a1a2e;
-    border-radius: 24px;
-    border: 4px solid #22c55e;
-    cursor: pointer;
-    transition: border-color 0.3s;
-  }
-  .pip-pill.negative { border-color: #ef4444; }
-  .pip-pill.stale { opacity: 0.5; }
-  .pip-row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .pip-label {
-    font-size: 11px;
-    font-weight: 600;
-    color: #94a3b8;
-    letter-spacing: 0.5px;
-  }
-  .pip-price {
-    font-size: 15px;
-    font-weight: 700;
-    color: #ffffff;
-    font-variant-numeric: tabular-nums;
-  }
-  .pip-change {
-    font-size: 11px;
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-  }
-  .pip-change.positive { color: #22c55e; }
-  .pip-change.negative { color: #ef4444; }
-  .pip-pnl-label {
-    font-size: 10px;
-    color: #94a3b8;
-  }
-  .pip-pnl-value {
-    font-size: 12px;
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-  }
-  .pip-pnl-value.positive { color: #22c55e; }
-  .pip-pnl-value.negative { color: #ef4444; }
-`
+export const isPiPSupported = typeof document !== 'undefined' && document.pictureInPictureEnabled === true
 
 interface UsePiPReturn {
   isOpen: boolean
-  portalTarget: HTMLElement | null
+  containerRef: React.RefObject<HTMLDivElement | null>
   open: () => Promise<void>
   close: () => void
 }
 
+const PILL_WIDTH = 320
+const PILL_HEIGHT = 80
+const FPS = 2
+
 export function usePiP(): UsePiPReturn {
   const [isOpen, setIsOpen] = useState(false)
-  const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null)
-  const pipWindowRef = useRef<Window | null>(null)
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const stopPainting = useCallback(() => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current)
+      intervalRef.current = null
+    }
+  }, [])
 
   const close = useCallback(() => {
-    if (pipWindowRef.current) {
-      pipWindowRef.current.close()
-      pipWindowRef.current = null
+    stopPainting()
+    if (document.pictureInPictureElement) {
+      document.exitPictureInPicture().catch(() => {})
     }
-    setPortalTarget(null)
+    if (videoRef.current) {
+      videoRef.current.srcObject = null
+      videoRef.current.remove()
+      videoRef.current = null
+    }
+    if (canvasRef.current) {
+      canvasRef.current.remove()
+      canvasRef.current = null
+    }
     setIsOpen(false)
+  }, [stopPainting])
+
+  const paintFrame = useCallback(() => {
+    const container = containerRef.current
+    const canvas = canvasRef.current
+    if (!container || !canvas) return
+
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    // Clear
+    ctx.clearRect(0, 0, PILL_WIDTH, PILL_HEIGHT)
+
+    // Background
+    ctx.fillStyle = '#1a1a2e'
+    ctx.beginPath()
+    ctx.roundRect(0, 0, PILL_WIDTH, PILL_HEIGHT, 20)
+    ctx.fill()
+
+    // Read data from the offscreen rendered div
+    const label = container.querySelector('.pip-label')?.textContent ?? 'NIFTY'
+    const price = container.querySelector('.pip-price')?.textContent ?? '--'
+    const changeEl = container.querySelector('.pip-change')
+    const changeText = changeEl?.textContent ?? ''
+    const isPositive = changeEl?.classList.contains('positive') ?? true
+    const isStale = container.querySelector('.pip-pill')?.classList.contains('stale') ?? false
+
+    const pnlValueEl = container.querySelector('.pip-pnl-value')
+    const pnlLabel = container.querySelector('.pip-pnl-label')?.textContent ?? ''
+    const pnlValue = pnlValueEl?.textContent ?? ''
+    const pnlPositive = pnlValueEl?.classList.contains('positive') ?? true
+
+    // Border
+    const borderColor = isPositive ? '#22c55e' : '#ef4444'
+    ctx.strokeStyle = borderColor
+    ctx.lineWidth = 4
+    ctx.beginPath()
+    ctx.roundRect(2, 2, PILL_WIDTH - 4, PILL_HEIGHT - 4, 18)
+    ctx.stroke()
+
+    // Stale overlay
+    if (isStale) {
+      ctx.globalAlpha = 0.5
+    }
+
+    const hasPnL = pnlLabel && pnlValue
+    const mainY = hasPnL ? 30 : 46
+
+    // Label
+    ctx.font = '600 13px -apple-system, BlinkMacSystemFont, system-ui, sans-serif'
+    ctx.fillStyle = '#94a3b8'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(label, 16, mainY)
+
+    // Price
+    const labelWidth = ctx.measureText(label).width
+    ctx.font = '700 18px -apple-system, BlinkMacSystemFont, system-ui, sans-serif'
+    ctx.fillStyle = '#ffffff'
+    ctx.fillText(price, 16 + labelWidth + 8, mainY)
+
+    // Change %
+    if (changeText) {
+      const priceWidth = ctx.measureText(price).width
+      ctx.font = '600 13px -apple-system, BlinkMacSystemFont, system-ui, sans-serif'
+      ctx.fillStyle = isPositive ? '#22c55e' : '#ef4444'
+      ctx.fillText(changeText, 16 + labelWidth + 8 + priceWidth + 8, mainY)
+    }
+
+    // P&L row
+    if (hasPnL) {
+      ctx.font = '500 12px -apple-system, BlinkMacSystemFont, system-ui, sans-serif'
+      ctx.fillStyle = '#94a3b8'
+      ctx.fillText(pnlLabel, 16, 54)
+      const pnlLabelWidth = ctx.measureText(pnlLabel).width
+      ctx.font = '600 14px -apple-system, BlinkMacSystemFont, system-ui, sans-serif'
+      ctx.fillStyle = pnlPositive ? '#22c55e' : '#ef4444'
+      ctx.fillText(pnlValue, 16 + pnlLabelWidth + 6, 54)
+    }
+
+    ctx.globalAlpha = 1
   }, [])
 
   const open = useCallback(async () => {
-    if (!isPiPSupported || !window.documentPictureInPicture) return
+    if (!isPiPSupported) return
 
-    // Close any existing PiP window
-    if (pipWindowRef.current) {
-      pipWindowRef.current.close()
-    }
+    // Create offscreen canvas
+    const canvas = document.createElement('canvas')
+    canvas.width = PILL_WIDTH
+    canvas.height = PILL_HEIGHT
+    canvas.style.position = 'fixed'
+    canvas.style.top = '-9999px'
+    canvas.style.left = '-9999px'
+    document.body.appendChild(canvas)
+    canvasRef.current = canvas
 
-    try {
-      const pipWindow = await window.documentPictureInPicture.requestWindow({
-        width: 240,
-        height: 64,
-      })
+    // Create video from canvas stream
+    const stream = canvas.captureStream(FPS)
+    const video = document.createElement('video')
+    video.srcObject = stream
+    video.muted = true
+    video.playsInline = true
+    video.style.position = 'fixed'
+    video.style.top = '-9999px'
+    video.style.left = '-9999px'
+    video.width = PILL_WIDTH
+    video.height = PILL_HEIGHT
+    document.body.appendChild(video)
+    videoRef.current = video
 
-      pipWindowRef.current = pipWindow
+    await video.play()
 
-      // Inject styles
-      const style = pipWindow.document.createElement('style')
-      style.textContent = PIP_STYLES
-      pipWindow.document.head.appendChild(style)
+    // Start painting frames
+    paintFrame()
+    intervalRef.current = setInterval(paintFrame, 1000 / FPS)
 
-      // Create portal target
-      const container = pipWindow.document.createElement('div')
-      container.id = 'pip-root'
-      pipWindow.document.body.appendChild(container)
+    // Enter PiP
+    await video.requestPictureInPicture()
 
-      // Tap to return
-      container.addEventListener('click', () => {
-        close()
-        window.focus()
-      })
+    video.addEventListener('leavepictureinpicture', () => {
+      close()
+    }, { once: true })
 
-      // Cleanup on PiP close
-      pipWindow.addEventListener('pagehide', () => {
-        pipWindowRef.current = null
-        setPortalTarget(null)
-        setIsOpen(false)
-      })
-
-      setPortalTarget(container)
-      setIsOpen(true)
-    } catch (err) {
-      console.warn('PiP failed to open:', err)
-      throw err
-    }
-  }, [close])
+    setIsOpen(true)
+  }, [paintFrame, close])
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (pipWindowRef.current) {
-        pipWindowRef.current.close()
-        pipWindowRef.current = null
+      stopPainting()
+      if (document.pictureInPictureElement) {
+        document.exitPictureInPicture().catch(() => {})
+      }
+      if (videoRef.current) {
+        videoRef.current.srcObject = null
+        videoRef.current.remove()
+      }
+      if (canvasRef.current) {
+        canvasRef.current.remove()
       }
     }
-  }, [])
+  }, [stopPainting])
 
-  return { isOpen, portalTarget, open, close }
+  return { isOpen, containerRef, open, close }
 }
