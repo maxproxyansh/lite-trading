@@ -3251,3 +3251,136 @@ def test_candle_cache_hits_for_current_window_regardless_of_date_shift(monkeypat
     # Second call immediately — both should hit cache
     market_data_service._fetch_candles("D", before=None, symbol="NIFTY 50")
     assert call_count["n"] == 2, f"Expected cache hit, but Dhan was called {call_count['n']} times"
+
+
+# ── Pulse claim token flow ─────────────────────────────────────────
+
+
+def test_pulse_setup_creates_key_and_claim_token(client: TestClient) -> None:
+    headers = _login(client, "admin@lite.trade", "lite-admin-123")
+    resp = client.post("/api/v1/agent/pulse/setup", headers=headers)
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert "claim_token" in data
+    assert "apk_url" in data
+    assert "key_prefix" in data
+    assert len(data["claim_token"]) > 10
+    assert len(data["key_prefix"]) > 0
+
+
+def test_pulse_claim_exchanges_token_for_api_key(client: TestClient) -> None:
+    headers = _login(client, "admin@lite.trade", "lite-admin-123")
+    setup = client.post("/api/v1/agent/pulse/setup", headers=headers).json()
+
+    resp = client.post("/api/v1/agent/pulse/claim", json={"token": setup["claim_token"]})
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert "api_key" in data
+    assert data["api_key"].startswith("lite_")
+
+
+def test_pulse_claimed_token_cannot_be_reused(client: TestClient) -> None:
+    headers = _login(client, "admin@lite.trade", "lite-admin-123")
+    setup = client.post("/api/v1/agent/pulse/setup", headers=headers).json()
+
+    # First claim succeeds
+    resp1 = client.post("/api/v1/agent/pulse/claim", json={"token": setup["claim_token"]})
+    assert resp1.status_code == 200
+
+    # Second claim fails
+    resp2 = client.post("/api/v1/agent/pulse/claim", json={"token": setup["claim_token"]})
+    assert resp2.status_code == 401
+
+
+def test_pulse_expired_token_rejected(client: TestClient) -> None:
+    from models import PulseClaimToken as PCT
+
+    headers = _login(client, "admin@lite.trade", "lite-admin-123")
+    setup = client.post("/api/v1/agent/pulse/setup", headers=headers).json()
+
+    # Manually expire the token in the DB
+    db = SessionLocal()
+    try:
+        claim = db.query(PCT).filter(PCT.claimed.is_(False)).first()
+        claim.expires_at = datetime.now(timezone.utc) - timedelta(minutes=5)
+        db.commit()
+    finally:
+        db.close()
+
+    resp = client.post("/api/v1/agent/pulse/claim", json={"token": setup["claim_token"]})
+    assert resp.status_code == 401
+
+
+def test_pulse_disconnect_revokes_key(client: TestClient) -> None:
+    headers = _login(client, "admin@lite.trade", "lite-admin-123")
+    client.post("/api/v1/agent/pulse/setup", headers=headers)
+
+    resp = client.delete("/api/v1/agent/pulse/setup", headers=headers)
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+
+    # Status should show disconnected
+    status_resp = client.get("/api/v1/agent/pulse/status", headers=headers)
+    assert status_resp.status_code == 200
+    assert status_resp.json()["connected"] is False
+
+
+def test_pulse_status_connected_after_setup_disconnected_after_delete(client: TestClient) -> None:
+    headers = _login(client, "admin@lite.trade", "lite-admin-123")
+
+    # Before setup
+    resp = client.get("/api/v1/agent/pulse/status", headers=headers)
+    assert resp.json()["connected"] is False
+
+    # After setup
+    client.post("/api/v1/agent/pulse/setup", headers=headers)
+    resp = client.get("/api/v1/agent/pulse/status", headers=headers)
+    data = resp.json()
+    assert data["connected"] is True
+    assert data["key_prefix"] is not None
+
+    # After disconnect
+    client.delete("/api/v1/agent/pulse/setup", headers=headers)
+    resp = client.get("/api/v1/agent/pulse/status", headers=headers)
+    assert resp.json()["connected"] is False
+
+
+def test_pulse_setup_twice_rotates_key_and_invalidates_old_token(client: TestClient) -> None:
+    headers = _login(client, "admin@lite.trade", "lite-admin-123")
+
+    setup1 = client.post("/api/v1/agent/pulse/setup", headers=headers).json()
+    setup2 = client.post("/api/v1/agent/pulse/setup", headers=headers).json()
+
+    # Old token should be invalidated
+    resp = client.post("/api/v1/agent/pulse/claim", json={"token": setup1["claim_token"]})
+    assert resp.status_code == 401
+
+    # New token should work
+    resp = client.post("/api/v1/agent/pulse/claim", json={"token": setup2["claim_token"]})
+    assert resp.status_code == 200
+
+    # Key prefix should have changed
+    assert setup1["key_prefix"] != setup2["key_prefix"]
+
+
+def test_pulse_claimed_api_key_matches_stored_hash(client: TestClient) -> None:
+    from models import AgentApiKey
+    from security import hash_secret as hs
+
+    headers = _login(client, "admin@lite.trade", "lite-admin-123")
+    setup = client.post("/api/v1/agent/pulse/setup", headers=headers).json()
+    claim = client.post("/api/v1/agent/pulse/claim", json={"token": setup["claim_token"]}).json()
+
+    api_key_raw = claim["api_key"]
+
+    # Verify the returned key hashes to match what's stored in AgentApiKey
+    db = SessionLocal()
+    try:
+        key = db.query(AgentApiKey).filter(
+            AgentApiKey.name == "lite-pulse",
+            AgentApiKey.is_active.is_(True),
+        ).first()
+        assert key is not None
+        assert key.key_hash == hs(api_key_raw)
+    finally:
+        db.close()
