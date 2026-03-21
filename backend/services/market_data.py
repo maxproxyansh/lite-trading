@@ -1034,28 +1034,38 @@ class MarketDataService:
         cache_ttl = CANDLE_CACHE_TTL.get("1m", 60)
         cached = self._live_session_candle_cache.get(cache_key)
         now = time.monotonic()
+        base_candle: dict[str, Any] | None = None
         if cached and now - cached[0] < cache_ttl:
-            return cached[1]
+            base_candle = cached[1]
 
-        payload = dhan_credential_service.call(
-            "intraday_minute_data",
-            lambda dhan_client: dhan_client.intraday_minute_data(
-                security_id=target.security_id,
-                exchange_segment=target.exchange_segment,
-                instrument_type=target.instrument_type,
-                from_date=market_today.strftime("%Y-%m-%d"),
-                to_date=market_today.strftime("%Y-%m-%d"),
-                interval=1,
-            ),
-        )
-        session_candles = self._map_candles(payload if isinstance(payload, dict) else {})
-        if not session_candles:
-            self._live_session_candle_cache[cache_key] = (now, None)
-            return None
+        if base_candle is None:
+            payload = dhan_credential_service.call(
+                "intraday_minute_data",
+                lambda dhan_client: dhan_client.intraday_minute_data(
+                    security_id=target.security_id,
+                    exchange_segment=target.exchange_segment,
+                    instrument_type=target.instrument_type,
+                    from_date=market_today.strftime("%Y-%m-%d"),
+                    to_date=market_today.strftime("%Y-%m-%d"),
+                    interval=1,
+                ),
+            )
+            session_candles = self._map_candles(payload if isinstance(payload, dict) else {})
+            if not session_candles:
+                self._live_session_candle_cache[cache_key] = (now, None)
+                return None
+            base_candle = {
+                "open": float(session_candles[0]["open"]),
+                "high": max(float(candle["high"]) for candle in session_candles),
+                "low": min(float(candle["low"]) for candle in session_candles),
+                "close": float(session_candles[-1]["close"]),
+                "volume": float(sum(float(candle.get("volume") or 0.0) for candle in session_candles)),
+            }
+            self._live_session_candle_cache[cache_key] = (now, base_candle)
 
-        high = max(float(candle["high"]) for candle in session_candles)
-        low = min(float(candle["low"]) for candle in session_candles)
-        close = float(session_candles[-1]["close"])
+        high = float(base_candle["high"])
+        low = float(base_candle["low"])
+        close = float(base_candle["close"])
         if live_price and live_price > 0:
             close = live_price
             high = max(high, live_price)
@@ -1067,13 +1077,12 @@ class MarketDataService:
 
         candle = {
             "time": self._current_bucket_time(timeframe),
-            "open": float(session_candles[0]["open"]),
+            "open": float(base_candle["open"]),
             "high": high,
             "low": low,
             "close": close,
-            "volume": float(sum(float(candle.get("volume") or 0.0) for candle in session_candles)),
+            "volume": float(base_candle["volume"]),
         }
-        self._live_session_candle_cache[cache_key] = (now, candle)
         return candle
 
     def _live_ohlc_for_target(

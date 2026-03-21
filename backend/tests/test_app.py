@@ -2283,6 +2283,72 @@ def test_fetch_daily_candles_builds_current_session_bar_from_intraday_history(mo
     }
 
 
+def test_fetch_daily_candles_reapplies_live_overlay_when_session_cache_hits(monkeypatch: pytest.MonkeyPatch) -> None:
+    _reset_test_runtime()
+    market_data_service.last_known_spot = 22520.0
+    market_data_service.snapshot["spot"] = 22520.0
+    market_data_service.snapshot["day_high"] = 22530.0
+    market_data_service.snapshot["day_low"] = 22505.0
+
+    monkeypatch.setattr(
+        market_data_module,
+        "now_ist",
+        lambda: datetime(2026, 3, 13, 10, 30, tzinfo=market_hours.IST),
+    )
+    monkeypatch.setattr(market_data_module, "is_trading_day", lambda: True)
+
+    call_count = {"intraday": 0}
+
+    def fake_call(operation_name, fn, **kwargs):
+        if operation_name == "historical_daily_data":
+            return {
+                "timestamp": ["2026-03-12T00:00:00+00:00"],
+                "open": [22400.0],
+                "high": [22510.0],
+                "low": [22380.0],
+                "close": [22480.0],
+                "volume": [1000],
+            }
+        if operation_name == "intraday_minute_data":
+            call_count["intraday"] += 1
+            return {
+                "timestamp": [
+                    "2026-03-13T03:45:00+00:00",
+                    "2026-03-13T03:46:00+00:00",
+                ],
+                "open": [22510.0, 22512.0],
+                "high": [22520.0, 22525.0],
+                "low": [22505.0, 22510.0],
+                "close": [22518.0, 22520.0],
+                "volume": [100, 120],
+            }
+        raise AssertionError(f"Unexpected operation: {operation_name}")
+
+    monkeypatch.setattr(dhan_credential_service, "call", fake_call)
+
+    first = market_data_service._fetch_candles("D")
+    assert first["candles"][-1]["close"] == 22520.0
+    assert first["candles"][-1]["high"] == 22530.0
+    assert call_count["intraday"] == 1
+
+    market_data_service.last_known_spot = 22542.0
+    market_data_service.snapshot["spot"] = 22542.0
+    market_data_service.snapshot["day_high"] = 22548.0
+    market_data_service.snapshot["day_low"] = 22500.0
+
+    second = market_data_service._fetch_candles("D")
+
+    assert call_count["intraday"] == 1
+    assert second["candles"][-1] == {
+        "time": int(datetime(2026, 3, 13, tzinfo=market_hours.IST).timestamp()),
+        "open": 22510.0,
+        "high": 22548.0,
+        "low": 22500.0,
+        "close": 22542.0,
+        "volume": 220.0,
+    }
+
+
 def test_fetch_candles_aggregates_weekly_and_monthly_from_daily_history(monkeypatch: pytest.MonkeyPatch) -> None:
     timestamps = [
         "2026-01-26T00:00:00+00:00",
