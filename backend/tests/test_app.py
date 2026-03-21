@@ -19,23 +19,27 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 
-TEST_ROOT = Path(tempfile.gettempdir()) / f"lite-backend-tests-{uuid.uuid4().hex}"
-SIGNAL_ROOT = TEST_ROOT / "signals"
+_configured_db_url = os.environ.get("LITE_DATABASE_URL", "")
+if _configured_db_url.startswith("sqlite:///"):
+    TEST_ROOT = Path(_configured_db_url.removeprefix("sqlite:///")).resolve().parent
+else:
+    TEST_ROOT = Path(tempfile.gettempdir()) / f"lite-backend-tests-{uuid.uuid4().hex}"
+SIGNAL_ROOT = Path(os.environ.get("SIGNAL_ROOT", str(TEST_ROOT / "signals"))).resolve()
 SIGNAL_ROOT.mkdir(parents=True, exist_ok=True)
 (SIGNAL_ROOT / "logs").mkdir(parents=True, exist_ok=True)
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_ROOT))
 
-os.environ["LITE_DATABASE_URL"] = f"sqlite:///{TEST_ROOT / 'lite-test.db'}"
-os.environ["SIGNAL_ROOT"] = str(SIGNAL_ROOT)
-os.environ["DHAN_CLIENT_ID"] = ""
-os.environ["DHAN_ACCESS_TOKEN"] = ""
-os.environ["ALLOW_PUBLIC_SIGNUP"] = "true"
-os.environ["BOOTSTRAP_ADMIN_EMAIL"] = "admin@lite.trade"
-os.environ["BOOTSTRAP_ADMIN_PASSWORD"] = "lite-admin-123"
-os.environ["BOOTSTRAP_ADMIN_NAME"] = "Lite Admin"
-os.environ["BOOTSTRAP_AGENT_KEY"] = "lite-agent-dev-key"
-os.environ["BOOTSTRAP_AGENT_NAME"] = "bootstrap-agent"
+os.environ.setdefault("LITE_DATABASE_URL", f"sqlite:///{TEST_ROOT / 'lite-test.db'}")
+os.environ.setdefault("SIGNAL_ROOT", str(SIGNAL_ROOT))
+os.environ.setdefault("DHAN_CLIENT_ID", "")
+os.environ.setdefault("DHAN_ACCESS_TOKEN", "")
+os.environ.setdefault("ALLOW_PUBLIC_SIGNUP", "true")
+os.environ.setdefault("BOOTSTRAP_ADMIN_EMAIL", "admin@lite.trade")
+os.environ.setdefault("BOOTSTRAP_ADMIN_PASSWORD", "lite-admin-123")
+os.environ.setdefault("BOOTSTRAP_ADMIN_NAME", "Lite Admin")
+os.environ.setdefault("BOOTSTRAP_AGENT_KEY", "lite-agent-dev-key")
+os.environ.setdefault("BOOTSTRAP_AGENT_NAME", "bootstrap-agent")
 
 from database import Base, SessionLocal, engine  # noqa: E402
 import main as main_module  # noqa: E402
@@ -2084,6 +2088,11 @@ def test_seed_spot_from_history_preserves_live_spot_when_backfilling_prev_close(
     _reset_test_runtime()
     market_data_service.last_known_spot = 22555.25
     market_data_service.snapshot["spot"] = 22555.25
+    monkeypatch.setattr(
+        market_hours,
+        "now_ist",
+        lambda: datetime(2026, 3, 21, 10, 0, tzinfo=market_hours.IST),
+    )
 
     monkeypatch.setattr(
         dhan_credential_service,
@@ -2818,6 +2827,37 @@ def test_current_bucket_time_supports_intraday_intervals(monkeypatch: pytest.Mon
     assert bucket == expected
 
 
+def test_overlay_live_price_adds_first_intraday_candle_for_new_trading_day(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        market_hours,
+        "now_ist",
+        lambda: datetime(2026, 3, 13, 9, 16, tzinfo=market_hours.IST),
+    )
+    candles = [
+        {
+            "time": int(datetime(2026, 3, 12, 15, 15, tzinfo=market_hours.IST).timestamp()),
+            "open": 100.0,
+            "high": 102.0,
+            "low": 99.0,
+            "close": 101.0,
+            "volume": 1000.0,
+        }
+    ]
+
+    result = market_data_service._overlay_live_price(
+        candles,
+        timeframe="15m",
+        live_price=103.5,
+        day_high=104.0,
+        day_low=103.0,
+    )
+
+    assert len(result) == 2
+    assert result[-1]["time"] == int(datetime(2026, 3, 13, 9, 15, tzinfo=market_hours.IST).timestamp())
+    assert result[-1]["open"] == 101.0
+    assert result[-1]["close"] == 103.5
+
+
 def test_get_candles_maps_rate_limit_and_invalid_request_to_specific_status_codes(monkeypatch: pytest.MonkeyPatch) -> None:
     _reset_test_runtime()
     monkeypatch.setattr(market_data_service, "_has_dhan", lambda: True)
@@ -2839,6 +2879,150 @@ def test_get_candles_maps_rate_limit_and_invalid_request_to_specific_status_code
         asyncio.run(market_data_service.get_candles("15m"))
     assert invalid_request.value.status_code == 400
     assert invalid_request.value.detail == "DHAN_INVALID_REQUEST"
+
+
+def test_fetch_candles_no_data_keeps_paging_for_older_option_history(monkeypatch: pytest.MonkeyPatch) -> None:
+    _reset_test_runtime()
+    symbol = "NIFTY_2025-01-30_22500_CE"
+    observed_at = datetime(2025, 1, 10, 9, 15, tzinfo=timezone.utc)
+    with SessionLocal() as db:
+        db.add(
+            DhanInstrumentRegistry(
+                symbol=symbol,
+                security_id="55555",
+                root_symbol="NIFTY",
+                exchange_segment="NSE_FNO",
+                instrument_type="OPTIDX",
+                expiry="2025-01-30",
+                strike=22500,
+                option_type="CE",
+                first_seen=observed_at,
+                last_seen=observed_at,
+            )
+        )
+        db.commit()
+
+    monkeypatch.setattr(market_data_service, "_has_dhan", lambda: True)
+    monkeypatch.setattr(
+        dhan_credential_service,
+        "call",
+        lambda operation_name, fn, **kwargs: (_ for _ in ()).throw(DhanApiError("DHAN_NO_DATA", "No data present")),
+    )
+
+    response = market_data_service._fetch_candles("D", symbol=symbol)
+
+    assert response["candles"] == []
+    assert response["degraded"] is False
+    assert response["has_more"] is True
+    assert response["next_before"] is not None
+
+
+def test_fetch_candles_no_data_can_overlay_live_intraday_option_quote(monkeypatch: pytest.MonkeyPatch) -> None:
+    _reset_test_runtime()
+    symbol = "NIFTY_2026-03-12_22500_CE"
+    market_data_service.quotes[symbol] = {
+        "symbol": symbol,
+        "security_id": "12345",
+        "strike": 22500,
+        "option_type": "CE",
+        "expiry": "2026-03-12",
+        "ltp": 111.5,
+        "bid": 111.0,
+        "ask": 112.0,
+        "bid_qty": 500,
+        "ask_qty": 450,
+        "oi": 100000,
+        "volume": 25000,
+        "day_high": 112.0,
+        "day_low": 110.5,
+    }
+    market_data_service._security_id_to_symbol = {"12345": symbol}
+    monkeypatch.setattr(market_data_service, "_has_dhan", lambda: True)
+    monkeypatch.setattr(
+        dhan_credential_service,
+        "call",
+        lambda operation_name, fn, **kwargs: (_ for _ in ()).throw(DhanApiError("DHAN_NO_DATA", "No data present")),
+    )
+
+    response = market_data_service._fetch_candles("15m", symbol=symbol)
+
+    assert len(response["candles"]) == 1
+    assert response["candles"][0]["close"] == 111.5
+    assert response["degraded"] is False
+
+
+def test_fetch_candles_does_not_persist_untrusted_symbol_security_pair(monkeypatch: pytest.MonkeyPatch) -> None:
+    _reset_test_runtime()
+    symbol = "NIFTY_2026-03-26_22500_CE"
+    timestamps = [
+        "2026-03-19T00:00:00+00:00",
+        "2026-03-20T00:00:00+00:00",
+    ]
+
+    monkeypatch.setattr(market_data_service, "_has_dhan", lambda: True)
+    monkeypatch.setattr(
+        dhan_credential_service,
+        "call",
+        lambda operation_name, fn, **kwargs: {
+            "timestamp": timestamps,
+            "open": [100.0, 101.0],
+            "high": [102.0, 103.0],
+            "low": [99.0, 100.0],
+            "close": [101.0, 102.0],
+            "volume": [1000, 1100],
+        },
+    )
+
+    market_data_service._fetch_candles("D", symbol=symbol, security_id="99999")
+
+    with SessionLocal() as db:
+        record = db.query(DhanInstrumentRegistry).filter(DhanInstrumentRegistry.symbol == symbol).one_or_none()
+    assert record is None
+
+
+def test_weekly_option_history_does_not_move_registry_first_seen_backward(monkeypatch: pytest.MonkeyPatch) -> None:
+    _reset_test_runtime()
+    symbol = "NIFTY_2026-03-24_23300_PE"
+    first_seen = datetime(2026, 3, 19, 0, 0, tzinfo=timezone.utc)
+    with SessionLocal() as db:
+        db.add(
+            DhanInstrumentRegistry(
+                symbol=symbol,
+                security_id="62589",
+                root_symbol="NIFTY",
+                exchange_segment="NSE_FNO",
+                instrument_type="OPTIDX",
+                expiry="2026-03-24",
+                strike=23300,
+                option_type="PE",
+                first_seen=first_seen,
+                last_seen=first_seen,
+            )
+        )
+        db.commit()
+
+    monkeypatch.setattr(market_data_service, "_has_dhan", lambda: True)
+    monkeypatch.setattr(
+        dhan_credential_service,
+        "call",
+        lambda operation_name, fn, **kwargs: {
+            "timestamp": [
+                "2026-03-19T00:00:00+00:00",
+                "2026-03-20T00:00:00+00:00",
+            ],
+            "open": [210.0, 220.0],
+            "high": [215.0, 225.0],
+            "low": [205.0, 215.0],
+            "close": [212.0, 221.0],
+            "volume": [1000, 1200],
+        },
+    )
+
+    market_data_service._fetch_candles("W", symbol=symbol)
+
+    with SessionLocal() as db:
+        record = db.query(DhanInstrumentRegistry).filter(DhanInstrumentRegistry.symbol == symbol).one()
+    assert record.first_seen.replace(tzinfo=timezone.utc) == first_seen
 
 
 def test_dhan_credential_service_regenerates_token_via_totp(monkeypatch: pytest.MonkeyPatch) -> None:
