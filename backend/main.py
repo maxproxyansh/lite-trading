@@ -10,7 +10,7 @@ from fastapi.responses import RedirectResponse, Response
 
 from config import get_settings
 from database import SessionLocal, init_db
-from routers import admin, agent, alerts, analytics, auth, funds, internal, market, meta, orders, participants, portfolios, positions, signals, websocket
+from routers import admin, agent, alerts, analytics, auth, funds, internal, market, meta, orders, participants, portfolios, positions, pulse, signals, websocket
 from schemas import HealthResponse, VersionResponse
 from services.alert_service import sync_alerts
 from services.market_data import market_data_service
@@ -136,7 +136,7 @@ async def security_headers(request: Request, call_next):
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     return response
 
-for router in (auth, admin, meta, market, alerts, portfolios, orders, positions, funds, analytics, signals, participants, agent, internal, websocket):
+for router in (auth, admin, meta, market, alerts, portfolios, orders, positions, funds, analytics, signals, participants, agent, pulse, internal, websocket):
     app.include_router(router)
 
 

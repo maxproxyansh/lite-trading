@@ -11,6 +11,7 @@ from .orders import router as orders
 from .portfolios import router as portfolios
 from .positions import router as positions
 from .participants import router as participants
+from .pulse import router as pulse
 from .signals import router as signals
 from .websocket import router as websocket
 
@@ -28,6 +29,7 @@ __all__ = [
     "participants",
     "portfolios",
     "positions",
+    "pulse",
     "signals",
     "websocket",
 ]
