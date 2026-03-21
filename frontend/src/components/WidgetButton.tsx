@@ -15,10 +15,14 @@ export default function WidgetButton() {
   const handleTap = (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    alert('Pulse tapped! connected=' + localStorage.getItem('pulse-connected'))
     const connected = localStorage.getItem('pulse-connected') === 'true'
     if (connected) {
       launchApp('litewidget://start')
+      // If app isn't installed, nothing happens — show modal as fallback after short delay
+      setTimeout(() => {
+        // If we're still on this page (app didn't open), offer setup
+        setShowPrompt(true)
+      }, 1500)
     } else {
       setShowPrompt(true)
     }
