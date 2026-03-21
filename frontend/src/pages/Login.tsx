@@ -27,6 +27,8 @@ export default function Login() {
       const credential = await getPasskey(options)
       await webauthnAuthenticate(credential, emailToUse)
       addToast('success', 'Signed in')
+      const pCount = parseInt(localStorage.getItem('login-count') ?? '0', 10)
+      localStorage.setItem('login-count', String(pCount + 1))
       navigate('/')
     } catch (error) {
       localStorage.removeItem('lite_passkey_email')
@@ -62,6 +64,8 @@ export default function Login() {
         await login(email, password)
         addToast('success', 'Signed in')
       }
+      const count = parseInt(localStorage.getItem('login-count') ?? '0', 10)
+      localStorage.setItem('login-count', String(count + 1))
       navigate('/')
     } catch (error) {
       addToast('error', error instanceof Error ? error.message : 'Failed')
