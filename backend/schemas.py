@@ -883,5 +883,25 @@ class WebAuthnAuthenticateRequest(BaseModel):
     email: str
 
 
+class PulseSetupResponse(BaseModel):
+    claim_token: str
+    apk_url: str
+    key_prefix: str
+
+
+class PulseClaimRequest(BaseModel):
+    token: str = Field(min_length=1)
+
+
+class PulseClaimResponse(BaseModel):
+    api_key: str
+
+
+class PulseStatusResponse(BaseModel):
+    connected: bool
+    key_prefix: str | None = None
+    created_at: datetime | None = None
+
+
 AgentProfileResponse.model_rebuild()
 AgentBootstrapResponse.model_rebuild()

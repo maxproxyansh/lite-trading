@@ -66,6 +66,17 @@ class AgentApiKey(Base, BaseModelMixin):
     revoked_at = Column(DateTime(timezone=True))
 
 
+class PulseClaimToken(Base, BaseModelMixin):
+    __tablename__ = "pulse_claim_tokens"
+
+    user_id = Column(String(64), ForeignKey("users.id"), nullable=False, index=True)
+    api_key_id = Column(String(64), ForeignKey("agent_api_keys.id"), nullable=False)
+    token_hash = Column(String(255), nullable=False, unique=True)
+    api_secret = Column(String(255), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    claimed = Column(Boolean, nullable=False, default=False)
+
+
 class Portfolio(Base):
     __tablename__ = "portfolios"
 

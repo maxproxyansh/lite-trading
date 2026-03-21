@@ -81,6 +81,7 @@ class Settings(BaseSettings):
     webauthn_rp_id: str = Field(default="localhost", alias="WEBAUTHN_RP_ID")
     webauthn_rp_name: str = Field(default="Lite", alias="WEBAUTHN_RP_NAME")
     webauthn_origin: str = Field(default="http://localhost:5173", alias="WEBAUTHN_ORIGIN")
+    pulse_apk_url: str = Field(default="", alias="PULSE_APK_URL")
 
     @property
     def signal_root_path(self) -> Path:
