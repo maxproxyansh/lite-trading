@@ -29,6 +29,35 @@ AUTH_ERROR_MARKERS = ("authentication failed", "token invalid", "invalid token",
 RATE_LIMIT_MARKERS = ("too many request", "too many requests", "429", "805")
 STATIC_IP_MARKERS = ("static ip", "whitelisted ip", "ip mismatch")
 
+# Structured Dhan error code classification (used by _unwrap_sdk_result for SDK responses)
+_AUTH_ERROR_CODES = {"DH-901", "DH-903"}
+_RATE_LIMIT_CODES = {"DH-904", "805"}
+_AUTH_HTTP_CODES = {"401", "403"}
+
+
+def _classify_structured(error_code: str, error_message: str) -> tuple[str, bool]:
+    """Classify Dhan errors using structured error codes, not substring matching."""
+    code_upper = error_code.upper()
+    msg_lower = error_message.lower()
+
+    # Rate limiting — check error code first, then message
+    if code_upper in _RATE_LIMIT_CODES or code_upper == "429":
+        return "DHAN_RATE_LIMITED", False
+    if "too many request" in msg_lower:
+        return "DHAN_RATE_LIMITED", False
+
+    # Auth errors — check error code first, then message
+    if code_upper in _AUTH_ERROR_CODES or code_upper in _AUTH_HTTP_CODES:
+        return "DHAN_AUTH_FAILED", True
+    if any(m in msg_lower for m in ("authentication failed", "token invalid", "invalid token", "invalid jwt", "unauthorized")):
+        return "DHAN_AUTH_FAILED", True
+
+    # Static IP
+    if any(m in msg_lower for m in ("static ip", "whitelisted ip", "ip mismatch")):
+        return "DHAN_STATIC_IP_REJECTED", False
+
+    return "", False
+
 
 class DhanApiError(RuntimeError):
     def __init__(self, reason: str, message: str, *, auth_failed: bool = False, payload: Any | None = None) -> None:
@@ -100,8 +129,8 @@ def _totp_candidates(secret: str) -> list[str]:
 
 def _classify(msg: str, status: int = 0) -> tuple[str, bool]:
     low = msg.lower()
-    is_auth = status in {401, 403} or any(m in low for m in AUTH_ERROR_MARKERS)
-    if any(m in low for m in RATE_LIMIT_MARKERS) or status == 429:
+    is_auth = status in {401, 403} or any(m in low for m in ("authentication failed", "token invalid", "invalid token", "invalid jwt", "unauthorized"))
+    if any(m in low for m in ("too many request", "too many requests")) or status == 429:
         return "DHAN_RATE_LIMITED", is_auth
     if any(m in low for m in STATIC_IP_MARKERS):
         return "DHAN_STATIC_IP_REJECTED", is_auth
@@ -448,9 +477,25 @@ class DhanCredentialService:
             raise DhanApiError("DHAN_PROTOCOL_FAILED", f"{op} returned {type(result).__name__}, expected dict", payload=result)
         if str(result.get("status") or "").lower() == "success":
             return result.get("data")
-        msg = str(result.get("data"))[:500] or str(result.get("remarks"))[:500] or f"{op} failed"
-        reason, auth = _classify(msg)
-        auth = auth or any(m in str(result.get("remarks")).lower() for m in AUTH_ERROR_MARKERS)
+
+        # Extract structured error info from SDK response
+        remarks = result.get("remarks")
+        data = result.get("data")
+        error_code = ""
+        error_message = ""
+
+        if isinstance(remarks, dict):
+            error_code = str(remarks.get("error_code") or "").strip()
+            error_message = str(remarks.get("error_message") or "").strip()
+        elif isinstance(remarks, str):
+            error_message = remarks
+
+        if isinstance(data, dict):
+            error_code = error_code or str(data.get("errorCode") or "").strip()
+            error_message = error_message or str(data.get("errorMessage") or "").strip()
+
+        msg = error_message or str(data)[:500] or f"{op} failed"
+        reason, auth = _classify_structured(error_code, error_message)
         raise DhanApiError(reason or "DHAN_UPSTREAM_FAILED", f"{op} failed: {msg}", auth_failed=auth, payload=result)
 
     # -- Scheduler --
