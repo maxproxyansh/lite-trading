@@ -1217,7 +1217,28 @@ class MarketDataService:
             }
             return [*candles[:-1], next_candle]
 
-        return candles
+        # Don't create a phantom candle on weekends / holidays
+        if not is_trading_day():
+            return candles
+
+        open_price = float(candles[-1]["close"]) if candles else live_price
+        high = max(open_price, live_price)
+        low = min(open_price, live_price)
+        if day_high and day_high > 0:
+            high = max(high, day_high)
+        if day_low and day_low > 0:
+            low = min(low, day_low)
+        return [
+            *candles,
+            {
+                "time": bucket_time,
+                "open": open_price,
+                "high": high,
+                "low": low,
+                "close": live_price,
+                "volume": 0.0,
+            },
+        ]
 
     def _build_live_session_candle(
         self,
@@ -1229,6 +1250,8 @@ class MarketDataService:
         day_low: float | None,
     ) -> dict[str, Any] | None:
         if timeframe not in DAILY_HISTORY_TIMEFRAMES or not is_trading_day():
+            return None
+        if not any(value and value > 0 for value in (live_price, day_high, day_low)):
             return None
 
         market_today = self._market_today()
