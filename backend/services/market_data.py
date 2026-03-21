@@ -14,7 +14,7 @@ from dhanhq import dhanhq as Dhanhq
 from dhanhq.marketfeed import DhanFeed, Full, IDX, NSE_FNO, Quote
 
 from config import get_settings
-from market_hours import IST, market_status
+from market_hours import IST, is_market_open, is_trading_day, market_status
 from schemas import DhanConsumerStateUpdateRequest, DhanProviderHealth, MarketSnapshot, OptionChainResponse
 from services.dhan_credential_service import DhanApiError, dhan_credential_service
 from services.dhan_incident_service import dhan_incident_service
@@ -620,6 +620,12 @@ class MarketDataService:
         try:
             chain = await asyncio.to_thread(self._fetch_option_chain, self.active_expiry)
         except DhanApiError as exc:
+            # On weekends/holidays, Dhan returns "Invalid Expiry Date" — serve cached data silently
+            if "invalid expiry" in exc.message.lower() and self.option_rows:
+                logger.info("Option chain unavailable (likely market closed) — serving cached data")
+                await self._close_incident()
+                await self._broadcast_snapshot()
+                return
             await self._open_incident(exc.reason, exc.message)
             await self._broadcast_snapshot()
             return
@@ -917,6 +923,10 @@ class MarketDataService:
                 "close": live_price,
             }
             return [*candles[:-1], next_candle]
+
+        # Don't create a phantom candle on weekends / holidays
+        if not is_trading_day():
+            return candles
 
         open_price = float(candles[-1]["close"]) if candles else live_price
         high = max(open_price, live_price)

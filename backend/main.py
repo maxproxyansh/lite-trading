@@ -80,17 +80,13 @@ async def lifespan(app: FastAPI):
     logger.info("Database initialized")
 
     dhan_credential_service.initialize(force_reload=True)
-    # Proactively rotate token on startup if it's near expiry (handles restart-after-scheduler-time)
-    snap = dhan_credential_service.snapshot()
-    if snap.configured and snap.expires_at:
-        from datetime import datetime, timezone
-        remaining_h = (snap.expires_at - datetime.now(timezone.utc)).total_seconds() / 3600
-        if remaining_h < 2:
-            try:
-                dhan_credential_service.scheduled_preopen_rotation()
-                logger.info("Startup token rotation completed (was %.1fh from expiry)", remaining_h)
-            except Exception:
-                logger.warning("Startup token rotation failed — will retry on first API call")
+    # Always rotate token on startup — guarantees a fresh token before any user request
+    if dhan_credential_service.snapshot().totp_regeneration_enabled:
+        try:
+            dhan_credential_service.scheduled_preopen_rotation()
+            logger.info("Startup token rotation completed")
+        except Exception:
+            logger.warning("Startup token rotation failed — will retry on first API call")
     market_data_service.set_broadcast(broadcast_message)
     market_data_service.set_open_order_processor(_process_market_side_effects)
     signal_adapter.set_broadcast(broadcast_message)
