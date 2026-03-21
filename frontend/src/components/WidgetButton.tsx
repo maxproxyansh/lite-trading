@@ -15,6 +15,7 @@ export default function WidgetButton() {
   const handleTap = (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
+    alert('Pulse tapped! connected=' + localStorage.getItem('pulse-connected'))
     const connected = localStorage.getItem('pulse-connected') === 'true'
     if (connected) {
       launchApp('litewidget://start')
