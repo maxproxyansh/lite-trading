@@ -284,6 +284,9 @@ class MarketDataService:
         self._dirty_quote_symbols = set()
         self._snapshot_dirty = False
         self._pcr_dirty = False
+        self._candle_cache.clear()
+        self._chain_cache.clear()
+        self._option_metadata.clear()
         dhan_incident_service.reset_runtime_state_for_tests()
 
     def get_provider_health(self) -> DhanProviderHealth:
@@ -307,7 +310,7 @@ class MarketDataService:
             incident_fingerprint=incident.fingerprint,
             incident_reason=incident_reason,
             incident_message=incident_message,
-            incident_since=incident.opened_at or self._health.incident_since,
+            incident_since=incident.opened_at if incident.incident_open else None,
             affected_consumers=incident.affected_consumers,
             token_source=credentials.token_source,
             token_expires_at=credentials.expires_at,
@@ -849,20 +852,7 @@ class MarketDataService:
         )
 
     def _lookup_quote_by_symbol(self, symbol: str) -> dict[str, Any] | None:
-        quote = self.quotes.get(symbol)
-        if quote:
-            return quote
-
-        parsed = self._parse_option_symbol(symbol)
-        if not parsed:
-            return None
-
-        expiry, _strike, _option_type = parsed
-        # Use cached chain result to avoid a fresh Dhan API call
-        chain = self._fetch_option_chain_cached(expiry)
-        if not chain:
-            raise CandleQueryError(status_code=503, detail="OPTION_METADATA_UNAVAILABLE")
-        return chain.get("quotes", {}).get(symbol)
+        return self.quotes.get(symbol)
 
     def _resolve_candle_target(
         self,
@@ -1378,6 +1368,9 @@ class MarketDataService:
 
         loop = asyncio.get_running_loop()
         future: asyncio.Future[dict[str, Any]] = loop.create_future()
+        future.add_done_callback(
+            lambda fut: None if fut.cancelled() else fut.exception()  # noqa: B023
+        )
         self._inflight_candles[dedup_key] = future
 
         try:

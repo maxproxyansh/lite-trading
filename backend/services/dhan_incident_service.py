@@ -4,14 +4,16 @@ import hashlib
 import logging
 import threading
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
+from config import get_settings
 from database import SessionLocal
 from models import DhanConsumerState, DhanIncident
 from schemas import DhanConsumerStateSummary
 
 
 logger = logging.getLogger("lite.dhan.incidents")
+settings = get_settings()
 HEALTHY_STATES = {"healthy", "ok", "connected", "ready"}
 SLACK_ALERTABLE_ROOT_CAUSES = {
     "DHAN_AUTH_FAILED",
@@ -50,6 +52,9 @@ class DhanIncidentService:
         db = SessionLocal()
         try:
             record = self._get_or_create_record(db)
+            self._prune_consumer_states(db, now=datetime.now(timezone.utc))
+            self._reconcile(record, db, alert_sender=None)
+            db.commit()
             consumer_states = [
                 DhanConsumerStateSummary(
                     consumer=row.consumer,
@@ -112,6 +117,8 @@ class DhanIncidentService:
         with self._lock:
             db = SessionLocal()
             try:
+                record = self._get_or_create_record(db)
+                normalized_state = (state or "").strip().lower()
                 row = (
                     db.query(DhanConsumerState)
                     .filter(
@@ -120,22 +127,26 @@ class DhanIncidentService:
                     )
                     .first()
                 )
-                if not row:
-                    row = DhanConsumerState(consumer=consumer, instance_id=instance_id)
-                row.state = state
-                row.reason = reason
-                row.message = message
-                row.observed_at = observed_at
-                row.generation = generation
-                db.add(row)
-                record = self._get_or_create_record(db)
+                if normalized_state in HEALTHY_STATES:
+                    if row:
+                        db.delete(row)
+                else:
+                    if not row:
+                        row = DhanConsumerState(consumer=consumer, instance_id=instance_id)
+                    row.state = state
+                    row.reason = reason
+                    row.message = message
+                    row.observed_at = observed_at
+                    row.generation = generation
+                    db.add(row)
                 self._reconcile(record, db, alert_sender=alert_sender)
                 db.commit()
             finally:
                 db.close()
 
-    def _reconcile(self, record: DhanIncident, db, *, alert_sender) -> None:
-        now = datetime.now(timezone.utc)
+    def _reconcile(self, record: DhanIncident, db, *, alert_sender, now: datetime | None = None) -> None:
+        now = now or datetime.now(timezone.utc)
+        self._prune_consumer_states(db, now=now)
         unhealthy_consumers = self._unhealthy_consumers(db)
         affected_consumers = [f"{row.consumer}:{row.instance_id}" for row in unhealthy_consumers]
 
@@ -154,28 +165,30 @@ class DhanIncidentService:
             desired_message = lead.message or f"{lead.consumer} reported unhealthy Dhan state"
 
         if desired_class is None:
-            if record.incident_open:
-                if alert_sender and self._should_send_slack_alert(record.root_cause):
-                    try:
-                        delivered = alert_sender(
-                            state="RECOVERY",
-                            incident_class=record.incident_class or "RECOVERY",
-                            reason=record.root_cause or "RECOVERY",
-                            message="Dhan control plane recovered",
-                        )
-                    except Exception:  # noqa: BLE001
-                        logger.exception("Failed to deliver Dhan recovery alert")
-                        delivered = False
-                    if not delivered:
-                        record.alert_delivery_error = "recovery-alert-delivery-failed"
-                record.incident_open = False
-                record.closed_at = now
-                record.last_recovery_alert_at = now
+            if not record.incident_open:
+                return
+            if alert_sender and self._should_send_slack_alert(record.root_cause):
+                try:
+                    delivered = alert_sender(
+                        state="RECOVERY",
+                        incident_class=record.incident_class or "RECOVERY",
+                        reason=record.root_cause or "RECOVERY",
+                        message="Dhan control plane recovered",
+                    )
+                except Exception:  # noqa: BLE001
+                    logger.exception("Failed to deliver Dhan recovery alert")
+                    delivered = False
+                if not delivered:
+                    record.alert_delivery_error = "recovery-alert-delivery-failed"
+            record.incident_open = False
+            record.closed_at = now
+            record.last_recovery_alert_at = now
             record.incident_class = None
             record.root_cause = None
             record.message = None
             record.fingerprint = None
             record.affected_consumers = []
+            record.opened_at = None
             record.last_state_change_at = now
             db.add(record)
             return
@@ -214,6 +227,27 @@ class DhanIncidentService:
             elif alert_sender:
                 record.alert_delivery_error = None
         db.add(record)
+
+    def _consumer_state_ttl(self) -> timedelta:
+        ttl_seconds = max(
+            settings.option_chain_refresh_seconds,
+            settings.dhan_rest_stale_seconds,
+            settings.dhan_realtime_stale_seconds,
+        )
+        return timedelta(seconds=ttl_seconds)
+
+    def _prune_consumer_states(self, db, *, now: datetime) -> None:
+        ttl = self._consumer_state_ttl()
+        rows = db.query(DhanConsumerState).all()
+        changed = False
+        for row in rows:
+            state = (row.state or "").strip().lower()
+            observed_at = row.observed_at if row.observed_at.tzinfo else row.observed_at.replace(tzinfo=timezone.utc)
+            if state in HEALTHY_STATES or now - observed_at > ttl:
+                db.delete(row)
+                changed = True
+        if changed:
+            db.flush()
 
     @staticmethod
     def _fingerprint(*, incident_class: str, root_cause: str, affected_consumers: list[str]) -> str:

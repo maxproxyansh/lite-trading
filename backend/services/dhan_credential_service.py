@@ -30,7 +30,7 @@ RATE_LIMIT_MARKERS = ("too many request", "too many requests", "429", "805")
 STATIC_IP_MARKERS = ("static ip", "whitelisted ip", "ip mismatch")
 
 # Structured Dhan error code classification (used by _unwrap_sdk_result for SDK responses)
-_AUTH_ERROR_CODES = {"DH-901", "DH-903"}
+_AUTH_ERROR_CODES = {"DH-901", "DH-903", "DH-906"}
 _RATE_LIMIT_CODES = {"DH-904", "805"}
 _AUTH_HTTP_CODES = {"401", "403"}
 
@@ -330,7 +330,9 @@ class DhanCredentialService:
             self._global_backoff_until = None
 
     def issue_lease(self) -> DhanCredentialSnapshot:
-        self.ensure_token_fresh()
+        # Internal consumers need a broker-validated token, not just a token
+        # that looked valid some minutes ago.
+        self.ensure_token_fresh(force_profile=True)
         snap = self.snapshot()
         if not snap.client_id or not snap.access_token:
             raise DhanApiError("DHAN_NOT_CONFIGURED", "Dhan credentials are not configured")

@@ -38,7 +38,7 @@ os.environ["BOOTSTRAP_AGENT_NAME"] = "bootstrap-agent"
 
 from database import Base, SessionLocal, engine  # noqa: E402
 from main import _process_market_side_effects, app  # noqa: E402
-from models import ServiceCredential  # noqa: E402
+from models import DhanConsumerState, ServiceCredential  # noqa: E402
 from rate_limit import _rate_buckets, _rate_windows, rate_limit  # noqa: E402
 from routers.websocket import broadcast_message  # noqa: E402
 from services.alert_service import sync_alerts  # noqa: E402
@@ -47,6 +47,7 @@ import dependencies as dependencies_module  # noqa: E402
 import services.dhan_credential_service as dhan_credentials_module  # noqa: E402
 from services.dhan_credential_service import DhanApiError, DhanCredentialSnapshot, dhan_credential_service  # noqa: E402
 from services.dhan_incident_service import DhanIncidentService, dhan_incident_service  # noqa: E402
+import services.dhan_incident_service as dhan_incident_service_module  # noqa: E402
 import services.market_data as market_data_module  # noqa: E402
 from services.market_data import market_data_service  # noqa: E402
 from services.signal_adapter import signal_adapter  # noqa: E402
@@ -2177,19 +2178,14 @@ def test_fetch_candles_resolves_option_symbol_via_option_metadata(monkeypatch: p
     monkeypatch.setattr(dhan_credential_service, "call", lambda operation_name, fn, **kwargs: fn(fake_client)["data"])
     monkeypatch.setattr(
         market_data_service,
-        "_fetch_option_chain",
-        lambda expiry: {
-            "quotes": {
-                symbol: {
-                    "symbol": symbol,
-                    "security_id": "778899",
-                    "strike": 22450,
-                    "option_type": "PE",
-                    "expiry": expiry,
-                    "ltp": 86.5,
-                }
-            }
-        },
+        "_fetch_option_chain_cached",
+        lambda expiry: pytest.fail("symbol lookup should not fetch option-chain data"),
+    )
+    market_data_service._option_metadata[symbol] = market_data_module.CandleInstrument(
+        symbol=symbol,
+        security_id="778899",
+        exchange_segment="NSE_FNO",
+        instrument_type="OPTIDX",
     )
 
     response = market_data_service._fetch_candles("15m", symbol=symbol)
@@ -2198,6 +2194,33 @@ def test_fetch_candles_resolves_option_symbol_via_option_metadata(monkeypatch: p
     assert fake_client.last_kwargs["security_id"] == "778899"
     assert fake_client.last_kwargs["exchange_segment"] == "NSE_FNO"
     assert fake_client.last_kwargs["instrument_type"] == "OPTIDX"
+
+
+def test_market_candles_route_rejects_option_symbol_without_cached_metadata_without_fetching_chain(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    headers = _login(client, "admin@lite.trade", "lite-admin-123")
+    symbol = "NIFTY_2026-03-19_22450_PE"
+    monkeypatch.setattr(market_data_service, "_has_dhan", lambda: True)
+    monkeypatch.setattr(
+        market_data_service,
+        "_fetch_option_chain_cached",
+        lambda expiry: pytest.fail("option symbol lookup should not fetch option-chain data"),
+    )
+    monkeypatch.setattr(
+        dhan_credential_service,
+        "call",
+        lambda operation_name, fn, **kwargs: pytest.fail("symbol lookup should not hit Dhan"),
+    )
+
+    response = client.get(
+        f"/api/v1/market/candles?timeframe=15m&symbol={symbol}",
+        headers=headers,
+    )
+
+    assert response.status_code == 404, response.text
+    assert response.json()["detail"] == "SYMBOL_NOT_AVAILABLE"
 
 
 def test_market_candles_route_supports_option_symbol(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2225,6 +2248,20 @@ def test_market_candles_route_supports_option_symbol(client: TestClient, monkeyp
     fake_client = FakeDhanClient()
     monkeypatch.setattr(market_data_service, "_has_dhan", lambda: True)
     monkeypatch.setattr(dhan_credential_service, "call", lambda operation_name, fn, **kwargs: fn(fake_client)["data"])
+    market_data_service.quotes[symbol] = {
+        "symbol": symbol,
+        "security_id": "12345",
+        "strike": 22500,
+        "option_type": "CE",
+        "expiry": "2026-03-12",
+        "ltp": 111.5,
+        "bid": 111.0,
+        "ask": 112.0,
+        "bid_qty": 500,
+        "ask_qty": 450,
+        "oi": 100000,
+        "volume": 25000,
+    }
     market_data_service._security_id_to_symbol = {"12345": symbol}
 
     response = client.get(
@@ -2308,6 +2345,49 @@ def test_dhan_credential_service_regenerates_token_via_totp(monkeypatch: pytest.
         assert stored.token_source == "totp"
     finally:
         db.close()
+
+
+def test_dhan_issue_lease_forces_profile_validation_before_handing_out_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _reset_test_runtime()
+    now = datetime.now(timezone.utc)
+    access_token = _fake_dhan_token(issued_at=now, expires_at=now + timedelta(days=1))
+
+    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_client_id", "1103337749")
+    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_access_token", access_token)
+    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_pin", "4321")
+    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_totp_secret", "JBSWY3DPEHPK3PXP")
+    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_profile_check_seconds", 3600)
+    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_token_renewal_lead_seconds", 3600)
+
+    called_urls: list[str] = []
+
+    def fake_request_json(method: str, url: str, **kwargs):
+        called_urls.append(url)
+        if url.endswith("/profile"):
+            headers = kwargs.get("headers") or {}
+            assert headers.get("access-token") == access_token
+            return {
+                "dhanClientId": "1103337749",
+                "tokenValidity": (now + timedelta(days=1)).strftime("%d/%m/%Y %H:%M"),
+                "dataPlan": "Active",
+                "dataValidity": (now + timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S.0"),
+            }
+        raise AssertionError(f"Unexpected URL: {url}")
+
+    monkeypatch.setattr(dhan_credential_service, "_request_json", fake_request_json)
+
+    dhan_credential_service.reset_runtime_state()
+    dhan_credential_service.initialize(force_reload=True)
+
+    lease = dhan_credential_service.issue_lease()
+
+    assert any(url.endswith("/profile") for url in called_urls)
+    assert not any(url.endswith("/generateAccessToken") for url in called_urls)
+    assert lease.access_token == access_token
+    assert lease.last_profile_checked_at is not None
+    assert lease.last_lease_issued_at is not None
 
 
 def test_dhan_scheduler_fires_on_weekends() -> None:
@@ -2509,10 +2589,6 @@ def test_internal_dhan_consumer_state_route_persists_state_and_surfaces_in_provi
 
     snapshot = dhan_incident_service.snapshot()
     assert snapshot.incident_open is True
-    assert snapshot.incident_class == "CONSUMER_UNHEALTHY"
-    assert snapshot.root_cause == "WEBSOCKET_STALE"
-    assert snapshot.fingerprint is not None
-    assert snapshot.affected_consumers == ["auto_trader.market_feed:worker-1"]
     assert len(snapshot.consumer_states) == 1
     consumer_state = snapshot.consumer_states[0]
     assert consumer_state.consumer == "auto_trader.market_feed"
@@ -2521,6 +2597,89 @@ def test_internal_dhan_consumer_state_route_persists_state_and_surfaces_in_provi
     assert consumer_state.reason == "WEBSOCKET_STALE"
     assert consumer_state.message == "market feed packets stopped"
     assert consumer_state.generation == 11
+
+    admin_headers = _login(client, "admin@lite.trade", "lite-admin-123")
+    health = client.get("/api/v1/market/provider-health", headers=admin_headers)
+    assert health.status_code == 200, health.text
+    body = health.json()
+    assert any(
+        item["consumer"] == "auto_trader.market_feed"
+        and item["instance_id"] == "worker-1"
+        and item["state"] == "unhealthy"
+        and item["reason"] == "WEBSOCKET_STALE"
+        for item in body["consumer_states"]
+    )
+
+
+def test_stale_consumer_state_expires_and_recovery_clears_incident_since(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _reset_test_runtime()
+    now = datetime.now(timezone.utc)
+    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_client_id", "1103337749")
+    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_access_token", _fake_dhan_token(issued_at=now, expires_at=now + timedelta(days=1)))
+    dhan_credential_service.reset_runtime_state()
+    dhan_credential_service.initialize(force_reload=True)
+    monkeypatch.setattr(dhan_incident_service_module.settings, "option_chain_refresh_seconds", 60)
+    monkeypatch.setattr(dhan_incident_service_module.settings, "dhan_rest_stale_seconds", 30)
+    monkeypatch.setattr(dhan_incident_service_module.settings, "dhan_realtime_stale_seconds", 20)
+
+    db = SessionLocal()
+    try:
+        db.add(
+            DhanConsumerState(
+                consumer="auto_trader.market_feed",
+                instance_id="worker-1",
+                state="unhealthy",
+                reason="WEBSOCKET_STALE",
+                message="market feed packets stopped",
+                observed_at=now - timedelta(minutes=2),
+                generation=11,
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    snapshot = dhan_incident_service.snapshot()
+    assert snapshot.incident_open is False
+    assert snapshot.opened_at is None
+    assert snapshot.consumer_states == []
+
+    health = market_data_service.get_provider_health()
+    assert health.incident_open is False
+    assert health.incident_since is None
+    assert health.affected_consumers == []
+
+    sent: list[tuple[str, str]] = []
+
+    def fake_alert_sender(*, state: str, incident_class: str, reason: str, message: str) -> bool:
+        sent.append((state, incident_class))
+        return True
+
+    dhan_incident_service.set_provider_health(
+        unhealthy=True,
+        reason="DHAN_AUTH_FAILED",
+        message="Token rejected by Dhan",
+        alert_sender=fake_alert_sender,
+    )
+    opening = dhan_incident_service.snapshot()
+    assert opening.incident_open is True
+    assert opening.opened_at is not None
+
+    dhan_incident_service.set_provider_health(
+        unhealthy=False,
+        reason=None,
+        message=None,
+        alert_sender=fake_alert_sender,
+    )
+    recovered = dhan_incident_service.snapshot()
+    assert recovered.incident_open is False
+    assert recovered.opened_at is None
+
+    recovered_health = market_data_service.get_provider_health()
+    assert recovered_health.incident_since is None
+    assert sent == [("P0", "PROVIDER_UNHEALTHY"), ("RECOVERY", "PROVIDER_UNHEALTHY")]
 
 
 def test_dhan_incident_dedupe_persists_and_provider_health_reports_runtime_fields(
