@@ -40,7 +40,7 @@ os.environ["BOOTSTRAP_AGENT_NAME"] = "bootstrap-agent"
 from database import Base, SessionLocal, engine  # noqa: E402
 import main as main_module  # noqa: E402
 from main import _process_market_side_effects, app  # noqa: E402
-from models import DhanConsumerState, ServiceCredential  # noqa: E402
+from models import DhanConsumerState, DhanInstrumentRegistry, ServiceCredential  # noqa: E402
 from rate_limit import _rate_buckets, _rate_windows, rate_limit  # noqa: E402
 from routers.websocket import broadcast_message  # noqa: E402
 from services.alert_service import sync_alerts  # noqa: E402
@@ -2134,6 +2134,48 @@ def test_seed_spot_from_history_uses_last_two_daily_closes_when_live_spot_is_una
     assert market_data_service.snapshot["change_pct"] == 0.22
 
 
+def test_seed_vix_from_history_uses_last_daily_close(monkeypatch: pytest.MonkeyPatch) -> None:
+    _reset_test_runtime()
+    market_data_service.snapshot["vix"] = None
+
+    monkeypatch.setattr(
+        dhan_credential_service,
+        "call",
+        lambda operation_name, fn, **kwargs: {
+            "timestamp": [
+                "2026-03-19T00:00:00+00:00",
+                "2026-03-20T00:00:00+00:00",
+            ],
+            "close": [13.4, 14.1],
+        },
+    )
+
+    asyncio.run(market_data_service._seed_vix_from_history())
+
+    assert market_data_service.snapshot["vix"] == 14.1
+    assert market_data_service.last_vix_refresh is not None
+
+
+def test_fetch_expiries_normalizes_sorts_and_dedupes(monkeypatch: pytest.MonkeyPatch) -> None:
+    _reset_test_runtime()
+    monkeypatch.setattr(
+        dhan_credential_service,
+        "call",
+        lambda operation_name, fn, **kwargs: {
+            "data": [
+                {"expiryDate": "2026-03-26T10:00:00+05:30"},
+                {"expiry": "2026-03-19"},
+                "2026-03-12",
+                {"expiry_date": "2026-03-19"},
+            ]
+        },
+    )
+
+    expiries = market_data_service._fetch_expiries()
+
+    assert expiries == ["2026-03-12", "2026-03-19", "2026-03-26"]
+
+
 def test_fetch_option_chain_rounds_half_up_for_atm_strike(monkeypatch: pytest.MonkeyPatch) -> None:
     _reset_test_runtime()
     market_data_service.last_known_spot = 22525.0
@@ -2543,6 +2585,102 @@ def test_fetch_candles_resolves_option_symbol_via_option_metadata(monkeypatch: p
     assert fake_client.last_kwargs["instrument_type"] == "OPTIDX"
 
 
+def test_fetch_candles_resolves_option_symbol_via_registry(monkeypatch: pytest.MonkeyPatch) -> None:
+    _reset_test_runtime()
+    symbol = "NIFTY_2026-03-19_22450_PE"
+    observed_at = datetime(2026, 3, 19, 9, 15, tzinfo=timezone.utc)
+    with SessionLocal() as db:
+        db.add(
+            DhanInstrumentRegistry(
+                symbol=symbol,
+                security_id="778899",
+                root_symbol="NIFTY",
+                exchange_segment="NSE_FNO",
+                instrument_type="OPTIDX",
+                expiry="2026-03-19",
+                strike=22450,
+                option_type="PE",
+                first_seen=observed_at,
+                last_seen=observed_at,
+            )
+        )
+        db.commit()
+
+    timestamps = [
+        int(datetime(2026, 3, 10, 3, 45, tzinfo=timezone.utc).timestamp()),
+        int(datetime(2026, 3, 10, 4, 0, tzinfo=timezone.utc).timestamp()),
+    ]
+
+    class FakeDhanClient:
+        def intraday_minute_data(self, **kwargs):
+            self.last_kwargs = kwargs
+            return {
+                "data": {
+                    "timestamp": timestamps,
+                    "open": [85.0, 86.0],
+                    "high": [86.0, 87.0],
+                    "low": [84.5, 85.5],
+                    "close": [85.5, 86.5],
+                    "volume": [1000, 1100],
+                }
+            }
+
+    fake_client = FakeDhanClient()
+    monkeypatch.setattr(market_data_service, "_has_dhan", lambda: True)
+    monkeypatch.setattr(dhan_credential_service, "call", lambda operation_name, fn, **kwargs: fn(fake_client)["data"])
+    monkeypatch.setattr(
+        market_data_service,
+        "_fetch_option_chain_cached",
+        lambda expiry: pytest.fail("registry-backed symbol lookup should not fetch option-chain data"),
+    )
+
+    response = market_data_service._fetch_candles("15m", symbol=symbol)
+
+    assert [candle["time"] for candle in response["candles"]] == timestamps
+    assert fake_client.last_kwargs["security_id"] == "778899"
+    assert fake_client.last_kwargs["exchange_segment"] == "NSE_FNO"
+    assert fake_client.last_kwargs["instrument_type"] == "OPTIDX"
+
+
+def test_fetch_candles_uses_supplied_security_id_for_option_symbol_without_registry(monkeypatch: pytest.MonkeyPatch) -> None:
+    _reset_test_runtime()
+    symbol = "NIFTY_2026-03-26_22500_CE"
+    timestamps = [
+        int(datetime(2026, 3, 10, 3, 45, tzinfo=timezone.utc).timestamp()),
+        int(datetime(2026, 3, 10, 4, 0, tzinfo=timezone.utc).timestamp()),
+    ]
+
+    class FakeDhanClient:
+        def intraday_minute_data(self, **kwargs):
+            self.last_kwargs = kwargs
+            return {
+                "data": {
+                    "timestamp": timestamps,
+                    "open": [110.0, 111.0],
+                    "high": [111.0, 112.0],
+                    "low": [109.5, 110.5],
+                    "close": [110.5, 111.5],
+                    "volume": [2000, 2100],
+                }
+            }
+
+    fake_client = FakeDhanClient()
+    monkeypatch.setattr(market_data_service, "_has_dhan", lambda: True)
+    monkeypatch.setattr(dhan_credential_service, "call", lambda operation_name, fn, **kwargs: fn(fake_client)["data"])
+    monkeypatch.setattr(
+        market_data_service,
+        "_fetch_option_chain_cached",
+        lambda expiry: pytest.fail("security-id backed lookup should not fetch option-chain data"),
+    )
+
+    response = market_data_service._fetch_candles("15m", symbol=symbol, security_id="98765")
+
+    assert [candle["time"] for candle in response["candles"]] == timestamps
+    assert fake_client.last_kwargs["security_id"] == "98765"
+    assert fake_client.last_kwargs["exchange_segment"] == "NSE_FNO"
+    assert fake_client.last_kwargs["instrument_type"] == "OPTIDX"
+
+
 def test_market_candles_route_rejects_option_symbol_without_cached_metadata_without_fetching_chain(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -2633,7 +2771,74 @@ def test_market_candles_route_rejects_unsupported_symbol_format(client: TestClie
         headers=headers,
     )
     assert response.status_code == 400
-    assert response.json()["detail"] == "Unsupported symbol format. Expected NIFTY 50 or NIFTY_YYYY-MM-DD_STRIKE_CE|PE"
+    assert response.json()["detail"] == "Unsupported symbol format. Expected NIFTY 50, INDIA VIX/VIX, or NIFTY_YYYY-MM-DD_STRIKE_CE|PE"
+
+
+def test_market_candles_route_supports_vix_aliases(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    headers = _login(client, "admin@lite.trade", "lite-admin-123")
+    timestamps = [
+        "2026-03-19T00:00:00+00:00",
+        "2026-03-20T00:00:00+00:00",
+    ]
+
+    class FakeDhanClient:
+        def historical_daily_data(self, **kwargs):
+            self.last_kwargs = kwargs
+            return {
+                "data": {
+                    "timestamp": timestamps,
+                    "open": [13.1, 13.8],
+                    "high": [13.6, 14.2],
+                    "low": [12.9, 13.5],
+                    "close": [13.4, 14.1],
+                    "volume": [0, 0],
+                }
+            }
+
+    fake_client = FakeDhanClient()
+    monkeypatch.setattr(market_data_service, "_has_dhan", lambda: True)
+    monkeypatch.setattr(dhan_credential_service, "call", lambda operation_name, fn, **kwargs: fn(fake_client)["data"])
+
+    response = client.get("/api/v1/market/candles?timeframe=D&symbol=VIX", headers=headers)
+
+    assert response.status_code == 200, response.text
+    assert fake_client.last_kwargs["security_id"] == "21"
+    assert response.json()["candles"][-1]["close"] == 14.1
+
+
+def test_current_bucket_time_supports_intraday_intervals(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        market_hours,
+        "now_ist",
+        lambda: datetime(2026, 3, 12, 10, 7, tzinfo=market_hours.IST),
+    )
+
+    bucket = market_data_service._current_bucket_time("15m")
+    expected = int(datetime(2026, 3, 12, 10, 0, tzinfo=market_hours.IST).timestamp())
+    assert bucket == expected
+
+
+def test_get_candles_maps_rate_limit_and_invalid_request_to_specific_status_codes(monkeypatch: pytest.MonkeyPatch) -> None:
+    _reset_test_runtime()
+    monkeypatch.setattr(market_data_service, "_has_dhan", lambda: True)
+
+    def raise_rate_limit(*args, **kwargs):
+        raise DhanApiError("DHAN_RATE_LIMITED", "Too many requests")
+
+    monkeypatch.setattr(market_data_service, "_fetch_candles", raise_rate_limit)
+    with pytest.raises(market_data_module.CandleQueryError) as rate_limited:
+        asyncio.run(market_data_service.get_candles("15m"))
+    assert rate_limited.value.status_code == 429
+    assert rate_limited.value.detail == "DHAN_RATE_LIMITED"
+
+    def raise_invalid_request(*args, **kwargs):
+        raise DhanApiError("DHAN_INVALID_REQUEST", "Invalid Expiry Date")
+
+    monkeypatch.setattr(market_data_service, "_fetch_candles", raise_invalid_request)
+    with pytest.raises(market_data_module.CandleQueryError) as invalid_request:
+        asyncio.run(market_data_service.get_candles("15m"))
+    assert invalid_request.value.status_code == 400
+    assert invalid_request.value.detail == "DHAN_INVALID_REQUEST"
 
 
 def test_dhan_credential_service_regenerates_token_via_totp(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -3229,6 +3434,114 @@ def test_apply_chain_payload_merges_greeks_without_overwriting_ltp(monkeypatch: 
     assert quote["gamma"] == 0.012
     assert quote["theta"] == -5.5
     assert quote["vega"] == 10.5
+
+
+def test_apply_chain_payload_persists_option_registry() -> None:
+    _reset_test_runtime()
+    market_data_service.reset_runtime_state_for_tests()
+    observed_at = datetime(2026, 3, 21, 4, 0, tzinfo=timezone.utc)
+
+    chain = {
+        "quotes": {
+            "NIFTY_2026-03-26_24000_CE": {
+                "symbol": "NIFTY_2026-03-26_24000_CE",
+                "security_id": "12345",
+                "strike": 24000,
+                "option_type": "CE",
+                "expiry": "2026-03-26",
+                "ltp": 145.0,
+            },
+            "NIFTY_2026-03-26_24000_PE": {
+                "symbol": "NIFTY_2026-03-26_24000_PE",
+                "security_id": "12346",
+                "strike": 24000,
+                "option_type": "PE",
+                "expiry": "2026-03-26",
+                "ltp": 132.0,
+            },
+        },
+        "rows": [{"strike": 24000, "is_atm": True, "call": {"symbol": "NIFTY_2026-03-26_24000_CE"}, "put": {"symbol": "NIFTY_2026-03-26_24000_PE"}}],
+        "security_id_to_symbol": {
+            "12345": "NIFTY_2026-03-26_24000_CE",
+            "12346": "NIFTY_2026-03-26_24000_PE",
+        },
+        "total_call_oi": 50000.0,
+        "total_put_oi": 52000.0,
+    }
+
+    market_data_service._apply_chain_payload(chain, expiry="2026-03-26", now=observed_at)
+
+    with SessionLocal() as db:
+        records = (
+            db.query(DhanInstrumentRegistry)
+            .order_by(DhanInstrumentRegistry.symbol.asc())
+            .all()
+        )
+
+    assert [record.symbol for record in records] == [
+        "NIFTY_2026-03-26_24000_CE",
+        "NIFTY_2026-03-26_24000_PE",
+    ]
+    assert records[0].security_id == "12345"
+    assert records[0].expiry == "2026-03-26"
+    assert records[0].first_seen.replace(tzinfo=timezone.utc) == observed_at
+    assert records[0].last_seen.replace(tzinfo=timezone.utc) == observed_at
+
+
+def test_fetch_candles_daily_option_history_ends_cleanly_at_registry_boundary(monkeypatch: pytest.MonkeyPatch) -> None:
+    _reset_test_runtime()
+    symbol = "NIFTY_2026-03-24_23300_PE"
+    observed_at = datetime(2026, 3, 21, 4, 0, tzinfo=timezone.utc)
+    with SessionLocal() as db:
+        db.add(
+            DhanInstrumentRegistry(
+                symbol=symbol,
+                security_id="62589",
+                root_symbol="NIFTY",
+                exchange_segment="NSE_FNO",
+                instrument_type="OPTIDX",
+                expiry="2026-03-24",
+                strike=23300,
+                option_type="PE",
+                first_seen=observed_at,
+                last_seen=observed_at,
+            )
+        )
+        db.commit()
+
+    first_page_payload = {
+        "timestamp": [
+            "2026-03-18T00:00:00+00:00",
+            "2026-03-19T00:00:00+00:00",
+        ],
+        "open": [210.0, 220.0],
+        "high": [215.0, 225.0],
+        "low": [205.0, 215.0],
+        "close": [212.0, 221.0],
+        "volume": [1000, 1200],
+    }
+
+    call_count = {"n": 0}
+
+    def fake_call(operation_name, fn, **kwargs):
+        call_count["n"] += 1
+        if call_count["n"] > 1:
+            pytest.fail("history paging should stop at the registry boundary without hitting Dhan again")
+        return first_page_payload
+
+    monkeypatch.setattr(market_data_service, "_has_dhan", lambda: True)
+    monkeypatch.setattr(dhan_credential_service, "call", fake_call)
+
+    first_page = market_data_service._fetch_candles("D", symbol=symbol)
+    boundary = first_page["candles"][0]["time"]
+    second_page = market_data_service._fetch_candles("D", before=boundary, symbol=symbol)
+
+    assert call_count["n"] == 1
+    assert first_page["candles"]
+    assert second_page["candles"] == []
+    assert second_page["degraded"] is False
+    assert second_page["has_more"] is False
+    assert second_page["next_before"] is None
 
 
 def test_candle_cache_hits_for_current_window_regardless_of_date_shift(monkeypatch: pytest.MonkeyPatch) -> None:

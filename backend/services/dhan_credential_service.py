@@ -28,35 +28,100 @@ DHAN_AUTH_BASE = "https://auth.dhan.co/app"
 AUTH_ERROR_MARKERS = ("authentication failed", "token invalid", "invalid token", "invalid jwt", "unauthorized", "401")
 RATE_LIMIT_MARKERS = ("too many request", "too many requests", "429", "805")
 STATIC_IP_MARKERS = ("static ip", "whitelisted ip", "ip mismatch")
+ACCESS_DENIED_MARKERS = ("not subscribed", "does not have access", "access denied", "subscription")
+INVALID_REQUEST_MARKERS = (
+    "invalid request",
+    "invalid expiry",
+    "invalid expiry date",
+    "invalid date format",
+    "invalid securityid",
+    "invalid security id",
+    "incorrect parameter",
+    "missing required",
+    "bad values for parameters",
+)
+NO_DATA_MARKERS = ("no data", "no data present", "unable to fetch data", "empty data", "no records")
 
-# Structured Dhan error code classification (used by _unwrap_sdk_result for SDK responses)
-_AUTH_ERROR_CODES = {"DH-901", "DH-903", "DH-906"}
-_RATE_LIMIT_CODES = {"DH-904", "805"}
+_AUTH_ERROR_CODES = {"DH-901", "807", "808", "809", "810"}
+_ACCESS_DENIED_CODES = {"DH-902", "806"}
+_ACCOUNT_ERROR_CODES = {"DH-903"}
+_RATE_LIMIT_CODES = {"DH-904", "805", "429"}
+_INVALID_REQUEST_CODES = {"DH-905", "804", "811", "812", "813", "814"}
+_NO_DATA_CODES = {"DH-907"}
+_UPSTREAM_ERROR_CODES = {"DH-908", "DH-909", "DH-910", "800"}
 _AUTH_HTTP_CODES = {"401", "403"}
+
+_CRITICAL_BUDGET_OPERATIONS = {"profile", "generate_access_token", "renew_token"}
+_HIGH_PRIORITY_BUDGET_OPERATIONS = {
+    "option_chain",
+    "expiry_list",
+    "bootstrap_spot_history",
+    "bootstrap_vix_history",
+}
+
+
+def _normalize_error_code(error_code: str | int | None) -> str:
+    if error_code is None:
+        return ""
+    return str(error_code).strip().upper()
+
+
+def _extract_error_details(payload: Any) -> tuple[str, str]:
+    error_code = ""
+    error_message = ""
+    if isinstance(payload, dict):
+        direct_code = payload.get("errorCode") or payload.get("error_code") or payload.get("code")
+        direct_message = payload.get("errorMessage") or payload.get("error_message") or payload.get("message")
+        error_code = _normalize_error_code(direct_code)
+        error_message = str(direct_message or "").strip()
+
+        remarks = payload.get("remarks")
+        if isinstance(remarks, dict):
+            error_code = error_code or _normalize_error_code(remarks.get("error_code") or remarks.get("code"))
+            error_message = error_message or str(remarks.get("error_message") or remarks.get("message") or "").strip()
+        elif isinstance(remarks, str):
+            error_message = error_message or remarks.strip()
+
+        data = payload.get("data")
+        if isinstance(data, dict):
+            error_code = error_code or _normalize_error_code(data.get("errorCode") or data.get("error_code"))
+            error_message = error_message or str(data.get("errorMessage") or data.get("error_message") or data.get("message") or "").strip()
+
+    return error_code, error_message
+
+
+def _classify_dhan_error(error_code: str | int | None, error_message: str | None, *, status: int = 0) -> tuple[str, bool]:
+    code = _normalize_error_code(error_code or (str(status) if status else ""))
+    msg = (error_message or "").strip()
+    msg_lower = msg.lower()
+    is_auth = code in _AUTH_ERROR_CODES or code in _AUTH_HTTP_CODES or status in {401, 403} or any(marker in msg_lower for marker in AUTH_ERROR_MARKERS)
+
+    if any(marker in msg_lower for marker in STATIC_IP_MARKERS):
+        return "DHAN_STATIC_IP_REJECTED", False
+    if code in _RATE_LIMIT_CODES or any(marker in msg_lower for marker in RATE_LIMIT_MARKERS):
+        return "DHAN_RATE_LIMITED", is_auth
+    if code in _ACCESS_DENIED_CODES or any(marker in msg_lower for marker in ACCESS_DENIED_MARKERS):
+        return "DHAN_ACCESS_DENIED", False
+    if code in _AUTH_ERROR_CODES or code in _AUTH_HTTP_CODES or status in {401, 403}:
+        return "DHAN_AUTH_FAILED", True
+    if code in _ACCOUNT_ERROR_CODES:
+        return "DHAN_ACCOUNT_RESTRICTED", False
+    if code in _INVALID_REQUEST_CODES or any(marker in msg_lower for marker in INVALID_REQUEST_MARKERS):
+        return "DHAN_INVALID_REQUEST", is_auth
+    if code in _NO_DATA_CODES:
+        if any(marker in msg_lower for marker in INVALID_REQUEST_MARKERS):
+            return "DHAN_INVALID_REQUEST", is_auth
+        return "DHAN_NO_DATA", is_auth
+    if any(marker in msg_lower for marker in NO_DATA_MARKERS):
+        return "DHAN_NO_DATA", is_auth
+    if code in _UPSTREAM_ERROR_CODES:
+        return "DHAN_UPSTREAM_FAILED", is_auth
+    return ("DHAN_AUTH_FAILED" if is_auth else ""), is_auth
 
 
 def _classify_structured(error_code: str, error_message: str) -> tuple[str, bool]:
-    """Classify Dhan errors using structured error codes, not substring matching."""
-    code_upper = error_code.upper()
-    msg_lower = error_message.lower()
-
-    # Rate limiting — check error code first, then message
-    if code_upper in _RATE_LIMIT_CODES or code_upper == "429":
-        return "DHAN_RATE_LIMITED", False
-    if "too many request" in msg_lower:
-        return "DHAN_RATE_LIMITED", False
-
-    # Auth errors — check error code first, then message
-    if code_upper in _AUTH_ERROR_CODES or code_upper in _AUTH_HTTP_CODES:
-        return "DHAN_AUTH_FAILED", True
-    if any(m in msg_lower for m in ("authentication failed", "token invalid", "invalid token", "invalid jwt", "unauthorized")):
-        return "DHAN_AUTH_FAILED", True
-
-    # Static IP
-    if any(m in msg_lower for m in ("static ip", "whitelisted ip", "ip mismatch")):
-        return "DHAN_STATIC_IP_REJECTED", False
-
-    return "", False
+    """Classify Dhan errors using documented codes and explicit message families."""
+    return _classify_dhan_error(error_code, error_message)
 
 
 class DhanApiError(RuntimeError):
@@ -128,13 +193,7 @@ def _totp_candidates(secret: str) -> list[str]:
     return seen
 
 def _classify(msg: str, status: int = 0) -> tuple[str, bool]:
-    low = msg.lower()
-    is_auth = status in {401, 403} or any(m in low for m in ("authentication failed", "token invalid", "invalid token", "invalid jwt", "unauthorized"))
-    if any(m in low for m in ("too many request", "too many requests")) or status == 429:
-        return "DHAN_RATE_LIMITED", is_auth
-    if any(m in low for m in STATIC_IP_MARKERS):
-        return "DHAN_STATIC_IP_REJECTED", is_auth
-    return ("DHAN_AUTH_FAILED" if is_auth else ""), is_auth
+    return _classify_dhan_error(None, msg, status=status)
 
 
 class DhanRateLimiter:
@@ -144,16 +203,24 @@ class DhanRateLimiter:
     preventing a burst that exceeds Dhan's short-window limits.
     """
 
-    def __init__(self, rate_per_second: float, capacity: int, *, burst_cap: int | None = None) -> None:
+    def __init__(self, rate_per_second: float, capacity: int, *, burst_cap: int | None = None, reserved_capacity: int = 0) -> None:
         self._rate = rate_per_second
         self._capacity = capacity
         self._burst_cap = min(burst_cap, capacity) if burst_cap is not None else capacity
+        self._reserved_capacity = min(max(reserved_capacity, 0), self._burst_cap)
         self._tokens = float(self._burst_cap)
         self._last = time.monotonic()
         self._lock = threading.Lock()
         self._op_cooldowns: dict[str, float] = {}  # operation -> last_call_monotonic
 
-    def acquire(self, timeout: float = 30.0, *, operation: str | None = None, cooldown: float = 0.0) -> bool:
+    def acquire(
+        self,
+        timeout: float = 30.0,
+        *,
+        operation: str | None = None,
+        cooldown: float = 0.0,
+        priority: str = "normal",
+    ) -> bool:
         deadline = time.monotonic() + timeout
         # Per-operation cooldown (e.g., option_chain must wait 3s between calls)
         if operation and cooldown > 0:
@@ -170,7 +237,8 @@ class DhanRateLimiter:
                 refill = min(self._burst_cap, self._tokens + (now - self._last) * self._rate)
                 self._tokens = refill
                 self._last = now
-                if self._tokens >= 1.0:
+                available = self._tokens if priority in {"critical", "high"} else max(self._tokens - self._reserved_capacity, 0.0)
+                if available >= 1.0:
                     self._tokens -= 1.0
                     if operation:
                         self._op_cooldowns[operation] = now
@@ -185,6 +253,7 @@ _api_rate_limiter = DhanRateLimiter(
     rate_per_second=max(settings.dhan_api_rate_limit_per_minute, 1) / 60.0,
     capacity=max(settings.dhan_api_rate_limit_per_minute, 1),
     burst_cap=5,  # Never burst more than 5 requests even after idle
+    reserved_capacity=1,  # Keep one request available for auth/profile recovery or chain refreshes.
 )
 
 
@@ -288,15 +357,27 @@ class DhanCredentialService:
     # Dhan enforces per-endpoint cooldowns; option_chain is 1 req per 3 seconds
     _OP_COOLDOWNS: dict[str, float] = {"option_chain": 3.0}
 
-    def call(self, operation_name: str, fn: Callable[[Dhanhq], T], *, allow_auth_retry: bool = True) -> T:
-        if self._global_backoff_until:
+    @staticmethod
+    def _budget_priority(operation_name: str) -> str:
+        if operation_name in _CRITICAL_BUDGET_OPERATIONS:
+            return "critical"
+        if operation_name in _HIGH_PRIORITY_BUDGET_OPERATIONS:
+            return "high"
+        return "normal"
+
+    def _acquire_budget(self, operation_name: str) -> None:
+        priority = self._budget_priority(operation_name)
+        if priority != "critical" and self._global_backoff_until:
             now = time.monotonic()
             if now < self._global_backoff_until:
                 remaining = self._global_backoff_until - now
                 raise DhanApiError("DHAN_RATE_LIMITED", f"{operation_name} blocked: global backoff active ({remaining:.0f}s remaining)")
         cooldown = self._OP_COOLDOWNS.get(operation_name, 0.0)
-        if not _api_rate_limiter.acquire(timeout=30.0, operation=operation_name, cooldown=cooldown):
+        if not _api_rate_limiter.acquire(timeout=30.0, operation=operation_name, cooldown=cooldown, priority=priority):
             raise DhanApiError("DHAN_RATE_LIMITED", f"{operation_name} blocked: rate limiter exhausted")
+
+    def call(self, operation_name: str, fn: Callable[[Dhanhq], T], *, allow_auth_retry: bool = True) -> T:
+        self._acquire_budget(operation_name)
         self.ensure_token_fresh()
         for attempt in (1, 2):
             try:
@@ -443,6 +524,7 @@ class DhanCredentialService:
             "GET", f"{DHAN_API_BASE}/profile",
             headers={"Accept": "application/json", "Content-Type": "application/json",
                      "access-token": access_token, "client-id": client_id, "dhanClientId": client_id},
+            budget_operation="profile",
         )
 
     def _regenerate_via_totp(self, *, reason: str, force: bool = False) -> bool:
@@ -477,7 +559,8 @@ class DhanCredentialService:
         for totp in _totp_candidates(secret):
             try:
                 resp = self._request_json("POST", f"{DHAN_AUTH_BASE}/generateAccessToken",
-                                          params={"dhanClientId": cid, "pin": pin, "totp": totp})
+                                          params={"dhanClientId": cid, "pin": pin, "totp": totp},
+                                          budget_operation="generate_access_token")
             except DhanApiError as e:
                 last_err = e
                 continue
@@ -501,7 +584,9 @@ class DhanCredentialService:
             logger.warning("Profile fetch failed after token regen — token saved, profile updates on next check")
         return True
 
-    def _request_json(self, method: str, url: str, **kwargs: Any) -> dict[str, Any]:
+    def _request_json(self, method: str, url: str, *, budget_operation: str | None = None, **kwargs: Any) -> dict[str, Any]:
+        if budget_operation:
+            self._acquire_budget(budget_operation)
         kwargs.setdefault("timeout", settings.dhan_http_timeout_seconds)
         try:
             response = httpx.request(method, url, **kwargs)
@@ -513,8 +598,9 @@ class DhanCredentialService:
             raise DhanApiError("DHAN_REQUEST_FAILED", f"Dhan {url} invalid JSON: {response.text[:300]}",
                                auth_failed=response.status_code in {401, 403}) from exc
         if response.status_code >= 400:
-            msg = str(payload)[:500]
-            reason, is_auth = _classify(msg, response.status_code)
+            error_code, error_message = _extract_error_details(payload)
+            msg = error_message or str(payload)[:500]
+            reason, is_auth = _classify_dhan_error(error_code, msg, status=response.status_code)
             raise DhanApiError(reason or "DHAN_REQUEST_FAILED", f"{url} failed: {msg}", auth_failed=is_auth, payload=payload)
         return payload if isinstance(payload, dict) else {}
 
@@ -524,22 +610,8 @@ class DhanCredentialService:
         if str(result.get("status") or "").lower() == "success":
             return result.get("data")
 
-        # Extract structured error info from SDK response
-        remarks = result.get("remarks")
+        error_code, error_message = _extract_error_details(result)
         data = result.get("data")
-        error_code = ""
-        error_message = ""
-
-        if isinstance(remarks, dict):
-            error_code = str(remarks.get("error_code") or "").strip()
-            error_message = str(remarks.get("error_message") or "").strip()
-        elif isinstance(remarks, str):
-            error_message = remarks
-
-        if isinstance(data, dict):
-            error_code = error_code or str(data.get("errorCode") or "").strip()
-            error_message = error_message or str(data.get("errorMessage") or "").strip()
-
         msg = error_message or str(data)[:500] or f"{op} failed"
         reason, auth = _classify_structured(error_code, error_message)
         raise DhanApiError(reason or "DHAN_UPSTREAM_FAILED", f"{op} failed: {msg}", auth_failed=auth, payload=result)

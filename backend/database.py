@@ -95,6 +95,12 @@ def _run_migrations(eng) -> None:
                 conn.execute(text("ALTER TABLE service_credentials ADD COLUMN last_lease_issued_at TIMESTAMP WITH TIME ZONE"))
                 logger.info("Migration: added service_credentials.last_lease_issued_at column")
 
+    if "dhan_instrument_registry" not in inspector.get_table_names():
+        import models
+
+        models.DhanInstrumentRegistry.__table__.create(bind=eng, checkfirst=True)
+        logger.info("Migration: created dhan_instrument_registry table")
+
     if "orders" in inspector.get_table_names():
         order_columns = [c["name"] for c in inspector.get_columns("orders")]
         with eng.begin() as conn:
