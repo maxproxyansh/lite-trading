@@ -80,13 +80,16 @@ async def lifespan(app: FastAPI):
     logger.info("Database initialized")
 
     dhan_credential_service.initialize(force_reload=True)
-    # Always rotate token on startup — guarantees a fresh token before any user request
-    if dhan_credential_service.snapshot().totp_regeneration_enabled:
+    # Verify token is actually valid with Dhan before serving any user request.
+    # If the profile check fails, rotate via TOTP. This catches tokens that
+    # Dhan invalidated server-side before their JWT expiry.
+    snap = dhan_credential_service.snapshot()
+    if snap.configured:
         try:
-            dhan_credential_service.scheduled_preopen_rotation()
-            logger.info("Startup token rotation completed")
+            dhan_credential_service.ensure_token_fresh(force_profile=True)
+            logger.info("Startup token verified (gen=%d, source=%s)", snap.generation, snap.token_source)
         except Exception:
-            logger.warning("Startup token rotation failed — will retry on first API call")
+            logger.warning("Startup token verification failed — will retry on first API call")
     market_data_service.set_broadcast(broadcast_message)
     market_data_service.set_open_order_processor(_process_market_side_effects)
     signal_adapter.set_broadcast(broadcast_message)
