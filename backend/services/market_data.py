@@ -220,7 +220,7 @@ class MarketDataService:
             await self.refresh()
         except Exception as exc:
             logger.error("Initial market data refresh failed (background loops will retry): %s", exc)
-        if not self.last_known_spot:
+        if not self.last_known_spot or not self.last_known_prev_close:
             await self._seed_spot_from_history()
             await self._broadcast_snapshot()
         self._snapshot_task = asyncio.create_task(self._snapshot_loop())
