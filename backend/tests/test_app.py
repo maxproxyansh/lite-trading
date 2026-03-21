@@ -2917,6 +2917,44 @@ def test_fetch_candles_no_data_keeps_paging_for_older_option_history(monkeypatch
     assert response["next_before"] is not None
 
 
+def test_fetch_candles_cached_no_data_stays_non_degraded(monkeypatch: pytest.MonkeyPatch) -> None:
+    _reset_test_runtime()
+    symbol = "NIFTY_2025-01-30_22500_CE"
+    observed_at = datetime(2025, 1, 10, 9, 15, tzinfo=timezone.utc)
+    with SessionLocal() as db:
+        db.add(
+            DhanInstrumentRegistry(
+                symbol=symbol,
+                security_id="55555",
+                root_symbol="NIFTY",
+                exchange_segment="NSE_FNO",
+                instrument_type="OPTIDX",
+                expiry="2025-01-30",
+                strike=22500,
+                option_type="CE",
+                first_seen=observed_at,
+                last_seen=observed_at,
+            )
+        )
+        db.commit()
+
+    monkeypatch.setattr(market_data_service, "_has_dhan", lambda: True)
+    calls = {"count": 0}
+
+    def fake_call(operation_name, fn, **kwargs):
+        calls["count"] += 1
+        raise DhanApiError("DHAN_NO_DATA", "No data present")
+
+    monkeypatch.setattr(dhan_credential_service, "call", fake_call)
+
+    first = market_data_service._fetch_candles("D", symbol=symbol)
+    second = market_data_service._fetch_candles("D", symbol=symbol)
+
+    assert calls["count"] == 1
+    assert first["degraded"] is False
+    assert second["degraded"] is False
+
+
 def test_fetch_candles_no_data_can_overlay_live_intraday_option_quote(monkeypatch: pytest.MonkeyPatch) -> None:
     _reset_test_runtime()
     symbol = "NIFTY_2026-03-12_22500_CE"
