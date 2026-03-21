@@ -13,7 +13,6 @@ import {
   updateAlert,
   type AlertSummary,
   type Candle,
-  type CandleResponse,
 } from '../lib/api'
 import { useStore } from '../store/useStore'
 import { DrawingContextMenu } from './chart/DrawingContextMenu'
@@ -906,17 +905,7 @@ export default function NiftyChart() {
 
     const params = { timeframe, symbol: chartSymbol, securityId: chartSecurityId }
 
-    // Retry once on 503 — Dhan upstream errors are often transient
-    const fetchWithRetry = () =>
-      fetchCandles(params).catch((error) => {
-        if (error instanceof ApiError && error.status === 503) {
-          return new Promise<CandleResponse>((resolve) => setTimeout(resolve, 800))
-            .then(() => fetchCandles(params))
-        }
-        throw error
-      })
-
-    fetchWithRetry()
+    fetchCandles(params)
       .then((response) => {
         if (!active || historySessionRef.current !== session) {
           return

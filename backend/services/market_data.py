@@ -159,6 +159,10 @@ class MarketDataService:
         self._snapshot_dirty = False
         self._pcr_dirty = False
         self._candle_cache: dict[tuple, tuple[float, dict[str, Any]]] = {}  # (sec_id, tf, from, to) -> (ts, data)
+        self._chain_cache: dict[str, tuple[float, dict[str, Any]]] = {}  # expiry -> (monotonic_ts, chain_result)
+        self._chain_cache_ttl: float = 5.0  # reuse chain results fetched within 5 seconds
+        self._inflight_candles: dict[tuple, asyncio.Future] = {}  # dedup concurrent candle requests
+        self._option_metadata: dict[str, CandleInstrument] = {}  # symbol -> CandleInstrument (survives chain refreshes)
 
     def set_broadcast(self, broadcast: BroadcastFn) -> None:
         self._broadcast = broadcast
@@ -618,7 +622,7 @@ class MarketDataService:
             return
 
         try:
-            chain = await asyncio.to_thread(self._fetch_option_chain, self.active_expiry)
+            chain = await asyncio.to_thread(self._fetch_option_chain_cached, self.active_expiry)
         except DhanApiError as exc:
             # On weekends/holidays, Dhan returns "Invalid Expiry Date" — serve cached data silently
             if "invalid expiry" in exc.message.lower() and self.option_rows:
@@ -664,7 +668,7 @@ class MarketDataService:
             return False
         if self.expiries and requested not in self.expiries:
             return False
-        chain = await asyncio.to_thread(self._fetch_option_chain, requested)
+        chain = await asyncio.to_thread(self._fetch_option_chain_cached, requested)
         if not chain:
             return False
         self._apply_chain_payload(chain, expiry=requested, now=datetime.now(timezone.utc))
@@ -810,8 +814,8 @@ class MarketDataService:
             return None
 
         expiry, _strike, _option_type = parsed
-        # Fall back to a fresh option-chain lookup so chart loads are not limited to the currently visible expiry.
-        chain = self._fetch_option_chain(expiry)
+        # Use cached chain result to avoid a fresh Dhan API call
+        chain = self._fetch_option_chain_cached(expiry)
         if not chain:
             raise CandleQueryError(status_code=503, detail="OPTION_METADATA_UNAVAILABLE")
         return chain.get("quotes", {}).get(symbol)
@@ -839,6 +843,11 @@ class MarketDataService:
 
         if not normalized_symbol or normalized_symbol in INDEX_SYMBOL_ALIASES:
             return self._index_history_target()
+
+        # Check cached option metadata first — avoids chain fetch entirely
+        cached_target = self._option_metadata.get(normalized_symbol)
+        if cached_target:
+            return cached_target
 
         quote = self._lookup_quote_by_symbol(normalized_symbol)
         if quote:
@@ -988,6 +997,26 @@ class MarketDataService:
             if candidate and re.fullmatch(r"\d{4}-\d{2}-\d{2}", candidate):
                 expiries.append(candidate)
         return expiries
+
+    def _fetch_option_chain_cached(self, expiry: str) -> dict[str, Any] | None:
+        """Return a recent chain result if available, otherwise fetch fresh."""
+        now = time.monotonic()
+        cached = self._chain_cache.get(expiry)
+        if cached and now - cached[0] < self._chain_cache_ttl:
+            return cached[1]
+        result = self._fetch_option_chain(expiry)
+        if result is not None:
+            self._chain_cache[expiry] = (now, result)
+            # Populate option metadata for chart symbol lookups
+            for sym, quote in result.get("quotes", {}).items():
+                sid = self._extract_security_id(quote)
+                if sid:
+                    self._option_metadata[sym] = CandleInstrument(
+                        symbol=sym, security_id=str(sid),
+                        exchange_segment=OPTION_EXCHANGE_SEGMENT,
+                        instrument_type=OPTION_INSTRUMENT_TYPE,
+                    )
+        return result
 
     def _fetch_option_chain(self, expiry: str) -> dict[str, Any] | None:
         response = dhan_credential_service.call(
@@ -1302,20 +1331,38 @@ class MarketDataService:
                 "next_before": None,
             }
 
+        # Deduplicate concurrent identical requests — only one hits Dhan
+        dedup_key = (timeframe, before, symbol, security_id)
+        existing = self._inflight_candles.get(dedup_key)
+        if existing and not existing.done():
+            return await asyncio.shield(existing)
+
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[dict[str, Any]] = loop.create_future()
+        self._inflight_candles[dedup_key] = future
+
         try:
-            return await asyncio.to_thread(
+            result = await asyncio.to_thread(
                 self._fetch_candles,
                 timeframe,
                 before,
                 symbol=symbol,
                 security_id=security_id,
             )
-        except CandleQueryError:
+            if not future.done():
+                future.set_result(result)
+            return result
+        except CandleQueryError as exc:
+            if not future.done():
+                future.set_exception(exc)
             raise
         except DhanApiError as exc:
-            raise CandleQueryError(status_code=503, detail=exc.reason) from exc
+            err = CandleQueryError(status_code=503, detail=exc.reason)
+            if not future.done():
+                future.set_exception(err)
+            raise err from exc
         except Exception:  # noqa: BLE001
-            return {
+            fallback = {
                 "timeframe": timeframe,
                 "candles": [],
                 "source": "dhan",
@@ -1323,6 +1370,11 @@ class MarketDataService:
                 "has_more": False,
                 "next_before": None,
             }
+            if not future.done():
+                future.set_result(fallback)
+            return fallback
+        finally:
+            self._inflight_candles.pop(dedup_key, None)
 
     def _fetch_candles(
         self,
@@ -1385,7 +1437,7 @@ class MarketDataService:
 
         # --- process candles ---
         if timeframe in DAILY_HISTORY_TIMEFRAMES:
-            candles = self._aggregate_candles(self._map_candles(payload), timeframe)
+            candles = self._aggregate_candles(self._map_candles(payload, normalize_daily=True), timeframe)
             if before is None:
                 live_price, day_high, day_low = self._live_ohlc_for_target(target)
                 candles = self._overlay_live_price(
@@ -1414,7 +1466,7 @@ class MarketDataService:
             ),
         }
 
-    def _map_candles(self, payload: dict[str, Any] | Any) -> list[dict[str, Any]]:
+    def _map_candles(self, payload: dict[str, Any] | Any, *, normalize_daily: bool = False) -> list[dict[str, Any]]:
         if not isinstance(payload, dict):
             return []
         timestamps = payload.get("timestamp") or payload.get("start_Time") or payload.get("start_time") or []
@@ -1429,6 +1481,12 @@ class MarketDataService:
                 continue
             ts = timestamps[idx] if idx < len(timestamps) else None
             dt = _parse_datetime(ts)
+            if normalize_daily:
+                # Normalize to midnight IST so timestamps match _current_bucket_time.
+                # Dhan may return midnight UTC; converting to the IST date and
+                # rebuilding ensures the overlay comparison works correctly.
+                ist_date = dt.astimezone(IST).date()
+                dt = datetime.combine(ist_date, datetime.min.time(), tzinfo=IST)
             candles.append(
                 {
                     "time": int(dt.timestamp()),

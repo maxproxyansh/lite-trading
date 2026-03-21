@@ -138,24 +138,42 @@ def _classify(msg: str, status: int = 0) -> tuple[str, bool]:
 
 
 class DhanRateLimiter:
-    """Thread-safe token bucket rate limiter for Dhan API calls."""
+    """Thread-safe token bucket rate limiter for Dhan API calls.
 
-    def __init__(self, rate_per_second: float, capacity: int) -> None:
+    burst_cap limits how many tokens can accumulate during idle periods,
+    preventing a burst that exceeds Dhan's short-window limits.
+    """
+
+    def __init__(self, rate_per_second: float, capacity: int, *, burst_cap: int | None = None) -> None:
         self._rate = rate_per_second
         self._capacity = capacity
-        self._tokens = float(capacity)
+        self._burst_cap = min(burst_cap, capacity) if burst_cap is not None else capacity
+        self._tokens = float(self._burst_cap)
         self._last = time.monotonic()
         self._lock = threading.Lock()
+        self._op_cooldowns: dict[str, float] = {}  # operation -> last_call_monotonic
 
-    def acquire(self, timeout: float = 30.0) -> bool:
+    def acquire(self, timeout: float = 30.0, *, operation: str | None = None, cooldown: float = 0.0) -> bool:
         deadline = time.monotonic() + timeout
+        # Per-operation cooldown (e.g., option_chain must wait 3s between calls)
+        if operation and cooldown > 0:
+            with self._lock:
+                last = self._op_cooldowns.get(operation, 0.0)
+                wait = last + cooldown - time.monotonic()
+                if wait > 0:
+                    if wait > (deadline - time.monotonic()):
+                        return False
+                    time.sleep(wait)
         while True:
             with self._lock:
                 now = time.monotonic()
-                self._tokens = min(self._capacity, self._tokens + (now - self._last) * self._rate)
+                refill = min(self._burst_cap, self._tokens + (now - self._last) * self._rate)
+                self._tokens = refill
                 self._last = now
                 if self._tokens >= 1.0:
                     self._tokens -= 1.0
+                    if operation:
+                        self._op_cooldowns[operation] = now
                     return True
             remaining = deadline - time.monotonic()
             if remaining <= 0:
@@ -166,6 +184,7 @@ class DhanRateLimiter:
 _api_rate_limiter = DhanRateLimiter(
     rate_per_second=max(settings.dhan_api_rate_limit_per_minute, 1) / 60.0,
     capacity=max(settings.dhan_api_rate_limit_per_minute, 1),
+    burst_cap=5,  # Never burst more than 5 requests even after idle
 )
 
 
@@ -254,13 +273,17 @@ class DhanCredentialService:
                 raise DhanApiError("DATA_PLAN_INACTIVE", "Dhan market-data entitlement has expired")
         return self._regenerate_via_totp(reason="scheduled-renewal") if needs_renewal else False
 
+    # Dhan enforces per-endpoint cooldowns; option_chain is 1 req per 3 seconds
+    _OP_COOLDOWNS: dict[str, float] = {"option_chain": 3.0}
+
     def call(self, operation_name: str, fn: Callable[[Dhanhq], T], *, allow_auth_retry: bool = True) -> T:
         if self._global_backoff_until:
             now = time.monotonic()
             if now < self._global_backoff_until:
                 remaining = self._global_backoff_until - now
                 raise DhanApiError("DHAN_RATE_LIMITED", f"{operation_name} blocked: global backoff active ({remaining:.0f}s remaining)")
-        if not _api_rate_limiter.acquire(timeout=30.0):
+        cooldown = self._OP_COOLDOWNS.get(operation_name, 0.0)
+        if not _api_rate_limiter.acquire(timeout=30.0, operation=operation_name, cooldown=cooldown):
             raise DhanApiError("DHAN_RATE_LIMITED", f"{operation_name} blocked: rate limiter exhausted")
         self.ensure_token_fresh()
         for attempt in (1, 2):

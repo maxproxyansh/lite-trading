@@ -112,6 +112,14 @@ def market_session(moment: datetime | None = None) -> MarketSession:
     )
 
 
+def is_trading_day(day: date | None = None) -> bool:
+    """Return True if the given date (default: today IST) is a weekday without a known holiday."""
+    day = day or now_ist().date()
+    if day.weekday() >= 5:
+        return False
+    return holiday_name(day) is None
+
+
 def is_market_open() -> bool:
     return market_session().is_open
 
