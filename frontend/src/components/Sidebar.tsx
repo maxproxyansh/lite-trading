@@ -53,6 +53,18 @@ export default function Sidebar({ onOpenMacroCalendar, onOpenFiiDii, onOpenGloba
       <div className="flex-1" />
       <div className="group relative">
         <button
+          onClick={onOpenFiiDii}
+          className="flex h-10 w-10 items-center justify-center border-l-[3px] border-transparent text-text-muted transition-colors hover:text-text-secondary hover:bg-bg-hover"
+          title="FII / DII"
+        >
+          <Users size={16} strokeWidth={1.5} />
+        </button>
+        <div className="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-2 rounded-sm bg-bg-tertiary px-2 py-1 text-xs text-text-primary opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50">
+          FII / DII
+        </div>
+      </div>
+      <div className="group relative">
+        <button
           onClick={onOpenGlobalMarkets}
           className="flex h-10 w-10 items-center justify-center border-l-[3px] border-transparent text-text-muted transition-colors hover:text-text-secondary hover:bg-bg-hover"
           title="Global Markets"
@@ -73,18 +85,6 @@ export default function Sidebar({ onOpenMacroCalendar, onOpenFiiDii, onOpenGloba
         </button>
         <div className="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-2 rounded-sm bg-bg-tertiary px-2 py-1 text-xs text-text-primary opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50">
           Macro Calendar
-        </div>
-      </div>
-      <div className="group relative">
-        <button
-          onClick={onOpenFiiDii}
-          className="flex h-10 w-10 items-center justify-center border-l-[3px] border-transparent text-text-muted transition-colors hover:text-text-secondary hover:bg-bg-hover"
-          title="FII / DII"
-        >
-          <Users size={16} strokeWidth={1.5} />
-        </button>
-        <div className="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-2 rounded-sm bg-bg-tertiary px-2 py-1 text-xs text-text-primary opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50">
-          FII / DII
         </div>
       </div>
       <div className="group relative">

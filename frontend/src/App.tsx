@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { Fingerprint } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 
 import ErrorBoundary from './components/ErrorBoundary'
@@ -358,33 +359,44 @@ export default function App() {
       {fiiDiiOpen && <FiiDiiModal onClose={() => setFiiDiiOpen(false)} />}
       {globalMarketsOpen && <GlobalMarketsModal onClose={() => setGlobalMarketsOpen(false)} />}
       {showPasskeyPrompt && (
-        <div className="fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-lg border border-[#333] bg-[#1a1a1a] px-4 py-3 shadow-[0_8px_32px_rgba(0,0,0,0.5)]">
-          <span className="text-[13px] text-[#e0e0e0]">Enable fingerprint login?</span>
-          <button
-            onClick={async () => {
-              setShowPasskeyPrompt(false)
-              try {
-                const { options } = await webauthnRegisterOptions()
-                const credential = await createPasskey(options)
-                await webauthnRegister(credential)
-                localStorage.setItem('lite_passkey_email', user!.email)
-                addToast('success', 'Fingerprint login enabled')
-              } catch (err) {
-                const msg = err instanceof Error ? err.message : String(err)
-                console.warn('[WebAuthn] Registration failed:', msg, err)
-                addToast('error', `Passkey: ${msg}`)
-              }
-            }}
-            className="rounded bg-[#3b82f6] px-3 py-1 text-[12px] font-medium text-white hover:bg-[#2563eb] transition-colors"
-          >
-            Enable
-          </button>
-          <button
-            onClick={() => setShowPasskeyPrompt(false)}
-            className="text-[12px] text-[#666] hover:text-[#999] transition-colors"
-          >
-            Skip
-          </button>
+        <div className="fixed bottom-20 md:bottom-6 right-4 md:right-6 z-50 w-[280px] rounded-lg border border-border-primary bg-bg-secondary shadow-[0_8px_32px_rgba(0,0,0,0.5)] overflow-hidden">
+          <div className="px-4 pt-4 pb-3 flex flex-col items-center gap-2">
+            <Fingerprint size={28} className="text-brand" />
+            <p className="text-[13px] text-text-primary font-medium text-center">
+              Enable fingerprint login
+            </p>
+            <p className="text-[11px] text-text-muted text-center leading-relaxed">
+              Sign in instantly next time with your fingerprint
+            </p>
+          </div>
+          <div className="flex border-t border-border-primary">
+            <button
+              onClick={() => setShowPasskeyPrompt(false)}
+              className="flex-1 py-2.5 text-[12px] text-text-muted hover:text-text-secondary hover:bg-bg-hover transition-colors"
+            >
+              Skip
+            </button>
+            <div className="w-px bg-border-primary" />
+            <button
+              onClick={async () => {
+                setShowPasskeyPrompt(false)
+                try {
+                  const { options } = await webauthnRegisterOptions()
+                  const credential = await createPasskey(options)
+                  await webauthnRegister(credential)
+                  localStorage.setItem('lite_passkey_email', user!.email)
+                  addToast('success', 'Fingerprint login enabled')
+                } catch (err) {
+                  const msg = err instanceof Error ? err.message : String(err)
+                  console.warn('[WebAuthn] Registration failed:', msg, err)
+                  addToast('error', `Passkey: ${msg}`)
+                }
+              }}
+              className="flex-1 py-2.5 text-[12px] font-medium text-brand hover:bg-bg-hover transition-colors"
+            >
+              Enable
+            </button>
+          </div>
         </div>
       )}
       <Routes>

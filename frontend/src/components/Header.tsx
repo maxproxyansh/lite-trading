@@ -20,19 +20,13 @@ export default function Header() {
   const {
     snapshot,
     wsStatus,
-    portfolios,
-    selectedPortfolioId,
     optionChartSymbol,
-    setSelectedPortfolioId,
     setOptionChartSymbol,
     user,
   } = useStore(useShallow((state) => ({
     snapshot: state.snapshot,
     wsStatus: state.wsStatus,
-    portfolios: state.portfolios,
-    selectedPortfolioId: state.selectedPortfolioId,
     optionChartSymbol: state.optionChartSymbol,
-    setSelectedPortfolioId: state.setSelectedPortfolioId,
     setOptionChartSymbol: state.setOptionChartSymbol,
     user: state.user,
   })))
@@ -103,17 +97,6 @@ export default function Header() {
             </span>
           </div>
         )}
-
-        {/* Portfolio selector — hidden on mobile */}
-        <select
-          value={selectedPortfolioId}
-          onChange={(e) => setSelectedPortfolioId(e.target.value)}
-          className="cursor-pointer border-none bg-transparent text-[11px] text-text-secondary outline-none"
-        >
-          {portfolios.map((p) => (
-            <option key={p.id} value={p.id} className="bg-bg-primary">{p.kind === 'manual' ? 'Manual' : p.kind === 'agent' ? 'Agent' : p.name}</option>
-          ))}
-        </select>
 
         <div className="hidden md:block h-3 w-px bg-border-primary" />
 

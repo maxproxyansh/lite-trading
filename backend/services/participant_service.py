@@ -191,12 +191,34 @@ def get_history(days: int = 30) -> list[dict[str, Any]]:
     """Return participant snapshots for the last *days* business days.
 
     Results are ordered oldest-first for charting convenience.
+    Uncached dates are fetched in parallel for speed.
     """
+    dates = _business_days_back(days)
+
+    # Split into cached hits and uncached misses
+    snapshots_by_date: dict[str, dict[str, Any]] = {}
+    uncached: list[datetime] = []
+    for d in dates:
+        date_key = d.strftime("%Y-%m-%d")
+        if date_key in _cache:
+            snapshots_by_date[date_key] = _cache[date_key]
+        else:
+            uncached.append(d)
+
+    # Fetch uncached dates in parallel
+    if uncached:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        with ThreadPoolExecutor(max_workers=10) as pool:
+            futures = {pool.submit(_fetch_and_cache, d): d for d in uncached}
+            for future in as_completed(futures):
+                result = future.result()
+                if result is not None:
+                    snapshots_by_date[result["date"]] = result
+
+    # Build result in oldest-first order
     snapshots: list[dict[str, Any]] = []
-    for d in _business_days_back(days):
-        snapshot = _fetch_and_cache(d)
-        if snapshot is not None:
-            snapshots.append(snapshot)
-    # Reverse so oldest is first (better for charts)
-    snapshots.reverse()
+    for d in reversed(dates):
+        date_key = d.strftime("%Y-%m-%d")
+        if date_key in snapshots_by_date:
+            snapshots.append(snapshots_by_date[date_key])
     return snapshots
