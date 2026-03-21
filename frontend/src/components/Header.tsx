@@ -2,6 +2,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useShallow } from 'zustand/react/shallow'
 
 import Logo from '../components/Logo'
+import PiPButton from '../components/PiPButton'
 import { logout } from '../lib/api'
 import { useStore } from '../store/useStore'
 
@@ -58,6 +59,7 @@ export default function Header() {
               {snapshot.change >= 0 ? '+' : ''}{snapshot.change.toFixed(2)} ({snapshot.change_pct.toFixed(2)}%)
             </span>
           )}
+          <span className="md:hidden"><PiPButton /></span>
         </div>
       </div>
 
