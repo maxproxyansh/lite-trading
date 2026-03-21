@@ -2270,7 +2270,7 @@ def test_fetch_daily_candles_does_not_create_phantom_current_day_before_open(mon
     market_data_service.snapshot["day_low"] = None
 
     monkeypatch.setattr(
-        market_data_module,
+        market_hours,
         "now_ist",
         lambda: datetime(2026, 3, 13, 8, 45, tzinfo=market_hours.IST),
     )
@@ -2280,7 +2280,7 @@ def test_fetch_daily_candles_does_not_create_phantom_current_day_before_open(mon
 
     def fake_call(operation_name, fn, **kwargs):
         operations.append(operation_name)
-        if operation_name == "historical_daily_data":
+        if operation_name == "chart_historical_daily_data":
             return {
                 "timestamp": ["2026-03-12T00:00:00+00:00"],
                 "open": [22400.0],
@@ -2297,7 +2297,7 @@ def test_fetch_daily_candles_does_not_create_phantom_current_day_before_open(mon
 
     response = market_data_service._fetch_candles("D")
 
-    assert operations == ["historical_daily_data", "intraday_minute_data"]
+    assert operations == ["chart_historical_daily_data", "intraday_minute_data"]
     assert [candle["time"] for candle in response["candles"]] == [
         int(datetime(2026, 3, 12, tzinfo=market_hours.IST).timestamp()),
     ]
@@ -2313,14 +2313,14 @@ def test_fetch_daily_candles_builds_current_session_bar_from_intraday_history(mo
     market_data_service.snapshot["day_low"] = 22500.0
 
     monkeypatch.setattr(
-        market_data_module,
+        market_hours,
         "now_ist",
         lambda: datetime(2026, 3, 13, 10, 30, tzinfo=market_hours.IST),
     )
     monkeypatch.setattr(market_data_module, "is_trading_day", lambda: True)
 
     def fake_call(operation_name, fn, **kwargs):
-        if operation_name == "historical_daily_data":
+        if operation_name == "chart_historical_daily_data":
             return {
                 "timestamp": ["2026-03-12T00:00:00+00:00"],
                 "open": [22400.0],
@@ -2367,7 +2367,7 @@ def test_fetch_daily_candles_reapplies_live_overlay_when_session_cache_hits(monk
     market_data_service.snapshot["day_low"] = 22505.0
 
     monkeypatch.setattr(
-        market_data_module,
+        market_hours,
         "now_ist",
         lambda: datetime(2026, 3, 13, 10, 30, tzinfo=market_hours.IST),
     )
@@ -2376,7 +2376,7 @@ def test_fetch_daily_candles_reapplies_live_overlay_when_session_cache_hits(monk
     call_count = {"intraday": 0}
 
     def fake_call(operation_name, fn, **kwargs):
-        if operation_name == "historical_daily_data":
+        if operation_name == "chart_historical_daily_data":
             return {
                 "timestamp": ["2026-03-12T00:00:00+00:00"],
                 "open": [22400.0],
