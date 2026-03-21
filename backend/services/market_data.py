@@ -1773,6 +1773,7 @@ class MarketDataService:
         cached = self._candle_cache.get(cache_key)
         if cached is not None and now - cached[0] < ttl:
             payload = cached[1]
+            no_data = _payload_is_no_data(payload)
         elif timeframe in DAILY_HISTORY_TIMEFRAMES:
             try:
                 payload = dhan_credential_service.call(
@@ -1788,7 +1789,7 @@ class MarketDataService:
             except DhanApiError as exc:
                 if exc.reason == "DHAN_NO_DATA":
                     no_data = True
-                    payload = {}
+                    payload = {"errorCode": "DH-907", "errorMessage": "No data present"}
                 else:
                     raise
             payload = payload if isinstance(payload, dict) else {}
@@ -1810,7 +1811,7 @@ class MarketDataService:
             except DhanApiError as exc:
                 if exc.reason == "DHAN_NO_DATA":
                     no_data = True
-                    payload = {}
+                    payload = {"errorCode": "DH-907", "errorMessage": "No data present"}
                 else:
                     raise
             payload = payload if isinstance(payload, dict) else {}

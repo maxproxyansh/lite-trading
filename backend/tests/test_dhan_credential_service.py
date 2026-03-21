@@ -46,6 +46,7 @@ def _reset_db() -> None:
     [
         ("807", "Access token is expired", 401, "DHAN_AUTH_FAILED", True),
         ("808", "Authentication Failed - Client ID or Access Token invalid", 401, "DHAN_AUTH_FAILED", True),
+        ("DH-906", "Any broker wording can change", 400, "DHAN_AUTH_FAILED", True),
         ("806", "Data APIs not subscribed", 403, "DHAN_ACCESS_DENIED", False),
         ("DH-903", "Static IP mismatch for this request", 400, "DHAN_STATIC_IP_REJECTED", False),
         ("805", "Too many requests or connections", 429, "DHAN_RATE_LIMITED", False),
@@ -90,6 +91,10 @@ def test_request_json_uses_structured_error_fields() -> None:
         module.httpx.request = original_request
 
     assert exc_info.value.reason == "DHAN_INVALID_REQUEST"
+
+
+def test_classify_dhan_error_does_not_mark_rate_limit_as_auth_failure() -> None:
+    assert _classify_dhan_error("DH-904", "Too many requests", status=401) == ("DHAN_RATE_LIMITED", False)
 
 
 def test_unwrap_sdk_result_surfaces_no_data_reason() -> None:

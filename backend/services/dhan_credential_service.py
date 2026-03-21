@@ -42,7 +42,7 @@ INVALID_REQUEST_MARKERS = (
 )
 NO_DATA_MARKERS = ("no data", "no data present", "unable to fetch data", "empty data", "no records")
 
-_AUTH_ERROR_CODES = {"DH-901", "807", "808", "809", "810"}
+_AUTH_ERROR_CODES = {"DH-901", "DH-906", "807", "808", "809", "810"}
 _ACCESS_DENIED_CODES = {"DH-902", "806"}
 _ACCOUNT_ERROR_CODES = {"DH-903"}
 _RATE_LIMIT_CODES = {"DH-904", "805", "429"}
@@ -90,6 +90,12 @@ def _extract_error_details(payload: Any) -> tuple[str, str]:
     return error_code, error_message
 
 
+def _payload_is_no_data(payload: Any) -> bool:
+    error_code, error_message = _extract_error_details(payload)
+    reason, _ = _classify_dhan_error(error_code, error_message)
+    return reason == "DHAN_NO_DATA"
+
+
 def _classify_dhan_error(error_code: str | int | None, error_message: str | None, *, status: int = 0) -> tuple[str, bool]:
     code = _normalize_error_code(error_code or (str(status) if status else ""))
     msg = (error_message or "").strip()
@@ -99,7 +105,7 @@ def _classify_dhan_error(error_code: str | int | None, error_message: str | None
     if any(marker in msg_lower for marker in STATIC_IP_MARKERS):
         return "DHAN_STATIC_IP_REJECTED", False
     if code in _RATE_LIMIT_CODES or any(marker in msg_lower for marker in RATE_LIMIT_MARKERS):
-        return "DHAN_RATE_LIMITED", is_auth
+        return "DHAN_RATE_LIMITED", False
     if code in _ACCESS_DENIED_CODES or any(marker in msg_lower for marker in ACCESS_DENIED_MARKERS):
         return "DHAN_ACCESS_DENIED", False
     if code in _AUTH_ERROR_CODES or code in _AUTH_HTTP_CODES or status in {401, 403}:
