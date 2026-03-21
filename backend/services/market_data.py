@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+import market_hours
 import re
 import time
 from collections.abc import Awaitable, Callable
@@ -14,9 +15,11 @@ from dhanhq import dhanhq as Dhanhq
 from dhanhq.marketfeed import DhanFeed, Full, IDX, NSE_FNO, Quote
 
 from config import get_settings
+from database import SessionLocal
 from market_hours import IST, is_market_open, is_trading_day, market_status, now_ist
+from models import DhanInstrumentRegistry
 from schemas import DhanConsumerStateUpdateRequest, DhanProviderHealth, MarketSnapshot, OptionChainResponse
-from services.dhan_credential_service import DhanApiError, dhan_credential_service
+from services.dhan_credential_service import DhanApiError, _payload_is_no_data, dhan_credential_service
 from services.dhan_incident_service import dhan_incident_service
 from services.ops_alert_service import send_p0_slack_alert
 
@@ -64,6 +67,7 @@ CANDLE_CACHE_TTL = {
     "1m": 60, "5m": 60, "15m": 60, "1h": 60,  # intraday: 60s TTL
 }
 INDEX_SYMBOL_ALIASES = {"NIFTY", "NIFTY 50", "NIFTY50"}
+VIX_SYMBOL_ALIASES = {"INDIA VIX", "VIX", "INDIAVIX"}
 OPTION_SYMBOL_PATTERN = re.compile(r"^(?P<root>[A-Z0-9]+)_(?P<expiry>\d{4}-\d{2}-\d{2})_(?P<strike>\d+)_(?P<option_type>CE|PE)$")
 
 BroadcastFn = Callable[[str, dict[str, Any]], Awaitable[None]]
@@ -167,6 +171,133 @@ class MarketDataService:
         self._option_metadata: dict[str, CandleInstrument] = {}  # symbol -> CandleInstrument (survives chain refreshes)
         self._active_atm_strike: int | None = None
 
+    @staticmethod
+    def _normalize_expiry_value(value: str | None) -> str | None:
+        candidate = (value or "").strip()
+        if not candidate:
+            return None
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", candidate):
+            return candidate
+        try:
+            return datetime.fromisoformat(candidate.replace("Z", "+00:00")).date().isoformat()
+        except ValueError:
+            return None
+
+    @classmethod
+    def _normalize_expiries(cls, expiries: list[str]) -> list[str]:
+        normalized = {candidate for raw in expiries if (candidate := cls._normalize_expiry_value(raw))}
+        return sorted(normalized)
+
+    @staticmethod
+    def _registry_observed_at(value: datetime | None = None) -> datetime:
+        observed_at = value or datetime.now(timezone.utc)
+        return observed_at if observed_at.tzinfo else observed_at.replace(tzinfo=timezone.utc)
+
+    @staticmethod
+    def _registry_boundary_timestamp(value: datetime) -> int:
+        normalized = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        return int(normalized.astimezone(IST).replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
+
+    def _registry_target_from_record(self, record: DhanInstrumentRegistry) -> CandleInstrument:
+        return CandleInstrument(
+            symbol=record.symbol,
+            security_id=record.security_id,
+            exchange_segment=record.exchange_segment,
+            instrument_type=record.instrument_type,
+        )
+
+    def _lookup_registry_by_symbol(self, symbol: str) -> CandleInstrument | None:
+        with SessionLocal() as db:
+            record = (
+                db.query(DhanInstrumentRegistry)
+                .filter(DhanInstrumentRegistry.symbol == symbol)
+                .one_or_none()
+            )
+            if record is None:
+                return None
+            return self._registry_target_from_record(record)
+
+    def _lookup_registry_by_security_id(self, security_id: str) -> CandleInstrument | None:
+        with SessionLocal() as db:
+            record = (
+                db.query(DhanInstrumentRegistry)
+                .filter(DhanInstrumentRegistry.security_id == str(security_id))
+                .one_or_none()
+            )
+            if record is None:
+                return None
+            return self._registry_target_from_record(record)
+
+    def _registry_history_boundary(self, target: CandleInstrument) -> datetime | None:
+        if target.instrument_type != OPTION_INSTRUMENT_TYPE:
+            return None
+        with SessionLocal() as db:
+            record = (
+                db.query(DhanInstrumentRegistry)
+                .filter(DhanInstrumentRegistry.symbol == target.symbol)
+                .one_or_none()
+            )
+            if record is None:
+                return None
+            return record.first_seen
+
+    def _upsert_option_registry(
+        self,
+        quotes: dict[str, dict[str, Any]],
+        *,
+        observed_at: datetime | None = None,
+        first_seen_hint: datetime | None = None,
+    ) -> None:
+        if not quotes:
+            return
+        observed = self._registry_observed_at(observed_at)
+        first_seen_dt = self._registry_observed_at(first_seen_hint) if first_seen_hint else observed
+        with SessionLocal() as db:
+            for quote in quotes.values():
+                symbol = self._normalize_symbol(str(quote.get("symbol") or ""))
+                security_id = self._extract_security_id(quote)
+                parsed = self._parse_option_symbol(symbol or "")
+                if not symbol or not security_id or parsed is None:
+                    continue
+                expiry, strike, option_type = parsed
+                record = (
+                    db.query(DhanInstrumentRegistry)
+                    .filter(
+                        (DhanInstrumentRegistry.symbol == symbol)
+                        | (DhanInstrumentRegistry.security_id == str(security_id))
+                    )
+                    .one_or_none()
+                )
+                if record is None:
+                    record = DhanInstrumentRegistry(
+                        symbol=symbol,
+                        security_id=str(security_id),
+                        root_symbol="NIFTY",
+                        exchange_segment=OPTION_EXCHANGE_SEGMENT,
+                        instrument_type=OPTION_INSTRUMENT_TYPE,
+                        expiry=expiry,
+                        strike=strike,
+                        option_type=option_type,
+                        first_seen=first_seen_dt,
+                        last_seen=observed,
+                    )
+                    db.add(record)
+                    continue
+
+                record.symbol = symbol
+                record.security_id = str(security_id)
+                record.root_symbol = "NIFTY"
+                record.exchange_segment = OPTION_EXCHANGE_SEGMENT
+                record.instrument_type = OPTION_INSTRUMENT_TYPE
+                record.expiry = expiry
+                record.strike = strike
+                record.option_type = option_type
+                existing_first_seen = self._registry_observed_at(record.first_seen)
+                existing_last_seen = self._registry_observed_at(record.last_seen)
+                record.first_seen = min(existing_first_seen, first_seen_dt)
+                record.last_seen = max(existing_last_seen, observed)
+            db.commit()
+
     def set_broadcast(self, broadcast: BroadcastFn) -> None:
         self._broadcast = broadcast
 
@@ -182,12 +313,12 @@ class MarketDataService:
     @staticmethod
     def _history_anchor(before: int | None) -> datetime:
         if before is None:
-            return now_ist()
+            return market_hours.now_ist()
         return datetime.fromtimestamp(before, timezone.utc).astimezone(IST)
 
     @staticmethod
     def _market_today() -> date:
-        return now_ist().date()
+        return market_hours.now_ist().date()
 
     @staticmethod
     def _atm_strike_for_spot(spot: float | None) -> int | None:
@@ -236,12 +367,19 @@ class MarketDataService:
         if self._snapshot_task or self._feed_task or self._flush_task:
             return
         dhan_credential_service.initialize()
+        seed_spot = False
+        seed_vix = False
         try:
             await self.refresh()
         except Exception as exc:
             logger.error("Initial market data refresh failed (background loops will retry): %s", exc)
         if not self.last_known_spot or not self.last_known_prev_close:
+            seed_spot = True
             await self._seed_spot_from_history()
+        if not self.snapshot.get("vix"):
+            seed_vix = True
+            await self._seed_vix_from_history()
+        if seed_spot or seed_vix:
             await self._broadcast_snapshot()
         self._snapshot_task = asyncio.create_task(self._snapshot_loop())
         self._feed_task = asyncio.create_task(self._feed_loop())
@@ -253,7 +391,7 @@ class MarketDataService:
             today = self._market_today()
             payload = await asyncio.to_thread(
                 lambda: dhan_credential_service.call(
-                    "historical_daily_data",
+                    "bootstrap_spot_history",
                     lambda client: client.historical_daily_data(
                         security_id=NIFTY_INDEX_SECURITY_ID,
                         exchange_segment=INDEX_EXCHANGE_SEGMENT,
@@ -288,6 +426,35 @@ class MarketDataService:
                 logger.info("Seeded spot/change from history: spot=%.2f prev_close=%.2f", effective_spot, self.last_known_prev_close)
         except Exception as exc:
             logger.warning("Failed to seed spot from history: %s", exc)
+
+    async def _seed_vix_from_history(self) -> None:
+        """Seed VIX from the latest daily candle when the feed has not populated it yet."""
+        try:
+            today = date.today()
+            payload = await asyncio.to_thread(
+                lambda: dhan_credential_service.call(
+                    "bootstrap_vix_history",
+                    lambda client: client.historical_daily_data(
+                        security_id=VIX_INDEX_SECURITY_ID,
+                        exchange_segment=INDEX_EXCHANGE_SEGMENT,
+                        instrument_type="INDEX",
+                        from_date=(today - timedelta(days=7)).strftime("%Y-%m-%d"),
+                        to_date=today.strftime("%Y-%m-%d"),
+                    ),
+                ),
+            )
+            candles = self._map_candles(payload if isinstance(payload, dict) else {}, normalize_daily=True)
+            if not candles:
+                return
+            last_close = float(candles[-1]["close"])
+            if last_close <= 0:
+                return
+            self.snapshot["vix"] = last_close
+            self.last_vix_refresh = datetime.now(timezone.utc)
+            self.snapshot["updated_at"] = datetime.now(timezone.utc)
+            logger.info("Seeded VIX from history: vix=%.2f", last_close)
+        except Exception as exc:
+            logger.warning("Failed to seed VIX from history: %s", exc)
 
     async def stop(self) -> None:
         for task_name in ("_snapshot_task", "_feed_task", "_flush_task"):
@@ -773,6 +940,7 @@ class MarketDataService:
         self.active_expiry = expiry
         incoming_quotes = chain["quotes"]
         incoming_sid_map = chain["security_id_to_symbol"]
+        self._upsert_option_registry(incoming_quotes, observed_at=now)
 
         # Fields that only REST provides (WebSocket doesn't have these)
         REST_ONLY_FIELDS = ("iv", "delta", "gamma", "theta", "vega")
@@ -920,11 +1088,23 @@ class MarketDataService:
             quote = self._lookup_quote_by_security_id(normalized_security_id)
             if quote:
                 return self._history_target_from_quote(quote)
+            registry_target = self._lookup_registry_by_security_id(normalized_security_id)
+            if registry_target:
+                return registry_target
+            if normalized_symbol and self._parse_option_symbol(normalized_symbol) is not None:
+                return CandleInstrument(
+                    symbol=normalized_symbol,
+                    security_id=normalized_security_id,
+                    exchange_segment=OPTION_EXCHANGE_SEGMENT,
+                    instrument_type=OPTION_INSTRUMENT_TYPE,
+                )
             if not normalized_symbol:
                 raise CandleQueryError(status_code=404, detail="SECURITY_ID_NOT_AVAILABLE")
 
         if not normalized_symbol or normalized_symbol in INDEX_SYMBOL_ALIASES:
             return self._index_history_target()
+        if normalized_symbol in VIX_SYMBOL_ALIASES:
+            return self._vix_history_target()
 
         # Check cached option metadata first — avoids chain fetch entirely
         cached_target = self._option_metadata.get(normalized_symbol)
@@ -935,10 +1115,14 @@ class MarketDataService:
         if quote:
             return self._history_target_from_quote(quote)
 
+        registry_target = self._lookup_registry_by_symbol(normalized_symbol)
+        if registry_target:
+            return registry_target
+
         if self._parse_option_symbol(normalized_symbol) is None:
             raise CandleQueryError(
                 status_code=400,
-                detail="Unsupported symbol format. Expected NIFTY 50 or NIFTY_YYYY-MM-DD_STRIKE_CE|PE",
+                detail="Unsupported symbol format. Expected NIFTY 50, INDIA VIX/VIX, or NIFTY_YYYY-MM-DD_STRIKE_CE|PE",
             )
         raise CandleQueryError(status_code=404, detail="SYMBOL_NOT_AVAILABLE")
 
@@ -977,7 +1161,18 @@ class MarketDataService:
 
     @staticmethod
     def _current_bucket_time(timeframe: str) -> int:
-        now = now_ist()
+        now = market_hours.now_ist()
+        if timeframe in INTRADAY_INTERVALS:
+            interval = INTRADAY_INTERVALS[timeframe]
+            if interval == 60:
+                bucket_dt = now.replace(minute=0, second=0, microsecond=0)
+            else:
+                bucket_dt = now.replace(
+                    minute=(now.minute // interval) * interval,
+                    second=0,
+                    microsecond=0,
+                )
+            return int(bucket_dt.timestamp())
         if timeframe == "W":
             bucket_date = now.date() - timedelta(days=now.weekday())
         elif timeframe == "M":
@@ -999,6 +1194,13 @@ class MarketDataService:
             return candles
 
         bucket_time = MarketDataService._current_bucket_time(timeframe)
+        if candles and bucket_time < int(candles[-1]["time"]):
+            return candles
+        if timeframe in INTRADAY_INTERVALS and candles:
+            bucket_dt = datetime.fromtimestamp(bucket_time, timezone.utc).astimezone(IST)
+            last_dt = datetime.fromtimestamp(int(candles[-1]["time"]), timezone.utc).astimezone(IST)
+            if bucket_dt.date() != last_dt.date():
+                return candles
         if candles and int(candles[-1]["time"]) == bucket_time:
             last = candles[-1]
             high = max(float(last["high"]), live_price)
@@ -1093,6 +1295,9 @@ class MarketDataService:
             live_spot = self._safe_float(self.snapshot.get("spot"))
             price = live_spot if live_spot and live_spot > 0 else self.last_known_spot or None
             return price, self._safe_float(self.snapshot.get("day_high")), self._safe_float(self.snapshot.get("day_low"))
+        if target.security_id == VIX_INDEX_SECURITY_ID:
+            live_vix = self._safe_float(self.snapshot.get("vix"))
+            return (live_vix if live_vix and live_vix > 0 else None), None, None
 
         quote = self._lookup_quote_by_security_id(target.security_id)
         if not quote:
@@ -1123,9 +1328,10 @@ class MarketDataService:
                         break
             elif item:
                 candidate = str(item)
-            if candidate and re.fullmatch(r"\d{4}-\d{2}-\d{2}", candidate):
-                expiries.append(candidate)
-        return expiries
+            normalized = self._normalize_expiry_value(candidate)
+            if normalized:
+                expiries.append(normalized)
+        return self._normalize_expiries(expiries)
 
     def _fetch_option_chain_cached(self, expiry: str) -> dict[str, Any] | None:
         """Return a recent chain result if available, otherwise fetch fresh."""
@@ -1145,6 +1351,7 @@ class MarketDataService:
                         exchange_segment=OPTION_EXCHANGE_SEGMENT,
                         instrument_type=OPTION_INSTRUMENT_TYPE,
                     )
+            self._upsert_option_registry(result.get("quotes", {}))
         return result
 
     def _fetch_option_chain(self, expiry: str) -> dict[str, Any] | None:
@@ -1502,7 +1709,12 @@ class MarketDataService:
                 future.set_exception(exc)
             raise
         except DhanApiError as exc:
-            err = CandleQueryError(status_code=503, detail=exc.reason)
+            status_code = 503
+            if exc.reason == "DHAN_INVALID_REQUEST":
+                status_code = 400
+            elif exc.reason == "DHAN_RATE_LIMITED":
+                status_code = 429
+            err = CandleQueryError(status_code=status_code, detail=exc.reason)
             if not future.done():
                 future.set_exception(err)
             raise err from exc
@@ -1531,6 +1743,21 @@ class MarketDataService:
     ) -> dict[str, Any]:
         target = self._resolve_candle_target(symbol=symbol, security_id=security_id)
         lower_date, upper_date, oldest_date = self._history_window(timeframe, before)
+        first_seen_boundary = self._registry_history_boundary(target)
+        if (
+            timeframe in DAILY_HISTORY_TIMEFRAMES
+            and before is not None
+            and first_seen_boundary is not None
+            and before <= self._registry_boundary_timestamp(first_seen_boundary)
+        ):
+            return {
+                "timeframe": timeframe,
+                "candles": [],
+                "source": "registry",
+                "degraded": False,
+                "has_more": False,
+                "next_before": None,
+            }
 
         # --- candle cache lookup / fetch ---
         # For the current window (not scrolling back), key on (security_id, timeframe)
@@ -1546,31 +1773,55 @@ class MarketDataService:
         if cached is not None and now - cached[0] < ttl:
             payload = cached[1]
         elif timeframe in DAILY_HISTORY_TIMEFRAMES:
-            payload = dhan_credential_service.call(
-                "historical_daily_data",
-                lambda dhan_client: dhan_client.historical_daily_data(
-                    security_id=target.security_id,
-                    exchange_segment=target.exchange_segment,
-                    instrument_type=target.instrument_type,
-                    from_date=lower_date.strftime("%Y-%m-%d"),
-                    to_date=upper_date.strftime("%Y-%m-%d"),
-                ),
-            )
+            try:
+                payload = dhan_credential_service.call(
+                    "chart_historical_daily_data",
+                    lambda dhan_client: dhan_client.historical_daily_data(
+                        security_id=target.security_id,
+                        exchange_segment=target.exchange_segment,
+                        instrument_type=target.instrument_type,
+                        from_date=lower_date.strftime("%Y-%m-%d"),
+                        to_date=upper_date.strftime("%Y-%m-%d"),
+                    ),
+                )
+            except DhanApiError as exc:
+                if exc.reason == "DHAN_NO_DATA":
+                    return {
+                        "timeframe": timeframe,
+                        "candles": [],
+                        "source": "dhan",
+                        "degraded": False,
+                        "has_more": False,
+                        "next_before": None,
+                    }
+                raise
             payload = payload if isinstance(payload, dict) else {}
             self._candle_cache[cache_key] = (now, payload)
         else:
             interval = INTRADAY_INTERVALS.get(timeframe, INTRADAY_INTERVALS["15m"])
-            payload = dhan_credential_service.call(
-                "intraday_minute_data",
-                lambda dhan_client: dhan_client.intraday_minute_data(
-                    security_id=target.security_id,
-                    exchange_segment=target.exchange_segment,
-                    instrument_type=target.instrument_type,
-                    from_date=lower_date.strftime("%Y-%m-%d"),
-                    to_date=upper_date.strftime("%Y-%m-%d"),
-                    interval=interval,
-                ),
-            )
+            try:
+                payload = dhan_credential_service.call(
+                    "chart_intraday_minute_data",
+                    lambda dhan_client: dhan_client.intraday_minute_data(
+                        security_id=target.security_id,
+                        exchange_segment=target.exchange_segment,
+                        instrument_type=target.instrument_type,
+                        from_date=lower_date.strftime("%Y-%m-%d"),
+                        to_date=upper_date.strftime("%Y-%m-%d"),
+                        interval=interval,
+                    ),
+                )
+            except DhanApiError as exc:
+                if exc.reason == "DHAN_NO_DATA":
+                    return {
+                        "timeframe": timeframe,
+                        "candles": [],
+                        "source": "dhan",
+                        "degraded": False,
+                        "has_more": False,
+                        "next_before": None,
+                    }
+                raise
             payload = payload if isinstance(payload, dict) else {}
             self._candle_cache[cache_key] = (now, payload)
 
@@ -1616,19 +1867,45 @@ class MarketDataService:
                         candles = [*candles, live_session_candle]
         else:
             candles = self._map_candles(payload)
+            if before is None and market_status() == "OPEN":
+                live_price, day_high, day_low = self._live_ohlc_for_target(target)
+                candles = self._overlay_live_price(
+                    candles,
+                    timeframe=timeframe,
+                    live_price=live_price,
+                    day_high=day_high,
+                    day_low=day_low,
+                )
 
         candles = self._filter_history_before(candles, before)
-        has_more = lower_date > oldest_date
+        if candles and target.instrument_type == OPTION_INSTRUMENT_TYPE:
+            first_seen_at = datetime.fromtimestamp(int(candles[0]["time"]), timezone.utc)
+            last_seen_at = datetime.fromtimestamp(int(candles[-1]["time"]), timezone.utc)
+            self._upsert_option_registry(
+                {
+                    target.symbol: {
+                        "symbol": target.symbol,
+                        "security_id": target.security_id,
+                    }
+                },
+                observed_at=last_seen_at,
+                first_seen_hint=first_seen_at,
+            )
+            normalized_first_seen_boundary = self._registry_observed_at(first_seen_boundary) if first_seen_boundary else None
+            first_seen_boundary = first_seen_at if normalized_first_seen_boundary is None else min(normalized_first_seen_boundary, first_seen_at)
+        normalized_boundary = self._registry_observed_at(first_seen_boundary) if first_seen_boundary else None
+        boundary_date = normalized_boundary.astimezone(IST).date() if normalized_boundary else oldest_date
+        has_more = lower_date > max(oldest_date, boundary_date)
         return {
             "timeframe": timeframe,
             "candles": candles,
             "source": "dhan",
-            "degraded": not candles,
+            "degraded": False if before is not None and not candles else not candles,
             "has_more": has_more,
             "next_before": self._next_history_cursor(
                 candles,
                 lower_date=lower_date,
-                oldest_date=oldest_date,
+                oldest_date=max(oldest_date, boundary_date),
                 has_more=has_more,
             ),
         }

@@ -304,6 +304,26 @@ class ServiceCredential(Base, BaseModelMixin):
     last_lease_issued_at = Column(DateTime(timezone=True))
 
 
+class DhanInstrumentRegistry(Base, BaseModelMixin):
+    __tablename__ = "dhan_instrument_registry"
+    __table_args__ = (
+        UniqueConstraint("symbol", name="uq_dhan_instrument_registry_symbol"),
+        UniqueConstraint("security_id", name="uq_dhan_instrument_registry_security_id"),
+        Index("ix_dhan_instrument_registry_expiry", "expiry"),
+    )
+
+    symbol = Column(String(128), nullable=False, index=True)
+    security_id = Column(String(64), nullable=False, index=True)
+    root_symbol = Column(String(32), nullable=False, default="NIFTY")
+    exchange_segment = Column(String(32), nullable=False)
+    instrument_type = Column(String(32), nullable=False)
+    expiry = Column(String(32), nullable=False)
+    strike = Column(Integer, nullable=False)
+    option_type = Column(String(8), nullable=False)
+    first_seen = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+    last_seen = Column(DateTime(timezone=True), nullable=False, default=utcnow, index=True)
+
+
 class DhanIncident(Base, BaseModelMixin):
     __tablename__ = "dhan_incidents"
 
