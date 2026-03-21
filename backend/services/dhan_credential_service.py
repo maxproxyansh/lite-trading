@@ -253,7 +253,7 @@ _api_rate_limiter = DhanRateLimiter(
     rate_per_second=max(settings.dhan_api_rate_limit_per_minute, 1) / 60.0,
     capacity=max(settings.dhan_api_rate_limit_per_minute, 1),
     burst_cap=5,  # Never burst more than 5 requests even after idle
-    reserved_capacity=1,  # Keep one request available for auth/profile recovery or chain refreshes.
+    reserved_capacity=3,  # Preserve enough headroom for profile -> regen -> profile recovery.
 )
 
 
@@ -377,8 +377,8 @@ class DhanCredentialService:
             raise DhanApiError("DHAN_RATE_LIMITED", f"{operation_name} blocked: rate limiter exhausted")
 
     def call(self, operation_name: str, fn: Callable[[Dhanhq], T], *, allow_auth_retry: bool = True) -> T:
-        self._acquire_budget(operation_name)
         self.ensure_token_fresh()
+        self._acquire_budget(operation_name)
         for attempt in (1, 2):
             try:
                 result = fn(self.create_client())

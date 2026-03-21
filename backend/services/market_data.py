@@ -80,6 +80,7 @@ class CandleInstrument:
     security_id: str
     exchange_segment: str
     instrument_type: str
+    trusted: bool = True
 
 
 class CandleQueryError(Exception):
@@ -388,7 +389,6 @@ class MarketDataService:
     async def _seed_spot_from_history(self) -> None:
         """Seed snapshot spot from the last daily candle (works on weekends/holidays)."""
         try:
-            today = self._market_today()
             payload = await asyncio.to_thread(
                 lambda: dhan_credential_service.call(
                     "bootstrap_spot_history",
@@ -396,8 +396,8 @@ class MarketDataService:
                         security_id=NIFTY_INDEX_SECURITY_ID,
                         exchange_segment=INDEX_EXCHANGE_SEGMENT,
                         instrument_type="INDEX",
-                        from_date=(today - timedelta(days=7)).strftime("%Y-%m-%d"),
-                        to_date=today.strftime("%Y-%m-%d"),
+                        from_date=(market_hours.now_ist().date() - timedelta(days=7)).strftime("%Y-%m-%d"),
+                        to_date=market_hours.now_ist().date().strftime("%Y-%m-%d"),
                     ),
                 ),
             )
@@ -430,7 +430,6 @@ class MarketDataService:
     async def _seed_vix_from_history(self) -> None:
         """Seed VIX from the latest daily candle when the feed has not populated it yet."""
         try:
-            today = date.today()
             payload = await asyncio.to_thread(
                 lambda: dhan_credential_service.call(
                     "bootstrap_vix_history",
@@ -438,8 +437,8 @@ class MarketDataService:
                         security_id=VIX_INDEX_SECURITY_ID,
                         exchange_segment=INDEX_EXCHANGE_SEGMENT,
                         instrument_type="INDEX",
-                        from_date=(today - timedelta(days=7)).strftime("%Y-%m-%d"),
-                        to_date=today.strftime("%Y-%m-%d"),
+                        from_date=(market_hours.now_ist().date() - timedelta(days=7)).strftime("%Y-%m-%d"),
+                        to_date=market_hours.now_ist().date().strftime("%Y-%m-%d"),
                     ),
                 ),
             )
@@ -1097,6 +1096,7 @@ class MarketDataService:
                     security_id=normalized_security_id,
                     exchange_segment=OPTION_EXCHANGE_SEGMENT,
                     instrument_type=OPTION_INSTRUMENT_TYPE,
+                    trusted=False,
                 )
             if not normalized_symbol:
                 raise CandleQueryError(status_code=404, detail="SECURITY_ID_NOT_AVAILABLE")
@@ -1199,7 +1199,7 @@ class MarketDataService:
         if timeframe in INTRADAY_INTERVALS and candles:
             bucket_dt = datetime.fromtimestamp(bucket_time, timezone.utc).astimezone(IST)
             last_dt = datetime.fromtimestamp(int(candles[-1]["time"]), timezone.utc).astimezone(IST)
-            if bucket_dt.date() != last_dt.date():
+            if last_dt.date() < bucket_dt.date() - timedelta(days=1):
                 return candles
         if candles and int(candles[-1]["time"]) == bucket_time:
             last = candles[-1]
@@ -1744,6 +1744,7 @@ class MarketDataService:
         target = self._resolve_candle_target(symbol=symbol, security_id=security_id)
         lower_date, upper_date, oldest_date = self._history_window(timeframe, before)
         first_seen_boundary = self._registry_history_boundary(target)
+        no_data = False
         if (
             timeframe in DAILY_HISTORY_TIMEFRAMES
             and before is not None
@@ -1786,15 +1787,10 @@ class MarketDataService:
                 )
             except DhanApiError as exc:
                 if exc.reason == "DHAN_NO_DATA":
-                    return {
-                        "timeframe": timeframe,
-                        "candles": [],
-                        "source": "dhan",
-                        "degraded": False,
-                        "has_more": False,
-                        "next_before": None,
-                    }
-                raise
+                    no_data = True
+                    payload = {}
+                else:
+                    raise
             payload = payload if isinstance(payload, dict) else {}
             self._candle_cache[cache_key] = (now, payload)
         else:
@@ -1813,15 +1809,10 @@ class MarketDataService:
                 )
             except DhanApiError as exc:
                 if exc.reason == "DHAN_NO_DATA":
-                    return {
-                        "timeframe": timeframe,
-                        "candles": [],
-                        "source": "dhan",
-                        "degraded": False,
-                        "has_more": False,
-                        "next_before": None,
-                    }
-                raise
+                    no_data = True
+                    payload = {}
+                else:
+                    raise
             payload = payload if isinstance(payload, dict) else {}
             self._candle_cache[cache_key] = (now, payload)
 
@@ -1878,7 +1869,7 @@ class MarketDataService:
                 )
 
         candles = self._filter_history_before(candles, before)
-        if candles and target.instrument_type == OPTION_INSTRUMENT_TYPE:
+        if candles and target.instrument_type == OPTION_INSTRUMENT_TYPE and target.trusted and timeframe == "D":
             first_seen_at = datetime.fromtimestamp(int(candles[0]["time"]), timezone.utc)
             last_seen_at = datetime.fromtimestamp(int(candles[-1]["time"]), timezone.utc)
             self._upsert_option_registry(
@@ -1900,7 +1891,7 @@ class MarketDataService:
             "timeframe": timeframe,
             "candles": candles,
             "source": "dhan",
-            "degraded": False if before is not None and not candles else not candles,
+            "degraded": False if no_data or (before is not None and not candles) else not candles,
             "has_more": has_more,
             "next_before": self._next_history_cursor(
                 candles,
