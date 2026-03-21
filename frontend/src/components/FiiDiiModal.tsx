@@ -13,7 +13,8 @@ const AMBER = '#f59e0b'
 
 function fmt(n: number): string {
   const abs = Math.abs(n)
-  if (abs >= 100000) return `${(n / 1000).toFixed(1)}K`
+  if (abs >= 10000000) return `${(n / 10000000).toFixed(1)}Cr`
+  if (abs >= 100000) return `${(n / 100000).toFixed(1)}L`
   if (abs >= 1000) return `${(n / 1000).toFixed(1)}K`
   return n.toLocaleString('en-IN')
 }

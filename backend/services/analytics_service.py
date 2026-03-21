@@ -260,16 +260,18 @@ def _risk_ratios(trades: list[DetailedTradeSummary], starting_cash: float) -> tu
         equity_curve.append(AnalyticsPoint(label=trade.exit_time.isoformat(), value=float(equity)))
         drawdown_curve.append(AnalyticsPoint(label=trade.exit_time.isoformat(), value=drawdown))
 
-    mean_return = sum(returns) / len(returns)
-    variance = sum((value - mean_return) ** 2 for value in returns) / len(returns) if returns else 0.0
+    n = len(returns)
+    mean_return = sum(returns) / n
+    variance = sum((value - mean_return) ** 2 for value in returns) / (n - 1) if n > 1 else 0.0
     downside_mean = sum(downside_returns) / len(downside_returns) if downside_returns else 0.0
     downside_variance = (
-        sum((value - downside_mean) ** 2 for value in downside_returns) / len(downside_returns)
-        if downside_returns
+        sum((value - downside_mean) ** 2 for value in downside_returns) / (len(downside_returns) - 1)
+        if len(downside_returns) > 1
         else 0.0
     )
-    sharpe = (mean_return / sqrt(variance)) * sqrt(len(returns)) if variance > 0 else 0.0
-    sortino = (mean_return / sqrt(downside_variance)) * sqrt(len(returns)) if downside_variance > 0 else 0.0
+    annualize = sqrt(252)
+    sharpe = (mean_return / sqrt(variance)) * annualize if variance > 0 else 0.0
+    sortino = (mean_return / sqrt(downside_variance)) * annualize if downside_variance > 0 else 0.0
     max_drawdown = max((point.value for point in drawdown_curve), default=0.0)
     total_return = (float(equity) - starting_cash) / max(starting_cash, 1.0)
     calmar = total_return / (max_drawdown / max(starting_cash, 1.0)) if max_drawdown > 0 else 0.0
@@ -494,8 +496,9 @@ def enriched_analytics_summary(db: Session, portfolio_id: str) -> EnrichedAnalyt
     avg_loss = abs(total_loss_pnl / len(losses)) if losses else 0.0
 
     # Expectancy: avg_win * win_prob - avg_loss * loss_prob
-    win_prob = len(wins) / total if total else 0.0
-    loss_prob = len(losses) / total if total else 0.0
+    decided = len(wins) + len(losses)
+    win_prob = len(wins) / decided if decided else 0.0
+    loss_prob = len(losses) / decided if decided else 0.0
     expectancy = round(avg_win * win_prob - avg_loss * loss_prob, 2)
 
     # Risk/reward: avg_win / avg_loss

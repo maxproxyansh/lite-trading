@@ -220,9 +220,47 @@ class MarketDataService:
             await self.refresh()
         except Exception as exc:
             logger.error("Initial market data refresh failed (background loops will retry): %s", exc)
+        if not self.last_known_spot:
+            await self._seed_spot_from_history()
         self._snapshot_task = asyncio.create_task(self._snapshot_loop())
         self._feed_task = asyncio.create_task(self._feed_loop())
         self._flush_task = asyncio.create_task(self._flush_loop())
+
+    async def _seed_spot_from_history(self) -> None:
+        """Seed snapshot spot from the last daily candle (works on weekends/holidays)."""
+        try:
+            today = date.today()
+            payload = await asyncio.to_thread(
+                lambda: dhan_credential_service.call(
+                    "historical_daily_data",
+                    lambda client: client.historical_daily_data(
+                        security_id=NIFTY_INDEX_SECURITY_ID,
+                        exchange_segment=INDEX_EXCHANGE_SEGMENT,
+                        instrument_type="INDEX",
+                        from_date=(today - timedelta(days=7)).strftime("%Y-%m-%d"),
+                        to_date=today.strftime("%Y-%m-%d"),
+                    ),
+                ),
+            )
+            candles = self._map_candles(payload if isinstance(payload, dict) else {})
+            if candles:
+                last = candles[-1]
+                self.last_known_spot = float(last["close"])
+                self.snapshot["spot"] = self.last_known_spot
+                self.snapshot["updated_at"] = datetime.now(timezone.utc)
+                # If we have at least 2 candles, compute change from prev close
+                if len(candles) >= 2:
+                    prev_close = float(candles[-2]["close"])
+                    self.last_known_prev_close = prev_close
+                    change = round(self.last_known_spot - prev_close, 2)
+                    change_pct = round((change / prev_close) * 100, 2) if prev_close else 0.0
+                    self.last_known_change = change
+                    self.last_known_change_pct = change_pct
+                    self.snapshot["change"] = change
+                    self.snapshot["change_pct"] = change_pct
+                logger.info("Seeded spot from history: %.2f", self.last_known_spot)
+        except Exception as exc:
+            logger.warning("Failed to seed spot from history: %s", exc)
 
     async def stop(self) -> None:
         for task_name in ("_snapshot_task", "_feed_task", "_flush_task"):
@@ -727,7 +765,12 @@ class MarketDataService:
         self._health.last_option_chain_success_at = now
         self._health.last_market_data_at = now
 
-        # Only update OI/PCR and metadata — NEVER touch spot/change/vix (WebSocket owns those)
+        # Seed spot from REST if WebSocket hasn't provided it yet (e.g. weekends, startup)
+        rest_spot = chain.get("spot")
+        if rest_spot and rest_spot > 0 and not self.last_known_spot:
+            self.last_known_spot = rest_spot
+            self.snapshot["spot"] = rest_spot
+
         pcr = round(chain["total_put_oi"] / chain["total_call_oi"], 2) if chain.get("total_call_oi") else None
         self.snapshot["pcr"] = pcr
         self.snapshot["pcr_scope"] = PCR_SCOPE
@@ -1083,34 +1126,29 @@ class MarketDataService:
             "security_id_to_symbol": security_id_to_symbol,
             "total_call_oi": total_call_oi,
             "total_put_oi": total_put_oi,
+            "spot": spot if spot else None,
         }
 
     def _map_option_quote(self, payload: dict[str, Any], expiry: str, strike: int, option_type: str) -> dict[str, Any]:
-        best_bid = (
-            payload.get("best_bid_price")
-            or payload.get("top_bid_price")
-            or payload.get("bid")
-            or payload.get("bestBidPrice")
-            or payload.get("topBidPrice")
+        best_bid = next(
+            (v for k in ("best_bid_price", "top_bid_price", "bid", "bestBidPrice", "topBidPrice")
+             if (v := payload.get(k)) is not None),
+            None,
         )
-        best_ask = (
-            payload.get("best_ask_price")
-            or payload.get("top_ask_price")
-            or payload.get("ask")
-            or payload.get("bestAskPrice")
-            or payload.get("topAskPrice")
+        best_ask = next(
+            (v for k in ("best_ask_price", "top_ask_price", "ask", "bestAskPrice", "topAskPrice")
+             if (v := payload.get(k)) is not None),
+            None,
         )
-        bid_qty = (
-            payload.get("best_bid_qty")
-            or payload.get("top_bid_quantity")
-            or payload.get("bestBidQty")
-            or payload.get("topBidQuantity")
+        bid_qty = next(
+            (v for k in ("best_bid_qty", "top_bid_quantity", "bestBidQty", "topBidQuantity")
+             if (v := payload.get(k)) is not None),
+            None,
         )
-        ask_qty = (
-            payload.get("best_ask_qty")
-            or payload.get("top_ask_quantity")
-            or payload.get("bestAskQty")
-            or payload.get("topAskQuantity")
+        ask_qty = next(
+            (v for k in ("best_ask_qty", "top_ask_quantity", "bestAskQty", "topAskQuantity")
+             if (v := payload.get(k)) is not None),
+            None,
         )
         greeks = payload.get("greeks", {}) or {}
         symbol = self.resolve_symbol(expiry=expiry, strike=strike, option_type=option_type)
@@ -1121,14 +1159,14 @@ class MarketDataService:
             "strike": strike,
             "option_type": option_type,
             "expiry": expiry,
-            "ltp": float(payload.get("last_price") or payload.get("ltp") or 0.0),
+            "ltp": self._safe_float(payload.get("last_price") or payload.get("ltp")),
             "bid": float(best_bid) if best_bid is not None else None,
             "ask": float(best_ask) if best_ask is not None else None,
-            "bid_qty": int(bid_qty) if bid_qty else None,
-            "ask_qty": int(ask_qty) if ask_qty else None,
+            "bid_qty": self._safe_int(bid_qty),
+            "ask_qty": self._safe_int(ask_qty),
             "iv": self._safe_float(payload.get("implied_volatility") or payload.get("iv")),
             "oi": raw_oi,
-            "oi_lakhs": round(raw_oi / 100000, 2) if raw_oi else None,
+            "oi_lakhs": round(raw_oi / 100000, 2) if raw_oi is not None else None,
             "volume": self._safe_float(payload.get("volume") or payload.get("traded_volume")),
             "delta": self._safe_float(greeks.get("delta")),
             "gamma": self._safe_float(greeks.get("gamma")),
@@ -1237,7 +1275,7 @@ class MarketDataService:
         oi = self._safe_float(payload.get("OI"))
         if oi is not None and quote.get("oi") != oi:
             quote["oi"] = oi
-            quote["oi_lakhs"] = round(oi / 100000, 2) if oi else None
+            quote["oi_lakhs"] = round(oi / 100000, 2) if oi is not None else None
             self._pcr_dirty = True
             changed = True
 

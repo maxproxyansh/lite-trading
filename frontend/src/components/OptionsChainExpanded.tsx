@@ -78,7 +78,7 @@ const OptionsChainExpandedRow = memo(function OptionsChainExpandedRow({
         </div>
 
         <div className="flex items-center justify-center text-[9px] tabular-nums text-[#555]">
-          {row.call.iv != null ? row.call.iv.toFixed(1) : '--'}
+          {row.call.iv != null ? row.call.iv.toFixed(2) : '--'}
         </div>
 
         <div
@@ -186,7 +186,7 @@ const OptionsChainExpandedRow = memo(function OptionsChainExpandedRow({
         </div>
 
         <div className="flex items-center justify-center text-[9px] tabular-nums text-[#555]">
-          {row.put.iv != null ? row.put.iv.toFixed(1) : '--'}
+          {row.put.iv != null ? row.put.iv.toFixed(2) : '--'}
         </div>
 
         <div className="relative flex items-center justify-start overflow-hidden" style={{ borderRadius: 1 }}>

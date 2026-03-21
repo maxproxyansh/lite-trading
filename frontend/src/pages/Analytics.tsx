@@ -28,7 +28,7 @@ function fmt(v: number): string {
 }
 function fmtCompact(v: number): string {
   const abs = Math.abs(v)
-  if (abs >= 100000) return `\u20B9${(abs / 100000).toFixed(1)}L`
+  if (abs >= 100000) return `\u20B9${(abs / 100000).toFixed(2)}L`
   if (abs >= 1000) return `\u20B9${(abs / 1000).toFixed(1)}K`
   return `\u20B9${abs.toFixed(0)}`
 }

@@ -99,7 +99,7 @@ async def global_markets(_actor=Depends(get_current_user_or_agent)):
             raw = resp.json()
     except Exception as exc:
         if _global_cache["data"]:
-            return _global_cache["data"]
+            return {**_global_cache["data"], "stale": True, "cached_at": _global_cache["ts"]}
         raise HTTPException(status_code=503, detail=f"Failed to fetch global markets: {exc}") from exc
 
     sym_lookup = {s["ticker"]: s for s in _GLOBAL_SYMBOLS}

@@ -73,7 +73,7 @@ def close(
             option_type=order.option_type,
             product=order.product,
             net_quantity=0,
-            lot_size=25,
+            lot_size=pos.lot_size,
             average_open_price=0.0,
             last_price=order.average_price or 0.0,
             blocked_margin=0.0,
