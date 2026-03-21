@@ -14,7 +14,7 @@ from dhanhq import dhanhq as Dhanhq
 from dhanhq.marketfeed import DhanFeed, Full, IDX, NSE_FNO, Quote
 
 from config import get_settings
-from market_hours import IST, is_market_open, is_trading_day, market_status
+from market_hours import IST, is_market_open, is_trading_day, market_status, now_ist
 from schemas import DhanConsumerStateUpdateRequest, DhanProviderHealth, MarketSnapshot, OptionChainResponse
 from services.dhan_credential_service import DhanApiError, dhan_credential_service
 from services.dhan_incident_service import dhan_incident_service
@@ -157,12 +157,15 @@ class MarketDataService:
         self._security_id_to_symbol: dict[str, str] = {}
         self._dirty_quote_symbols: set[str] = set()
         self._snapshot_dirty = False
+        self._chain_dirty = False
         self._pcr_dirty = False
         self._candle_cache: dict[tuple, tuple[float, dict[str, Any]]] = {}  # (sec_id, tf, from, to) -> (ts, data)
+        self._live_session_candle_cache: dict[tuple[str, str, str], tuple[float, dict[str, Any] | None]] = {}
         self._chain_cache: dict[str, tuple[float, dict[str, Any]]] = {}  # expiry -> (monotonic_ts, chain_result)
         self._chain_cache_ttl: float = 5.0  # reuse chain results fetched within 5 seconds
         self._inflight_candles: dict[tuple, asyncio.Future] = {}  # dedup concurrent candle requests
         self._option_metadata: dict[str, CandleInstrument] = {}  # symbol -> CandleInstrument (survives chain refreshes)
+        self._active_atm_strike: int | None = None
 
     def set_broadcast(self, broadcast: BroadcastFn) -> None:
         self._broadcast = broadcast
@@ -179,8 +182,25 @@ class MarketDataService:
     @staticmethod
     def _history_anchor(before: int | None) -> datetime:
         if before is None:
-            return datetime.now(IST)
+            return now_ist()
         return datetime.fromtimestamp(before, timezone.utc).astimezone(IST)
+
+    @staticmethod
+    def _market_today() -> date:
+        return now_ist().date()
+
+    @staticmethod
+    def _atm_strike_for_spot(spot: float | None) -> int | None:
+        if spot is None or spot <= 0:
+            return None
+        return int(math.floor((spot + 25) / 50) * 50)
+
+    def _refresh_active_atm_strike(self, spot: float | None) -> bool:
+        next_atm = self._atm_strike_for_spot(spot)
+        if self._active_atm_strike == next_atm:
+            return False
+        self._active_atm_strike = next_atm
+        return True
 
     def _history_window(self, timeframe: str, before: int | None) -> tuple[date, date, date]:
         anchor = self._history_anchor(before)
@@ -230,7 +250,7 @@ class MarketDataService:
     async def _seed_spot_from_history(self) -> None:
         """Seed snapshot spot from the last daily candle (works on weekends/holidays)."""
         try:
-            today = date.today()
+            today = self._market_today()
             payload = await asyncio.to_thread(
                 lambda: dhan_credential_service.call(
                     "historical_daily_data",
@@ -255,7 +275,7 @@ class MarketDataService:
                 self.snapshot["updated_at"] = datetime.now(timezone.utc)
                 if len(candles) >= 2:
                     last_candle_date = datetime.fromtimestamp(int(last["time"]), timezone.utc).astimezone(IST).date()
-                    current_ist_date = datetime.now(IST).date()
+                    current_ist_date = self._market_today()
                     use_latest_close_as_prev = had_live_spot and is_market_open() and last_candle_date < current_ist_date
                     prev_close = float(last["close"] if use_latest_close_as_prev else candles[-2]["close"])
                     self.last_known_prev_close = prev_close
@@ -289,10 +309,13 @@ class MarketDataService:
         self._security_id_to_symbol = {}
         self._dirty_quote_symbols = set()
         self._snapshot_dirty = False
+        self._chain_dirty = False
         self._pcr_dirty = False
         self._candle_cache.clear()
+        self._live_session_candle_cache.clear()
         self._chain_cache.clear()
         self._option_metadata.clear()
+        self._active_atm_strike = None
         dhan_incident_service.reset_runtime_state_for_tests()
 
     def get_provider_health(self) -> DhanProviderHealth:
@@ -538,12 +561,17 @@ class MarketDataService:
                 dirty_symbols = tuple(self._dirty_quote_symbols)
                 self._dirty_quote_symbols = set()
             snapshot_dirty = self._snapshot_dirty
-            if not dirty_symbols and not snapshot_dirty:
+            chain_dirty = self._chain_dirty
+            if not dirty_symbols and not snapshot_dirty and not chain_dirty:
                 continue
 
             if snapshot_dirty:
                 await self._broadcast_snapshot()
                 self._snapshot_dirty = False
+
+            if chain_dirty:
+                await self._broadcast_chain()
+                self._chain_dirty = False
 
             if dirty_symbols:
                 if self._broadcast:
@@ -655,8 +683,9 @@ class MarketDataService:
         if self.active_expiry:
             try:
                 expiry_date = datetime.strptime(self.active_expiry, "%Y-%m-%d").date()
-                if expiry_date < date.today() and self.expiries:
-                    future = [expiry for expiry in self.expiries if expiry >= date.today().isoformat()]
+                market_today = self._market_today()
+                if expiry_date < market_today and self.expiries:
+                    future = [expiry for expiry in self.expiries if expiry >= market_today.isoformat()]
                     if future:
                         self.active_expiry = future[0]
                     else:
@@ -697,6 +726,7 @@ class MarketDataService:
         await self._evaluate_provider_health()
         await self._broadcast_snapshot()
         await self._broadcast_chain()
+        self._chain_dirty = False
 
     async def _broadcast_snapshot(self) -> None:
         if self._broadcast:
@@ -720,13 +750,24 @@ class MarketDataService:
         if not chain:
             return False
         self._apply_chain_payload(chain, expiry=requested, now=datetime.now(timezone.utc))
+        self._chain_dirty = False
         return True
 
     def get_snapshot(self) -> MarketSnapshot:
         return MarketSnapshot(**self.snapshot)
 
     def get_option_chain(self, expiry: str | None = None) -> OptionChainResponse:
-        return OptionChainResponse(snapshot=self.get_snapshot(), rows=self.option_rows)
+        active_atm = self._active_atm_strike
+        if active_atm is None:
+            active_atm = self._atm_strike_for_spot(self.last_known_spot or self._safe_float(self.snapshot.get("spot")))
+        rows = [
+            {
+                **row,
+                "is_atm": row["strike"] == active_atm if active_atm is not None else bool(row.get("is_atm")),
+            }
+            for row in self.option_rows
+        ]
+        return OptionChainResponse(snapshot=self.get_snapshot(), rows=rows)
 
     def _apply_chain_payload(self, chain: dict[str, Any], *, expiry: str, now: datetime) -> None:
         self.active_expiry = expiry
@@ -780,6 +821,7 @@ class MarketDataService:
         if rest_spot and rest_spot > 0 and not self.last_known_spot:
             self.last_known_spot = rest_spot
             self.snapshot["spot"] = rest_spot
+        self._refresh_active_atm_strike(self.last_known_spot or rest_spot)
 
         pcr = round(chain["total_put_oi"] / chain["total_call_oi"], 2) if chain.get("total_call_oi") else None
         self.snapshot["pcr"] = pcr
@@ -935,7 +977,7 @@ class MarketDataService:
 
     @staticmethod
     def _current_bucket_time(timeframe: str) -> int:
-        now = datetime.now(timezone.utc).astimezone(IST)
+        now = now_ist()
         if timeframe == "W":
             bucket_date = now.date() - timedelta(days=now.weekday())
         elif timeframe == "M":
@@ -973,28 +1015,66 @@ class MarketDataService:
             }
             return [*candles[:-1], next_candle]
 
-        # Don't create a phantom candle on weekends / holidays
-        if not is_trading_day():
-            return candles
+        return candles
 
-        open_price = float(candles[-1]["close"]) if candles else live_price
-        high = max(open_price, live_price)
-        low = min(open_price, live_price)
+    def _build_live_session_candle(
+        self,
+        target: CandleInstrument,
+        *,
+        timeframe: str,
+        live_price: float | None,
+        day_high: float | None,
+        day_low: float | None,
+    ) -> dict[str, Any] | None:
+        if timeframe not in DAILY_HISTORY_TIMEFRAMES or not is_trading_day():
+            return None
+
+        market_today = self._market_today()
+        cache_key = (target.security_id, timeframe, market_today.isoformat())
+        cache_ttl = CANDLE_CACHE_TTL.get("1m", 60)
+        cached = self._live_session_candle_cache.get(cache_key)
+        now = time.monotonic()
+        if cached and now - cached[0] < cache_ttl:
+            return cached[1]
+
+        payload = dhan_credential_service.call(
+            "intraday_minute_data",
+            lambda dhan_client: dhan_client.intraday_minute_data(
+                security_id=target.security_id,
+                exchange_segment=target.exchange_segment,
+                instrument_type=target.instrument_type,
+                from_date=market_today.strftime("%Y-%m-%d"),
+                to_date=market_today.strftime("%Y-%m-%d"),
+                interval=1,
+            ),
+        )
+        session_candles = self._map_candles(payload if isinstance(payload, dict) else {})
+        if not session_candles:
+            self._live_session_candle_cache[cache_key] = (now, None)
+            return None
+
+        high = max(float(candle["high"]) for candle in session_candles)
+        low = min(float(candle["low"]) for candle in session_candles)
+        close = float(session_candles[-1]["close"])
+        if live_price and live_price > 0:
+            close = live_price
+            high = max(high, live_price)
+            low = min(low, live_price)
         if day_high and day_high > 0:
             high = max(high, day_high)
         if day_low and day_low > 0:
             low = min(low, day_low)
-        return [
-            *candles,
-            {
-                "time": bucket_time,
-                "open": open_price,
-                "high": high,
-                "low": low,
-                "close": live_price,
-                "volume": 0.0,
-            },
-        ]
+
+        candle = {
+            "time": self._current_bucket_time(timeframe),
+            "open": float(session_candles[0]["open"]),
+            "high": high,
+            "low": low,
+            "close": close,
+            "volume": float(sum(float(candle.get("volume") or 0.0) for candle in session_candles)),
+        }
+        self._live_session_candle_cache[cache_key] = (now, candle)
+        return candle
 
     def _live_ohlc_for_target(
         self, target: CandleInstrument,
@@ -1084,7 +1164,7 @@ class MarketDataService:
 
         # Use live WebSocket spot for ATM calculation, fallback to REST
         spot = self.last_known_spot or float(body.get("last_price") or 0.0)
-        atm = round(spot / 50) * 50 if spot else None
+        atm = self._atm_strike_for_spot(spot)
 
         strike_range = 2000
         total_call_oi = 0.0
@@ -1214,6 +1294,7 @@ class MarketDataService:
         ltp = self._safe_float(payload.get("LTP"))
         if ltp is None or ltp <= 0:
             return
+        atm_changed = self._refresh_active_atm_strike(ltp)
 
         prev_close = self._safe_float(payload.get("close") or payload.get("prev_close"))
         if prev_close and prev_close > 0:
@@ -1241,6 +1322,7 @@ class MarketDataService:
             and self.snapshot.get("day_high") == next_day_high
             and self.snapshot.get("day_low") == next_day_low
             and self.snapshot.get("market_status") == next_market_status
+            and not atm_changed
         ):
             return
 
@@ -1257,6 +1339,8 @@ class MarketDataService:
         self.snapshot["market_status"] = next_market_status
         self.snapshot["updated_at"] = datetime.now(timezone.utc)
         self._snapshot_dirty = True
+        if atm_changed:
+            self._chain_dirty = True
 
     def _apply_vix_tick(self, payload: dict[str, Any]) -> None:
         ltp = self._safe_float(payload.get("LTP"))
@@ -1492,13 +1576,35 @@ class MarketDataService:
             candles = self._aggregate_candles(self._map_candles(payload, normalize_daily=True), timeframe)
             if before is None:
                 live_price, day_high, day_low = self._live_ohlc_for_target(target)
-                candles = self._overlay_live_price(
-                    candles,
-                    timeframe=timeframe,
-                    live_price=live_price,
-                    day_high=day_high,
-                    day_low=day_low,
-                )
+                current_bucket_time = self._current_bucket_time(timeframe)
+                has_current_bucket = bool(candles and int(candles[-1]["time"]) == current_bucket_time)
+                if has_current_bucket:
+                    candles = self._overlay_live_price(
+                        candles,
+                        timeframe=timeframe,
+                        live_price=live_price,
+                        day_high=day_high,
+                        day_low=day_low,
+                    )
+                else:
+                    try:
+                        live_session_candle = self._build_live_session_candle(
+                            target,
+                            timeframe=timeframe,
+                            live_price=live_price,
+                            day_high=day_high,
+                            day_low=day_low,
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        logger.info(
+                            "Failed to build live %s candle from intraday session for %s: %s",
+                            timeframe,
+                            target.symbol,
+                            exc,
+                        )
+                        live_session_candle = None
+                    if live_session_candle:
+                        candles = [*candles, live_session_candle]
         else:
             candles = self._map_candles(payload)
 

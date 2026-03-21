@@ -8,6 +8,7 @@ from math import sqrt
 from sqlalchemy.orm import Session
 
 from config import get_settings
+from market_hours import now_ist
 from models import Fill, Order, Portfolio, Position
 from schemas import (
     AnalyticsAttribution,
@@ -373,9 +374,10 @@ def analytics_summary(db: Session, portfolio_id: str) -> AnalyticsResponse:
     for position in positions:
         _refresh_position_mark(position)
         current_unrealized += _money(_position_unrealized(position))
-    equity_curve.append(AnalyticsPoint(label=date.today().isoformat(), value=float(_money(funds.total_equity))))
+    today_label = now_ist().date().isoformat()
+    equity_curve.append(AnalyticsPoint(label=today_label, value=float(_money(funds.total_equity))))
 
-    pnl_by_day[date.today().isoformat()] += current_unrealized
+    pnl_by_day[today_label] += current_unrealized
     total_closed = wins + losses
     win_rate = round((wins / total_closed) * 100, 2) if total_closed else 0.0
 

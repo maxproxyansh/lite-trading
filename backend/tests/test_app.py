@@ -2109,6 +2109,180 @@ def test_seed_spot_from_history_uses_last_two_daily_closes_when_live_spot_is_una
     assert market_data_service.snapshot["change_pct"] == 0.22
 
 
+def test_fetch_option_chain_rounds_half_up_for_atm_strike(monkeypatch: pytest.MonkeyPatch) -> None:
+    _reset_test_runtime()
+    market_data_service.last_known_spot = 22525.0
+
+    monkeypatch.setattr(
+        dhan_credential_service,
+        "call",
+        lambda operation_name, fn, **kwargs: {
+            "data": {
+                "last_price": 22525.0,
+                "oc": {
+                    "22500": {
+                        "ce": {"security_id": "1001", "last_price": 101.0},
+                        "pe": {"security_id": "1002", "last_price": 121.0},
+                    },
+                    "22550": {
+                        "ce": {"security_id": "1003", "last_price": 82.0},
+                        "pe": {"security_id": "1004", "last_price": 140.0},
+                    },
+                },
+            }
+        },
+    )
+
+    chain = market_data_service._fetch_option_chain("2026-03-26")
+
+    assert chain is not None
+    assert [(row["strike"], row["is_atm"]) for row in chain["rows"]] == [
+        (22500, False),
+        (22550, True),
+    ]
+
+
+def test_get_option_chain_uses_live_spot_for_atm_between_chain_refreshes() -> None:
+    _reset_test_runtime()
+    market_data_service.last_known_spot = 22525.0
+    market_data_service.option_rows = [
+        {
+            "strike": 22500,
+            "is_atm": True,
+            "call": {"symbol": "NIFTY_2026-03-26_22500_CE", "strike": 22500, "option_type": "CE", "expiry": "2026-03-26", "ltp": 101.0},
+            "put": {"symbol": "NIFTY_2026-03-26_22500_PE", "strike": 22500, "option_type": "PE", "expiry": "2026-03-26", "ltp": 121.0},
+        },
+        {
+            "strike": 22550,
+            "is_atm": False,
+            "call": {"symbol": "NIFTY_2026-03-26_22550_CE", "strike": 22550, "option_type": "CE", "expiry": "2026-03-26", "ltp": 82.0},
+            "put": {"symbol": "NIFTY_2026-03-26_22550_PE", "strike": 22550, "option_type": "PE", "expiry": "2026-03-26", "ltp": 140.0},
+        },
+    ]
+
+    response = market_data_service.get_option_chain()
+
+    assert [(row.strike, row.is_atm) for row in response.rows] == [
+        (22500, False),
+        (22550, True),
+    ]
+
+
+def test_apply_index_tick_marks_chain_dirty_when_live_atm_changes() -> None:
+    _reset_test_runtime()
+    market_data_service._active_atm_strike = 22500
+    market_data_service._chain_dirty = False
+
+    market_data_service._apply_index_tick(
+        {
+            "type": "Full Data",
+            "security_id": 13,
+            "LTP": "22525.00",
+            "close": "22450.00",
+        }
+    )
+
+    assert market_data_service._active_atm_strike == 22550
+    assert market_data_service._chain_dirty is True
+
+
+def test_fetch_daily_candles_does_not_create_phantom_current_day_before_open(monkeypatch: pytest.MonkeyPatch) -> None:
+    _reset_test_runtime()
+    market_data_service.last_known_spot = 22500.0
+    market_data_service.snapshot["spot"] = 22500.0
+    market_data_service.snapshot["day_high"] = None
+    market_data_service.snapshot["day_low"] = None
+
+    monkeypatch.setattr(
+        market_data_module,
+        "now_ist",
+        lambda: datetime(2026, 3, 13, 8, 45, tzinfo=market_hours.IST),
+    )
+    monkeypatch.setattr(market_data_module, "is_trading_day", lambda: True)
+
+    operations: list[str] = []
+
+    def fake_call(operation_name, fn, **kwargs):
+        operations.append(operation_name)
+        if operation_name == "historical_daily_data":
+            return {
+                "timestamp": ["2026-03-12T00:00:00+00:00"],
+                "open": [22400.0],
+                "high": [22510.0],
+                "low": [22380.0],
+                "close": [22480.0],
+                "volume": [1000],
+            }
+        if operation_name == "intraday_minute_data":
+            return {"timestamp": [], "open": [], "high": [], "low": [], "close": [], "volume": []}
+        raise AssertionError(f"Unexpected operation: {operation_name}")
+
+    monkeypatch.setattr(dhan_credential_service, "call", fake_call)
+
+    response = market_data_service._fetch_candles("D")
+
+    assert operations == ["historical_daily_data", "intraday_minute_data"]
+    assert [candle["time"] for candle in response["candles"]] == [
+        int(datetime(2026, 3, 12, tzinfo=market_hours.IST).timestamp()),
+    ]
+    assert response["candles"][0]["open"] == 22400.0
+    assert response["candles"][0]["close"] == 22480.0
+
+
+def test_fetch_daily_candles_builds_current_session_bar_from_intraday_history(monkeypatch: pytest.MonkeyPatch) -> None:
+    _reset_test_runtime()
+    market_data_service.last_known_spot = 22535.0
+    market_data_service.snapshot["spot"] = 22535.0
+    market_data_service.snapshot["day_high"] = 22540.0
+    market_data_service.snapshot["day_low"] = 22500.0
+
+    monkeypatch.setattr(
+        market_data_module,
+        "now_ist",
+        lambda: datetime(2026, 3, 13, 10, 30, tzinfo=market_hours.IST),
+    )
+    monkeypatch.setattr(market_data_module, "is_trading_day", lambda: True)
+
+    def fake_call(operation_name, fn, **kwargs):
+        if operation_name == "historical_daily_data":
+            return {
+                "timestamp": ["2026-03-12T00:00:00+00:00"],
+                "open": [22400.0],
+                "high": [22510.0],
+                "low": [22380.0],
+                "close": [22480.0],
+                "volume": [1000],
+            }
+        if operation_name == "intraday_minute_data":
+            return {
+                "timestamp": [
+                    "2026-03-13T03:45:00+00:00",
+                    "2026-03-13T03:46:00+00:00",
+                    "2026-03-13T03:47:00+00:00",
+                ],
+                "open": [22510.0, 22512.0, 22515.0],
+                "high": [22520.0, 22525.0, 22530.0],
+                "low": [22505.0, 22510.0, 22514.0],
+                "close": [22518.0, 22520.0, 22528.0],
+                "volume": [100, 120, 130],
+            }
+        raise AssertionError(f"Unexpected operation: {operation_name}")
+
+    monkeypatch.setattr(dhan_credential_service, "call", fake_call)
+
+    response = market_data_service._fetch_candles("D")
+
+    assert len(response["candles"]) == 2
+    assert response["candles"][-1] == {
+        "time": int(datetime(2026, 3, 13, tzinfo=market_hours.IST).timestamp()),
+        "open": 22510.0,
+        "high": 22540.0,
+        "low": 22500.0,
+        "close": 22535.0,
+        "volume": 350.0,
+    }
+
+
 def test_fetch_candles_aggregates_weekly_and_monthly_from_daily_history(monkeypatch: pytest.MonkeyPatch) -> None:
     timestamps = [
         "2026-01-26T00:00:00+00:00",
@@ -2979,10 +3153,10 @@ def test_candle_cache_hits_for_current_window_regardless_of_date_shift(monkeypat
     monkeypatch.setattr("services.market_data.dhan_credential_service.call", fake_call)
     market_data_service._candle_cache.clear()
 
-    # First call — should hit Dhan
+    # First call — should fetch both the daily window and the live-session overlay
     market_data_service._fetch_candles("D", before=None, symbol="NIFTY 50")
-    assert call_count["n"] == 1
+    assert call_count["n"] == 2
 
-    # Second call immediately — should hit cache
+    # Second call immediately — both should hit cache
     market_data_service._fetch_candles("D", before=None, symbol="NIFTY 50")
-    assert call_count["n"] == 1, f"Expected cache hit, but Dhan was called {call_count['n']} times"
+    assert call_count["n"] == 2, f"Expected cache hit, but Dhan was called {call_count['n']} times"

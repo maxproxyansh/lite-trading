@@ -1,6 +1,7 @@
 import { ChevronLeft, ChevronRight, Maximize2, Minimize2 } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 
+import { resolveAtmStrike } from '../lib/options'
 import { useStore } from '../store/useStore'
 import ChainFilterTabs from './ChainFilterTabs'
 import ExpiryTabs from './ExpiryTabs'
@@ -41,19 +42,22 @@ export default function OptionsPanel() {
   }
 
   const rows = chain?.rows ?? []
-  const atm = rows.find((row) => row.is_atm)?.strike ?? 0
+  const atmStrike = resolveAtmStrike(rows, spot)
   const filteredRows = rows.filter((row) => {
     if (chainFilter === 'ALL') {
       return true
     }
+    if (atmStrike == null) {
+      return true
+    }
     if (chainFilter === 'ATM') {
-      return Math.abs(row.strike - atm) <= 300
+      return Math.abs(row.strike - atmStrike) <= 300
     }
     if (chainFilter === 'ITM') {
-      return row.strike < atm
+      return row.strike < atmStrike
     }
     if (chainFilter === 'OTM') {
-      return row.strike > atm
+      return row.strike > atmStrike
     }
     return true
   })
@@ -119,12 +123,14 @@ export default function OptionsPanel() {
         <OptionsChainExpanded
           rows={filteredRows}
           maxOI={maxOI}
+          atmStrike={atmStrike}
           activeExpiry={chain.snapshot.active_expiry ?? null}
         />
       ) : (
         <OptionsChainCollapsed
           rows={filteredRows}
           maxOI={maxOI}
+          atmStrike={atmStrike}
           activeExpiry={chain.snapshot.active_expiry ?? null}
         />
       )}

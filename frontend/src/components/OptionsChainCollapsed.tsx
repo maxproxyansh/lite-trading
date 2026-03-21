@@ -8,6 +8,7 @@ import { useStore } from '../store/useStore'
 interface Props {
   rows: OptionChainRow[]
   maxOI: number
+  atmStrike: number | null
   activeExpiry: string | null
 }
 
@@ -28,7 +29,7 @@ const OptionsChainCollapsedRow = memo(function OptionsChainCollapsedRow({
 }: {
   row: OptionChainRow
   maxOI: number
-  atmStrike: number
+  atmStrike: number | null
   selectedQuoteSymbol: string | null
   activeChartSymbol: string | null
   onSelectQuote: (quote: OptionQuote | null) => void
@@ -36,7 +37,7 @@ const OptionsChainCollapsedRow = memo(function OptionsChainCollapsedRow({
   onViewChart: (quote: OptionQuote) => void
   rowRef?: Ref<HTMLDivElement>
 }) {
-  const isATM = row.is_atm
+  const isATM = atmStrike != null ? row.strike === atmStrike : row.is_atm
   const activeCall = selectedQuoteSymbol === row.call.symbol
   const activePut = selectedQuoteSymbol === row.put.symbol
   const chartingCall = activeChartSymbol === row.call.symbol
@@ -47,8 +48,8 @@ const OptionsChainCollapsedRow = memo(function OptionsChainCollapsedRow({
   const putOIWidth = putOI != null ? Math.min((putOI / maxOI) * 100, 100) : 0
   const oiOpacity = isATM ? 0.55 : 0.4
 
-  const callIsITM = !isATM && row.strike < atmStrike
-  const putIsITM = !isATM && row.strike > atmStrike
+  const callIsITM = atmStrike != null && !isATM && row.strike < atmStrike
+  const putIsITM = atmStrike != null && !isATM && row.strike > atmStrike
 
   // Which quote is active for mobile action bar
   const activeQuote = activeCall ? row.call : activePut ? row.put : null
@@ -246,7 +247,7 @@ const OptionsChainCollapsedRow = memo(function OptionsChainCollapsedRow({
   )
 })
 
-export default function OptionsChainCollapsed({ rows, maxOI, activeExpiry }: Props) {
+export default function OptionsChainCollapsed({ rows, maxOI, atmStrike, activeExpiry }: Props) {
   const { selectedQuoteSymbol, optionChartSymbol, setSelectedQuote, setOptionChartSymbol, openOrderModal } = useStore(useShallow((state) => ({
     selectedQuoteSymbol: state.selectedQuote?.symbol ?? null,
     optionChartSymbol: state.optionChartSymbol,
@@ -256,19 +257,18 @@ export default function OptionsChainCollapsed({ rows, maxOI, activeExpiry }: Pro
   })))
   const atmRef = useRef<HTMLDivElement>(null)
   const lastScrollKeyRef = useRef<string | null>(null)
-  const atmStrike = rows.find((r) => r.is_atm)?.strike ?? 0
 
   useEffect(() => {
-    if (!atmRef.current || !activeExpiry) {
+    if (!atmRef.current || !activeExpiry || atmStrike == null) {
       return
     }
-    const scrollKey = `${activeExpiry}:${rows.length}`
+    const scrollKey = `${activeExpiry}:${atmStrike}:${rows.length}`
     if (lastScrollKeyRef.current === scrollKey) {
       return
     }
     atmRef.current.scrollIntoView({ block: 'center', behavior: 'smooth' })
     lastScrollKeyRef.current = scrollKey
-  }, [activeExpiry, rows])
+  }, [activeExpiry, atmStrike, rows.length])
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
@@ -295,7 +295,7 @@ export default function OptionsChainCollapsed({ rows, maxOI, activeExpiry }: Pro
               setOptionChartSymbol(optionChartSymbol === quote.symbol ? null : quote.symbol)
             }}
             onOrder={openOrderModal}
-            rowRef={row.is_atm ? atmRef : undefined}
+            rowRef={(atmStrike != null ? row.strike === atmStrike : row.is_atm) ? atmRef : undefined}
           />
         ))}
       </div>

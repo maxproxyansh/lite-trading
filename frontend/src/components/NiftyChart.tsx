@@ -1109,11 +1109,11 @@ export default function NiftyChart() {
     return () => {
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleRangeChange)
     }
-  }, [addToast, chartSecurityId, chartSymbol, loading, timeframe])
+  }, [addToast, chartSecurityId, chartSymbol, loading, optionChartSymbol, timeframe])
 
   useEffect(() => {
     syncLiveChartPrice()
-  }, [candleCount, chartPrice, chartSymbol, timeframe])
+  }, [candleCount, chartPrice, chartSymbol, effectiveDayHigh, effectiveDayLow, marketStatus, timeframe])
 
   // Periodic timer ensures live candle updates even without price changes
   // (e.g., WebSocket down, new period boundary crossed)
@@ -1572,7 +1572,7 @@ export default function NiftyChart() {
             if (drawing.type === 'vline') {
               const chart = chartRef.current
               if (!chart) continue
-              const lineX = chart.timeScale().timeToCoordinate(drawing.points[0].time as any)
+              const lineX = chart.timeScale().timeToCoordinate(drawing.points[0].time as Time)
               if (lineX !== null && Math.abs(x - lineX) < 12) {
                 setDrawingContextMenu({ drawingId: drawing.id, x, y })
                 setSelectedDrawingId(drawing.id)
@@ -1585,8 +1585,8 @@ export default function NiftyChart() {
               const p2 = seriesRef.current.priceToCoordinate(drawing.points[1].price)
               const chart = chartRef.current
               if (!p1 || !p2 || !chart) continue
-              const x1 = chart.timeScale().timeToCoordinate(drawing.points[0].time as any)
-              const x2 = chart.timeScale().timeToCoordinate(drawing.points[1].time as any)
+              const x1 = chart.timeScale().timeToCoordinate(drawing.points[0].time as Time)
+              const x2 = chart.timeScale().timeToCoordinate(drawing.points[1].time as Time)
               if (x1 === null || x2 === null) continue
               const minX = Math.min(x1, x2) - 12
               const maxX = Math.max(x1, x2) + 12

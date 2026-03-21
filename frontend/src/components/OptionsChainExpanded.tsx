@@ -8,6 +8,7 @@ import { useStore } from '../store/useStore'
 interface Props {
   rows: OptionChainRow[]
   maxOI: number
+  atmStrike: number | null
   activeExpiry: string | null
 }
 
@@ -32,7 +33,7 @@ const OptionsChainExpandedRow = memo(function OptionsChainExpandedRow({
 }: {
   row: OptionChainRow
   maxOI: number
-  atmStrike: number
+  atmStrike: number | null
   selectedQuoteSymbol: string | null
   activeChartSymbol: string | null
   onSelectQuote: (quote: OptionQuote | null) => void
@@ -40,7 +41,7 @@ const OptionsChainExpandedRow = memo(function OptionsChainExpandedRow({
   onViewChart: (quote: OptionQuote) => void
   rowRef?: Ref<HTMLDivElement>
 }) {
-  const isATM = row.is_atm
+  const isATM = atmStrike != null ? row.strike === atmStrike : row.is_atm
   const activeCall = selectedQuoteSymbol === row.call.symbol
   const activePut = selectedQuoteSymbol === row.put.symbol
   const chartingCall = activeChartSymbol === row.call.symbol
@@ -51,8 +52,8 @@ const OptionsChainExpandedRow = memo(function OptionsChainExpandedRow({
   const putOIPct = Math.min(100, putOI != null && maxOI > 0 ? (putOI / maxOI) * 100 : 0)
   const oiBgOpacity = isATM ? 0.55 : 0.4
 
-  const callIsITM = !isATM && row.strike < atmStrike
-  const putIsITM = !isATM && row.strike > atmStrike
+  const callIsITM = atmStrike != null && !isATM && row.strike < atmStrike
+  const putIsITM = atmStrike != null && !isATM && row.strike > atmStrike
 
   return (
     <div ref={rowRef}>
@@ -231,7 +232,7 @@ const OptionsChainExpandedRow = memo(function OptionsChainExpandedRow({
   )
 })
 
-export default function OptionsChainExpanded({ rows, maxOI, activeExpiry }: Props) {
+export default function OptionsChainExpanded({ rows, maxOI, atmStrike, activeExpiry }: Props) {
   const { selectedQuoteSymbol, optionChartSymbol, setSelectedQuote, setOptionChartSymbol, openOrderModal } = useStore(useShallow((state) => ({
     selectedQuoteSymbol: state.selectedQuote?.symbol ?? null,
     optionChartSymbol: state.optionChartSymbol,
@@ -241,19 +242,18 @@ export default function OptionsChainExpanded({ rows, maxOI, activeExpiry }: Prop
   })))
   const atmRef = useRef<HTMLDivElement>(null)
   const lastScrollKeyRef = useRef<string | null>(null)
-  const atmStrike = rows.find((r) => r.is_atm)?.strike ?? 0
 
   useEffect(() => {
-    if (!atmRef.current || !activeExpiry) {
+    if (!atmRef.current || !activeExpiry || atmStrike == null) {
       return
     }
-    const scrollKey = `${activeExpiry}:${rows.length}`
+    const scrollKey = `${activeExpiry}:${atmStrike}:${rows.length}`
     if (lastScrollKeyRef.current === scrollKey) {
       return
     }
     atmRef.current.scrollIntoView({ block: 'center', behavior: 'smooth' })
     lastScrollKeyRef.current = scrollKey
-  }, [activeExpiry, rows])
+  }, [activeExpiry, atmStrike, rows.length])
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
@@ -274,6 +274,7 @@ export default function OptionsChainExpanded({ rows, maxOI, activeExpiry }: Prop
 
       <div className="flex-1 overflow-y-auto">
         {rows.map((row) => (
+          // Live ATM comes from the latest spot, not the last REST chain snapshot.
           <OptionsChainExpandedRow
             key={row.strike}
             row={row}
@@ -287,7 +288,7 @@ export default function OptionsChainExpanded({ rows, maxOI, activeExpiry }: Prop
               setOptionChartSymbol(optionChartSymbol === quote.symbol ? null : quote.symbol)
             }}
             onOrder={openOrderModal}
-            rowRef={row.is_atm ? atmRef : undefined}
+            rowRef={(atmStrike != null ? row.strike === atmStrike : row.is_atm) ? atmRef : undefined}
           />
         ))}
       </div>

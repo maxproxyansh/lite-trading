@@ -38,6 +38,8 @@ const ALLOWED_QUOTE_PATCH_KEYS = [
   'oi',
   'oi_lakhs',
   'volume',
+  'day_high',
+  'day_low',
   'delta',
   'gamma',
   'theta',
