@@ -91,6 +91,26 @@ function toVolumeData(candles: Candle[], bullColor: string, bearColor: string): 
   }))
 }
 
+function isDailyBasedTimeframe(timeframe: (typeof TIMEFRAMES)[number]) {
+  return timeframe === 'D' || timeframe === 'W' || timeframe === 'M'
+}
+
+function applyLiveSessionExtremes(
+  timeframe: (typeof TIMEFRAMES)[number],
+  high: number,
+  low: number,
+  dayHigh: number | null,
+  dayLow: number | null,
+) {
+  if (!isDailyBasedTimeframe(timeframe)) {
+    return { high, low }
+  }
+  return {
+    high: dayHigh && dayHigh > 0 ? Math.max(high, dayHigh) : high,
+    low: dayLow && dayLow > 0 ? Math.min(low, dayLow) : low,
+  }
+}
+
 function nextBarBoundary(time: number, timeframe: (typeof TIMEFRAMES)[number]) {
   const map = {
     '1m': 60,
@@ -118,6 +138,17 @@ function toChartCandles(candles: Candle[]) {
     low: candle.low,
     close: candle.close,
   }))
+}
+
+function toRawCandle(candle: CandlestickData<Time>, volume = 0): Candle {
+  return {
+    time: Number(candle.time) - IST_OFFSET_SECONDS,
+    open: candle.open,
+    high: candle.high,
+    low: candle.low,
+    close: candle.close,
+    volume,
+  }
 }
 
 function mergeCandles(existing: CandlestickData<Time>[], incoming: CandlestickData<Time>[]) {
@@ -425,8 +456,7 @@ export default function NiftyChart() {
     if (!price || price <= 0 || !seriesRef.current || !lastBarRef.current) {
       return
     }
-    // Don't create/update candles when market is closed
-    if (marketStatus !== 'open') {
+    if (marketStatus.toUpperCase() !== 'OPEN') {
       return
     }
 
@@ -435,34 +465,42 @@ export default function NiftyChart() {
 
     const nextBoundary = nextBarBoundary(Number(lastBar.time), timeframe)
     if (now >= nextBoundary) {
-      // Create exactly one new bar at the current time boundary.
-      // Note: intentionally NOT calling setCandleCount here — that would re-trigger
-      // this effect, causing an infinite loop when many boundaries have been missed.
+      const nextExtremes = applyLiveSessionExtremes(timeframe, price, price, effectiveDayHigh, effectiveDayLow)
       const newBar: CandlestickData<Time> = {
         time: nextBoundary as Time,
         open: lastBar.close,
-        high: price,
-        low: price,
+        high: nextExtremes.high,
+        low: nextExtremes.low,
         close: price,
       }
+      const nextRawBar = toRawCandle(newBar)
       lastBarRef.current = newBar
       candlesRef.current = [...candlesRef.current, newBar]
+      rawCandlesRef.current = [...rawCandlesRef.current, nextRawBar]
       seriesRef.current.update(newBar)
+      const appendColors = getChartColors()
+      const appendedVolume = toVolumeData([nextRawBar], appendColors.bullColor, appendColors.bearColor)[0]
+      if (appendedVolume) {
+        volumeSeriesRef.current?.update(appendedVolume)
+      }
       syncHoveredCandleStats()
+      setCandleRevision((value) => value + 1)
       setOverlayRevision((value) => value + 1)
       return
     }
 
-    // For daily candles, incorporate day high/low from the Dhan feed
-    let high = Math.max(lastBar.high, price)
-    let low = Math.min(lastBar.low, price)
-    if (timeframe === 'D' && effectiveDayHigh && effectiveDayHigh > 0) high = Math.max(high, effectiveDayHigh)
-    if (timeframe === 'D' && effectiveDayLow && effectiveDayLow > 0) low = Math.min(low, effectiveDayLow)
+    const nextExtremes = applyLiveSessionExtremes(
+      timeframe,
+      Math.max(lastBar.high, price),
+      Math.min(lastBar.low, price),
+      effectiveDayHigh,
+      effectiveDayLow,
+    )
 
     const nextBar: CandlestickData<Time> = {
       ...lastBar,
-      high,
-      low,
+      high: nextExtremes.high,
+      low: nextExtremes.low,
       close: price,
     }
 
@@ -478,8 +516,21 @@ export default function NiftyChart() {
     candlesRef.current = candlesRef.current.map((bar, index, source) => (
       index === source.length - 1 ? nextBar : bar
     ))
+    const lastRawVolume = rawCandlesRef.current[rawCandlesRef.current.length - 1]?.volume ?? 0
+    const nextRawBar = toRawCandle(nextBar, lastRawVolume)
+    rawCandlesRef.current = rawCandlesRef.current.length === 0
+      ? [nextRawBar]
+      : rawCandlesRef.current.map((bar, index, source) => (
+          index === source.length - 1 ? nextRawBar : bar
+        ))
     seriesRef.current.update(nextBar)
+    const updateColors = getChartColors()
+    const updatedVolume = toVolumeData([nextRawBar], updateColors.bullColor, updateColors.bearColor)[0]
+    if (updatedVolume) {
+      volumeSeriesRef.current?.update(updatedVolume)
+    }
     syncHoveredCandleStats()
+    setCandleRevision((value) => value + 1)
     setOverlayRevision((value) => value + 1)
   })
 
