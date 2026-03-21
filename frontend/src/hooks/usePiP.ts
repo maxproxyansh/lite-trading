@@ -127,6 +127,7 @@ export function usePiP(): UsePiPReturn {
       setIsOpen(true)
     } catch (err) {
       console.warn('PiP failed to open:', err)
+      throw err
     }
   }, [close])
 

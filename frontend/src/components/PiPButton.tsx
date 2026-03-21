@@ -2,16 +2,25 @@
 import { createPortal } from 'react-dom'
 import { usePiP, isPiPSupported } from '../hooks/usePiP'
 import PiPWidget from './PiPWidget'
+import { useStore } from '../store/useStore'
 
 export default function PiPButton() {
   const { isOpen, portalTarget, open, close } = usePiP()
+  const addToast = useStore((s) => s.addToast)
 
   if (!isPiPSupported) return null
 
   const handleClick = (e: React.MouseEvent) => {
-    e.stopPropagation() // Prevent bubbling to parent spot price div
-    if (isOpen) close()
-    else open()
+    e.stopPropagation()
+    if (isOpen) {
+      close()
+    } else {
+      open().then(() => {
+        addToast('success', 'PiP opened')
+      }).catch((err) => {
+        addToast('error', `PiP failed: ${err}`)
+      })
+    }
   }
 
   return (
