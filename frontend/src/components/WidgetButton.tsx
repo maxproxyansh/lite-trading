@@ -9,10 +9,12 @@ function launchApp(path: string) {
 }
 
 export default function WidgetButton({ onSetupNeeded }: { onSetupNeeded: () => void }) {
-  if (!isAndroid) return null
-
-  const handleTap = () => {
-    if (localStorage.getItem('pulse-connected') === 'true') {
+  // Show on all mobile devices for now (remove Android gate during debugging)
+  const handleTap = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const connected = localStorage.getItem('pulse-connected') === 'true'
+    if (connected) {
       launchApp('litewidget://start')
     } else {
       onSetupNeeded()
