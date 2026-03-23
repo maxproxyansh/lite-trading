@@ -324,3 +324,60 @@ def test_request_json_redacts_auth_query_params_in_errors(monkeypatch: pytest.Mo
     assert "generateAccessToken" in message
     assert "pin=123456" not in message
     assert "totp=000000" not in message
+
+
+def test_call_retries_with_new_generation_without_forcing_extra_totp(monkeypatch: pytest.MonkeyPatch) -> None:
+    service = DhanCredentialService()
+    state = {
+        "client_id": "1103337749",
+        "access_token": "token-old",
+        "generation": 1,
+        "token_source": "totp",
+    }
+
+    regen_calls: list[str] = []
+    call_count = {"count": 0}
+
+    monkeypatch.setattr(service, "ensure_token_fresh", lambda *args, **kwargs: False)
+    monkeypatch.setattr(service, "_regenerate_via_totp", lambda **kwargs: regen_calls.append("called") or True)
+    monkeypatch.setattr(
+        service,
+        "snapshot",
+        lambda: dhan_credentials_module.DhanCredentialSnapshot(
+            configured=True,
+            client_id=state["client_id"],
+            access_token=state["access_token"],
+            expires_at=None,
+            token_source=state["token_source"],
+            last_refreshed_at=None,
+            last_profile_checked_at=None,
+            last_rest_success_at=None,
+            data_plan_status="Active",
+            data_valid_until=None,
+            last_lease_issued_at=None,
+            generation=state["generation"],
+            totp_regeneration_enabled=True,
+        ),
+    )
+    monkeypatch.setattr(
+        service,
+        "_mark_generation_dead",
+        lambda generation: state.__setitem__("dead_generation", generation),
+    )
+
+    def fake_operation(client) -> dict[str, object]:
+        call_count["count"] += 1
+        if call_count["count"] == 1:
+            state["access_token"] = "token-new"
+            state["generation"] = 2
+            return {
+                "status": "failure",
+                "remarks": {"error_code": "DH-906", "error_message": "Invalid Token"},
+            }
+        assert getattr(client, "access_token", None) == "token-new"
+        return {"status": "success", "data": {"ok": True}}
+
+    assert service.call("positions", fake_operation) == {"ok": True}
+    assert call_count["count"] == 2
+    assert regen_calls == []
+    assert state["dead_generation"] == 1

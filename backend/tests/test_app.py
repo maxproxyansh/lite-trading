@@ -1248,7 +1248,7 @@ def test_dhan_rate_limiter_refills_over_time() -> None:
 
 def test_dhan_call_activates_global_backoff_on_rate_limit(monkeypatch: pytest.MonkeyPatch) -> None:
     _reset_test_runtime()
-    from services.dhan_credential_service import dhan_credential_service, DhanApiError
+    from services.dhan_credential_service import dhan_credential_service, DhanApiError, DhanCredentialSnapshot
 
     monkeypatch.setattr(dhan_credential_service, "_global_backoff_until", None)
     monkeypatch.setattr(dhan_credential_service, "_backoff_count", 0)
@@ -1258,7 +1258,25 @@ def test_dhan_call_activates_global_backoff_on_rate_limit(monkeypatch: pytest.Mo
 
     monkeypatch.setattr(dhan_credential_service, "_unwrap_sdk_result", fake_unwrap)
     monkeypatch.setattr(dhan_credential_service, "ensure_token_fresh", lambda: None)
-    monkeypatch.setattr(dhan_credential_service, "create_client", lambda: None)
+    monkeypatch.setattr(
+        dhan_credential_service,
+        "snapshot",
+        lambda: DhanCredentialSnapshot(
+            configured=True,
+            client_id="1103337749",
+            access_token="token",
+            expires_at=None,
+            token_source="totp",
+            last_refreshed_at=None,
+            last_profile_checked_at=None,
+            last_rest_success_at=None,
+            data_plan_status="Active",
+            data_valid_until=None,
+            last_lease_issued_at=None,
+            generation=1,
+            totp_regeneration_enabled=True,
+        ),
+    )
 
     with pytest.raises(DhanApiError, match="Too many requests"):
         dhan_credential_service.call("test_op", lambda c: {})

@@ -450,11 +450,14 @@ class DhanCredentialService:
             raise DhanApiError("DHAN_RATE_LIMITED", f"{operation_name} blocked: rate limiter exhausted")
 
     def call(self, operation_name: str, fn: Callable[[Dhanhq], T], *, allow_auth_retry: bool = True) -> T:
-        self.ensure_token_fresh()
+        self.ensure_token_fresh(allow_planned_renewal=True)
         self._acquire_budget(operation_name)
         for attempt in (1, 2):
+            attempt_snapshot = self.snapshot()
+            if not attempt_snapshot.client_id or not attempt_snapshot.access_token:
+                raise DhanApiError("DHAN_NOT_CONFIGURED", "Dhan credentials are not configured")
             try:
-                result = fn(self.create_client())
+                result = fn(Dhanhq(attempt_snapshot.client_id, attempt_snapshot.access_token))
             except Exception as exc:
                 raise DhanApiError("DHAN_TRANSPORT_FAILED", f"{operation_name} request failed: {type(exc).__name__}: {exc}") from exc
             try:
@@ -463,7 +466,9 @@ class DhanCredentialService:
                 if exc.reason == "DHAN_RATE_LIMITED":
                     self._apply_global_backoff()
                 if exc.auth_failed and allow_auth_retry and attempt == 1:
-                    self._mark_generation_dead(self.snapshot().generation)
+                    self._mark_generation_dead(attempt_snapshot.generation)
+                    if self.snapshot().generation != attempt_snapshot.generation:
+                        continue
                     self._regenerate_via_totp(reason=f"{operation_name}-auth-retry")
                     continue
                 raise
@@ -487,7 +492,7 @@ class DhanCredentialService:
     def issue_lease(self) -> DhanCredentialSnapshot:
         # Internal consumers need a broker-validated token, not just a token
         # that looked valid some minutes ago.
-        self.ensure_token_fresh(force_profile=True)
+        self.ensure_token_fresh(force_profile=True, allow_planned_renewal=True)
         snap = self.snapshot()
         if not snap.client_id or not snap.access_token:
             raise DhanApiError("DHAN_NOT_CONFIGURED", "Dhan credentials are not configured")
@@ -591,6 +596,7 @@ class DhanCredentialService:
             exp = _parse_ist_datetime(str(payload.get("tokenValidity") or ""))
             if exp:
                 self._expires_at = exp
+            self._dead_generation = None
         self._persist_runtime_state()
 
     # -- Dhan API --
