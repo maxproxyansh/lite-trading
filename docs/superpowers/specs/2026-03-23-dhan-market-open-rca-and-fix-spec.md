@@ -184,6 +184,30 @@ Implementation:
   - `python3 /Users/proxy/trading/max/tools/journal.py ...`
 - Disable the three `cache_intraday.py` jobs that still hit Dhan directly through `auto_trader_claude_impl`.
 
+### G. Missing option prices must not crash the chain
+
+Requirements:
+- If Dhan omits `last_price` for an option leg, the chain route must still respond successfully.
+- The platform must report the missing price honestly instead of inventing one.
+
+Implementation:
+- Allow option `ltp` to be nullable end to end.
+- Make the chain response tolerate missing option prices.
+- Update the UI to render missing prices as unavailable instead of crashing or showing a fake number.
+
+### H. Stale feed prices must stop winning over fresher data
+
+Requirements:
+- A dropped realtime feed must not leave old websocket-owned option prices looking live forever.
+- Socket keepalive noise must not create misleading disconnect spam.
+
+Implementation:
+- Timestamp websocket-owned option quote fields when feed packets arrive.
+- Only preserve websocket `ltp`, bid/ask, and OI while those values are still fresh.
+- When the feed is stale or disconnected, stop preserving stale live quote fields and let fresh REST values replace them on the next chain refresh.
+- Use a calmer feed receive loop that does not cancel its own websocket receive on every timeout.
+- Disable the library keepalive ping and rely on app-level staleness detection plus reconnect logic.
+
 ## Acceptance Criteria
 
 This incident class is only considered fixed if all of the following are true.
@@ -194,6 +218,8 @@ This incident class is only considered fixed if all of the following are true.
 - Failed invalid-TOTP attempts do not start a two-minute freeze.
 - Planned refresh does not force TOTP by default.
 - Startup and pre-open refresh do not leak Dhan auth URLs into logs.
+- Missing option `ltp` never crashes `/market/chain` or the websocket chain broadcast.
+- Stale websocket quote fields are not preserved after feed staleness.
 
 ### Local runtime behavior
 

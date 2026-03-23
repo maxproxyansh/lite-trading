@@ -12,7 +12,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from dhanhq import dhanhq as Dhanhq
-from dhanhq.marketfeed import DhanFeed, Full, IDX, NSE_FNO, Quote
+from dhanhq.marketfeed import DhanFeed, Full, IDX, NSE_FNO, Quote, market_feed_wss, websockets
 
 from config import get_settings
 from database import SessionLocal
@@ -90,6 +90,23 @@ class CandleQueryError(Exception):
         self.detail = detail
 
 
+class LiteDhanFeed(DhanFeed):
+    async def connect(self):
+        if not self.ws or self.ws.closed:
+            if self.version == "v1":
+                self.ws = await websockets.connect(market_feed_wss, ping_interval=None, ping_timeout=None)
+                await self.authorize()
+            elif self.version == "v2":
+                url = f"{market_feed_wss}?version=2&token={self.access_token}&clientId={self.client_id}&authType=2"
+                # The service already watches feed freshness itself. Disabling the
+                # library keepalive prevents noisy ping-timeout disconnects from
+                # fighting with the app-level reconnect logic.
+                self.ws = await websockets.connect(url, ping_interval=None, ping_timeout=None, close_timeout=1)
+            else:
+                raise ValueError(f"Unsupported version: {self.version}")
+            await self.subscribe_instruments()
+
+
 @dataclass(slots=True)
 class ProviderHealthState:
     incident_open: bool = False
@@ -156,6 +173,7 @@ class MarketDataService:
         self._feed_task: asyncio.Task | None = None
         self._flush_task: asyncio.Task | None = None
         self._feed: DhanFeed | None = None
+        self._feed_recv_task: asyncio.Task | None = None
         self._feed_token_generation = 0
         self._desired_feed_instruments: set[tuple[int, str, int]] = set()
         self._subscribed_feed_instruments: set[tuple[int, str, int]] = set()
@@ -470,6 +488,7 @@ class MarketDataService:
     def reset_runtime_state_for_tests(self) -> None:
         self._health = ProviderHealthState()
         self._feed_token_generation = 0
+        self._feed_recv_task = None
         self._desired_feed_instruments = set()
         self._subscribed_feed_instruments = set()
         self._security_id_to_symbol = {}
@@ -617,6 +636,8 @@ class MarketDataService:
         self._health.last_error_at = now
         self._health.last_error_reason = reason
         self._health.last_error_message = message
+        if reason in {"MARKET_FEED_DISCONNECTED", "REALTIME_FEED_STALE"}:
+            self._invalidate_stale_live_quotes(now=now)
         self.snapshot["degraded"] = True
         self.snapshot["degraded_reason"] = reason
         self.snapshot["updated_at"] = now
@@ -628,6 +649,20 @@ class MarketDataService:
             message=message,
             alert_sender=self._send_incident_alert_sync,
         )
+
+    def _invalidate_stale_live_quotes(self, *, now: datetime) -> None:
+        live_quote_fields = ("ltp", "bid", "ask", "bid_qty", "ask_qty", "oi", "oi_lakhs", "volume", "day_high", "day_low")
+        for quote in self.quotes.values():
+            live_updated_at = self._parse_timestamp(quote.get("_live_updated_at"))
+            if live_updated_at is None or self._is_live_quote_fresh(live_updated_at, now=now):
+                continue
+            changed = False
+            for field in live_quote_fields:
+                if quote.get(field) is not None:
+                    quote[field] = None
+                    changed = True
+            if changed:
+                self._dirty_quote_symbols.add(quote["symbol"])
 
     async def _close_incident(self, message: str = "Dhan market data recovered") -> None:
         if not self._health.incident_open:
@@ -771,8 +806,7 @@ class MarketDataService:
                     await self._connect_feed()
                 await self._sync_feed_subscriptions()
                 try:
-                    # dhanhq exposes get_instrument_data() as an async recv wrapper; wait_for prevents a stuck socket.
-                    payload = await asyncio.wait_for(self._feed.get_instrument_data(), timeout=5.0)
+                    payload = await self._recv_feed_payload(timeout=5.0)
                 except asyncio.TimeoutError:
                     await self._evaluate_provider_health()
                     continue
@@ -783,6 +817,11 @@ class MarketDataService:
                 raise
             except DhanApiError as exc:
                 await self._open_incident(exc.reason, exc.message)
+                await self._reset_feed()
+                await asyncio.sleep(reconnect_delay)
+            except websockets.ConnectionClosed:
+                logger.info("Dhan realtime feed closed; reconnecting")
+                await self._open_incident("MARKET_FEED_DISCONNECTED", "Dhan realtime feed disconnected unexpectedly")
                 await self._reset_feed()
                 await asyncio.sleep(reconnect_delay)
             except Exception:  # noqa: BLE001
@@ -796,7 +835,7 @@ class MarketDataService:
         if not credentials.client_id or not credentials.access_token:
             raise DhanApiError("DHAN_NOT_CONFIGURED", "Dhan credentials are missing for the realtime feed")
         instruments = self._sorted_instruments(self._desired_feed_instruments)
-        self._feed = DhanFeed(
+        self._feed = LiteDhanFeed(
             credentials.client_id,
             credentials.access_token,
             instruments,
@@ -805,6 +844,20 @@ class MarketDataService:
         await self._feed.connect()
         self._subscribed_feed_instruments = set(instruments)
         self._feed_token_generation = credentials.generation
+        self._feed_recv_task = None
+
+    async def _recv_feed_payload(self, *, timeout: float) -> dict[str, Any] | None:
+        if not self._feed:
+            return None
+        if self._feed_recv_task is None:
+            self._feed_recv_task = asyncio.create_task(self._feed.get_instrument_data())
+        try:
+            payload = await asyncio.wait_for(asyncio.shield(self._feed_recv_task), timeout=timeout)
+        except asyncio.TimeoutError:
+            raise
+        else:
+            self._feed_recv_task = None
+            return payload
 
     async def _sync_feed_subscriptions(self) -> None:
         if not self._feed:
@@ -819,6 +872,15 @@ class MarketDataService:
         self._subscribed_feed_instruments = desired
 
     async def _reset_feed(self) -> None:
+        if self._feed_recv_task:
+            self._feed_recv_task.cancel()
+            try:
+                await self._feed_recv_task
+            except asyncio.CancelledError:
+                pass
+            except Exception:  # noqa: BLE001
+                pass
+            self._feed_recv_task = None
         if self._feed and self._feed.ws and not self._feed.ws.closed:
             try:
                 await self._feed.ws.close()
@@ -930,10 +992,18 @@ class MarketDataService:
             {
                 **row,
                 "is_atm": row["strike"] == active_atm if active_atm is not None else bool(row.get("is_atm")),
+                "call": self._quote_for_chain_response(row["call"]),
+                "put": self._quote_for_chain_response(row["put"]),
             }
             for row in self.option_rows
         ]
         return OptionChainResponse(snapshot=self.get_snapshot(), rows=rows)
+
+    @staticmethod
+    def _quote_for_chain_response(quote: dict[str, Any]) -> dict[str, Any]:
+        payload = dict(quote)
+        payload["ltp"] = MarketDataService._safe_float(payload.get("ltp"))
+        return payload
 
     def _apply_chain_payload(self, chain: dict[str, Any], *, expiry: str, now: datetime) -> None:
         self.active_expiry = expiry
@@ -941,22 +1011,29 @@ class MarketDataService:
         incoming_sid_map = chain["security_id_to_symbol"]
         self._upsert_option_registry(incoming_quotes, observed_at=now)
 
-        # Fields that only REST provides (WebSocket doesn't have these)
-        REST_ONLY_FIELDS = ("iv", "delta", "gamma", "theta", "vega")
+        rest_only_fields = ("iv", "delta", "gamma", "theta", "vega")
+        live_quote_fields = ("ltp", "bid", "ask", "bid_qty", "ask_qty", "oi", "oi_lakhs", "volume", "day_high", "day_low")
 
-        # Merge: update Greeks/IV from REST, preserve WebSocket-sourced fields
         for symbol, incoming in incoming_quotes.items():
             existing = self.quotes.get(symbol)
             if existing:
-                for field in REST_ONLY_FIELDS:
+                merged = dict(incoming)
+                live_updated_at = self._parse_timestamp(existing.get("_live_updated_at"))
+                live_is_fresh = self._is_live_quote_fresh(live_updated_at, now=now)
+                if live_is_fresh:
+                    for field in live_quote_fields:
+                        if existing.get(field) is not None:
+                            merged[field] = existing[field]
+                for field in rest_only_fields:
                     val = incoming.get(field)
                     if val is not None:
-                        existing[field] = val
-                # Update security_id if it was missing
-                if not existing.get("security_id") and incoming.get("security_id"):
-                    existing["security_id"] = incoming["security_id"]
+                        merged[field] = val
+                if not merged.get("security_id") and existing.get("security_id"):
+                    merged["security_id"] = existing["security_id"]
+                if live_updated_at is not None:
+                    merged["_live_updated_at"] = live_updated_at
+                self.quotes[symbol] = merged
             else:
-                # New strike not yet in quotes — take the full REST snapshot
                 self.quotes[symbol] = incoming
 
         # Remove strikes that are no longer in the chain (expiry changed, etc.)
@@ -1595,6 +1672,7 @@ class MarketDataService:
         if not quote:
             return
 
+        now = datetime.now(timezone.utc)
         changed = False
         ltp = self._safe_float(payload.get("LTP"))
         if ltp is not None and ltp > 0 and quote.get("ltp") != ltp:
@@ -1645,6 +1723,7 @@ class MarketDataService:
                 changed = True
 
         if changed:
+            quote["_live_updated_at"] = now
             self._dirty_quote_symbols.add(symbol)
 
     def _pcr_metrics(self) -> tuple[float | None, float, float]:
@@ -1677,6 +1756,27 @@ class MarketDataService:
             return int(float(value))
         except (TypeError, ValueError):
             return None
+
+    @staticmethod
+    def _parse_timestamp(value: Any) -> datetime | None:
+        if isinstance(value, datetime):
+            return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        if isinstance(value, (int, float)):
+            return datetime.fromtimestamp(value, timezone.utc)
+        if isinstance(value, str):
+            try:
+                parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+            except ValueError:
+                return None
+        return None
+
+    @staticmethod
+    def _is_live_quote_fresh(updated_at: datetime | None, *, now: datetime) -> bool:
+        if updated_at is None:
+            return False
+        freshness_window = timedelta(seconds=max(settings.dhan_realtime_stale_seconds, settings.market_feed_reconnect_seconds * 2))
+        return now - updated_at <= freshness_window
 
     @staticmethod
     def _extract_security_id(payload: dict[str, Any]) -> str | None:

@@ -2262,6 +2262,35 @@ def test_get_option_chain_uses_live_spot_for_atm_between_chain_refreshes() -> No
     ]
 
 
+def test_get_option_chain_allows_missing_ltp_without_crashing() -> None:
+    _reset_test_runtime()
+    market_data_service.option_rows = [
+        {
+            "strike": 22500,
+            "is_atm": True,
+            "call": {
+                "symbol": "NIFTY_2026-03-26_22500_CE",
+                "strike": 22500,
+                "option_type": "CE",
+                "expiry": "2026-03-26",
+                "ltp": None,
+            },
+            "put": {
+                "symbol": "NIFTY_2026-03-26_22500_PE",
+                "strike": 22500,
+                "option_type": "PE",
+                "expiry": "2026-03-26",
+                "ltp": 121.0,
+            },
+        }
+    ]
+
+    response = market_data_service.get_option_chain()
+
+    assert response.rows[0].call.ltp is None
+    assert response.rows[0].put.ltp == 121.0
+
+
 def test_apply_index_tick_marks_chain_dirty_when_live_atm_changes() -> None:
     _reset_test_runtime()
     market_data_service._active_atm_strike = 22500
@@ -3624,6 +3653,7 @@ def test_apply_chain_payload_merges_greeks_without_overwriting_ltp(monkeypatch: 
             "gamma": 0.01,
             "theta": -5.0,
             "vega": 10.0,
+            "_live_updated_at": datetime.now(timezone.utc),
         },
     }
     market_data_service._security_id_to_symbol = {"12345": "NIFTY_2026-03-26_24000_CE"}
@@ -3658,7 +3688,6 @@ def test_apply_chain_payload_merges_greeks_without_overwriting_ltp(monkeypatch: 
         "total_put_oi": 50000.0,
     }
 
-    from datetime import datetime, timezone
     market_data_service._apply_chain_payload(chain, expiry="2026-03-26", now=datetime.now(timezone.utc))
 
     quote = market_data_service.quotes["NIFTY_2026-03-26_24000_CE"]
@@ -3674,6 +3703,84 @@ def test_apply_chain_payload_merges_greeks_without_overwriting_ltp(monkeypatch: 
     assert quote["gamma"] == 0.012
     assert quote["theta"] == -5.5
     assert quote["vega"] == 10.5
+
+
+def test_apply_chain_payload_replaces_stale_live_quote_fields_with_rest_values() -> None:
+    _reset_test_runtime()
+    market_data_service.reset_runtime_state_for_tests()
+    stale_live_updated_at = datetime.now(timezone.utc) - timedelta(minutes=2)
+    market_data_service.quotes = {
+        "NIFTY_2026-03-26_24000_CE": {
+            "symbol": "NIFTY_2026-03-26_24000_CE",
+            "security_id": "12345",
+            "strike": 24000,
+            "option_type": "CE",
+            "expiry": "2026-03-26",
+            "ltp": 150.0,
+            "bid": 149.5,
+            "ask": 150.5,
+            "oi": 50000.0,
+            "volume": 1000.0,
+            "_live_updated_at": stale_live_updated_at,
+        },
+    }
+
+    chain = {
+        "quotes": {
+            "NIFTY_2026-03-26_24000_CE": {
+                "symbol": "NIFTY_2026-03-26_24000_CE",
+                "security_id": "12345",
+                "strike": 24000,
+                "option_type": "CE",
+                "expiry": "2026-03-26",
+                "ltp": 145.0,
+                "bid": 144.5,
+                "ask": 145.5,
+                "oi": 48000.0,
+                "oi_lakhs": 0.48,
+                "volume": 900.0,
+                "iv": 16.5,
+            },
+        },
+        "rows": [{"strike": 24000, "is_atm": True, "call": {"symbol": "NIFTY_2026-03-26_24000_CE"}, "put": {"symbol": "NIFTY_2026-03-26_24000_PE"}}],
+        "security_id_to_symbol": {"12345": "NIFTY_2026-03-26_24000_CE"},
+        "total_call_oi": 50000.0,
+        "total_put_oi": 50000.0,
+    }
+
+    market_data_service._apply_chain_payload(chain, expiry="2026-03-26", now=datetime.now(timezone.utc))
+
+    quote = market_data_service.quotes["NIFTY_2026-03-26_24000_CE"]
+    assert quote["ltp"] == 145.0
+    assert quote["bid"] == 144.5
+    assert quote["ask"] == 145.5
+    assert quote["oi"] == 48000.0
+    assert quote["volume"] == 900.0
+
+
+def test_open_feed_incident_clears_stale_live_quotes() -> None:
+    _reset_test_runtime()
+    market_data_service.reset_runtime_state_for_tests()
+    market_data_service.quotes = {
+        "NIFTY_2026-03-26_24000_CE": {
+            "symbol": "NIFTY_2026-03-26_24000_CE",
+            "security_id": "12345",
+            "strike": 24000,
+            "option_type": "CE",
+            "expiry": "2026-03-26",
+            "ltp": 150.0,
+            "bid": 149.5,
+            "ask": 150.5,
+            "_live_updated_at": datetime.now(timezone.utc) - timedelta(minutes=2),
+        },
+    }
+
+    asyncio.run(market_data_service._open_incident("REALTIME_FEED_STALE", "feed stale"))
+
+    quote = market_data_service.quotes["NIFTY_2026-03-26_24000_CE"]
+    assert quote["ltp"] is None
+    assert quote["bid"] is None
+    assert quote["ask"] is None
 
 
 def test_apply_chain_payload_persists_option_registry() -> None:

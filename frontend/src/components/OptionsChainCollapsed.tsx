@@ -12,8 +12,8 @@ interface Props {
   activeExpiry: string | null
 }
 
-function formatLTP(ltp: number) {
-  return ltp === 0 ? '--' : ltp.toFixed(2)
+function formatLTP(ltp: number | null | undefined) {
+  return ltp == null || ltp === 0 ? '--' : ltp.toFixed(2)
 }
 
 const OptionsChainCollapsedRow = memo(function OptionsChainCollapsedRow({

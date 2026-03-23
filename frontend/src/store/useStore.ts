@@ -342,7 +342,7 @@ function syncPositionsFromChain(
   let changed = false
   const nextPositions = positions.map((position) => {
     const quote = resolveIndexedQuote(chain, chainIndex, position.symbol)
-    if (!quote || quote.ltp === position.last_price) {
+    if (!quote || quote.ltp == null || quote.ltp === position.last_price) {
       return position
     }
     changed = true

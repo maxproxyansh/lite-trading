@@ -223,7 +223,7 @@ class OptionQuote(BaseModel):
     strike: int
     option_type: Literal["CE", "PE"]
     expiry: str
-    ltp: float
+    ltp: float | None = None
     bid: float | None = None
     ask: float | None = None
     bid_qty: int | None = None

@@ -38,7 +38,9 @@ export default function OrderTicket() {
       ? (selectedQuote.ask ?? selectedQuote.ltp)
       : (selectedQuote.bid ?? selectedQuote.ltp)
     : 0
-  const estimatedValue = (price ? Number(price) : defaultPrice) * lots * NIFTY_LOT_SIZE
+  const displayLtp = selectedQuote?.ltp
+  const effectiveDefaultPrice = defaultPrice ?? 0
+  const estimatedValue = (price ? Number(price) : effectiveDefaultPrice) * lots * NIFTY_LOT_SIZE
 
   const requiresPrice = orderType === 'LIMIT' || orderType === 'SL'
   const requiresTrigger = orderType === 'SL' || orderType === 'SL-M'
@@ -60,7 +62,7 @@ export default function OrderTicket() {
             <div className="mb-1 font-medium text-text-primary">{selectedQuote.symbol}</div>
             <div className="flex gap-4 tabular-nums text-text-muted">
               <span>B {selectedQuote.bid?.toFixed(2) ?? '--'}</span>
-              <span className="text-text-primary">{selectedQuote.ltp.toFixed(2)}</span>
+              <span className="text-text-primary">{displayLtp != null ? displayLtp.toFixed(2) : '--'}</span>
               <span>A {selectedQuote.ask?.toFixed(2) ?? '--'}</span>
             </div>
           </>
@@ -136,7 +138,7 @@ export default function OrderTicket() {
             step="0.05"
             value={price}
             onChange={(e) => setPrice(e.target.value)}
-            placeholder={defaultPrice ? defaultPrice.toFixed(2) : '--'}
+            placeholder={defaultPrice != null && defaultPrice > 0 ? defaultPrice.toFixed(2) : '--'}
             className="mt-0.5 w-full rounded-sm border border-border-primary bg-bg-primary px-2 py-1.5 text-[12px] tabular-nums text-text-primary outline-none placeholder:text-text-muted"
           />
         </label>

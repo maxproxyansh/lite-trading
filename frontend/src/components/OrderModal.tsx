@@ -65,7 +65,7 @@ export default function OrderModal() {
   const showTrigger = orderType === 'SL' || orderType === 'SL-M'
 
   const defaultPrice = quote.ask ?? quote.ltp
-  const effectivePrice = price ? Number(price) : defaultPrice
+  const effectivePrice = price ? Number(price) : (defaultPrice ?? 0)
   const estimatedValue = effectivePrice * lots * NIFTY_LOT_SIZE
   const canSubmit = orderType === 'MARKET' || price
 
@@ -167,7 +167,7 @@ export default function OrderModal() {
                 step="0.05"
                 value={price}
                 onChange={(e) => setPrice(e.target.value)}
-                placeholder={defaultPrice.toFixed(2)}
+                placeholder={defaultPrice != null ? defaultPrice.toFixed(2) : '--'}
                 className="w-full rounded-sm border border-border-primary bg-bg-primary px-2 py-1.5 text-sm tabular-nums text-text-primary outline-none placeholder:text-text-muted"
               />
             </div>

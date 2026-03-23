@@ -1957,7 +1957,7 @@ export interface components {
             /** Expiry */
             expiry: string;
             /** Ltp */
-            ltp: number;
+            ltp?: number | null;
             /** Bid */
             bid?: number | null;
             /** Ask */
