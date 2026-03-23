@@ -67,6 +67,7 @@ class Settings(BaseSettings):
     dhan_api_rate_limit_per_minute: int = Field(default=20, alias="DHAN_API_RATE_LIMIT_PER_MINUTE")
     dhan_incident_alert_cooldown_seconds: int = Field(default=28800, alias="DHAN_INCIDENT_ALERT_COOLDOWN_SECONDS")
     dhan_p0_slack_webhook_url: str | None = Field(default=None, alias="DHAN_P0_SLACK_WEBHOOK_URL")
+    alert_slack_webhook_url: str | None = Field(default=None, alias="ALERT_SLACK_WEBHOOK_URL")
     allow_public_signup: bool = Field(default=True, alias="ALLOW_PUBLIC_SIGNUP")
     bootstrap_admin_email: str | None = Field(default=None, alias="BOOTSTRAP_ADMIN_EMAIL")
     bootstrap_admin_password: str | None = Field(default=None, alias="BOOTSTRAP_ADMIN_PASSWORD")

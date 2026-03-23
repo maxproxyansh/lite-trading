@@ -1,19 +1,36 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime, timezone
 from typing import Any
 
+import httpx
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from config import get_settings
 from models import Alert
 from schemas import AlertCreateRequest, AlertSummary, AlertUpdateRequest
 from services.audit import log_audit
 from services.agent_event_service import create_agent_event, serialize_agent_event
 from services.market_data import market_data_service
 from services.webhook_service import enqueue_webhook_event
+
+
+_alert_logger = logging.getLogger("lite.alerts")
+
+
+def _post_alert_to_slack(message: str) -> None:
+    webhook_url = get_settings().alert_slack_webhook_url
+    if not webhook_url:
+        return
+    try:
+        with httpx.Client(timeout=5.0) as client:
+            client.post(webhook_url, json={"text": message})
+    except Exception:  # noqa: BLE001
+        _alert_logger.exception("Failed to post alert to Slack")
 
 
 MONEY_PLACES = Decimal("0.01")
@@ -244,6 +261,10 @@ def sync_alerts(db: Session) -> list[TriggeredAlertEvent]:
                 event_type="alert.triggered",
                 payload=serialized_event,
                 agent_key_id=alert.creator_agent_key_id,
+            )
+            _post_alert_to_slack(
+                f"🚨 ALERT TRIGGERED: {alert.symbol} crossed {target_price:.2f} ({alert.direction})"
+                f" | Price: {current_price:.2f} | Alert ID: {alert.id}"
             )
         triggered_alerts.append(alert)
     if alerts:
