@@ -1,27 +1,13 @@
 import { useState } from 'react'
 import WidgetPrompt from './WidgetPrompt'
 
-function launchApp(path: string) {
-  window.location.href = path
-}
-
 export default function WidgetButton() {
   const [showPrompt, setShowPrompt] = useState(false)
 
   const handleTap = (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    const connected = localStorage.getItem('pulse-connected') === 'true'
-    if (connected) {
-      launchApp('litewidget://start')
-      // If app isn't installed, nothing happens — show modal as fallback after short delay
-      setTimeout(() => {
-        // If we're still on this page (app didn't open), offer setup
-        setShowPrompt(true)
-      }, 1500)
-    } else {
-      setShowPrompt(true)
-    }
+    setShowPrompt(true)
   }
 
   return (

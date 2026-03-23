@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 
 import type { Drawing, DrawingType, DrawingPoint, IndicatorConfig } from '../lib/chart/types'
 import { loadDrawings, saveDrawings, saveDrawingsDebounced, loadIndicatorConfigs, saveIndicatorConfigsDebounced } from '../lib/chart/storage'
@@ -416,7 +417,7 @@ function syncSelectedQuote(
   return resolveIndexedQuote(chain, chainIndex, selectedQuote.symbol) ?? selectedQuote
 }
 
-export const useStore = create<AppState>((set, get) => ({
+export const useStore = create<AppState>()(persist((set, get) => ({
   ...initialUserScopedState(),
   chartTimeframe: 'D',
   chainView: 'collapsed',
@@ -682,4 +683,7 @@ export const useStore = create<AppState>((set, get) => ({
     set({ oscillatorPaneState: { ...get().oscillatorPaneState, [id]: expanded } })
   },
   toggleOverlayVisible: () => set({ overlayVisible: !get().overlayVisible }),
+}), {
+  name: 'lite-auth',
+  partialize: (state) => ({ accessToken: state.accessToken, user: state.user }),
 }))
