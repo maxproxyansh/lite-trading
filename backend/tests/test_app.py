@@ -1257,7 +1257,7 @@ def test_dhan_call_activates_global_backoff_on_rate_limit(monkeypatch: pytest.Mo
         raise DhanApiError("DHAN_RATE_LIMITED", "Too many requests")
 
     monkeypatch.setattr(dhan_credential_service, "_unwrap_sdk_result", fake_unwrap)
-    monkeypatch.setattr(dhan_credential_service, "ensure_token_fresh", lambda: None)
+    monkeypatch.setattr(dhan_credential_service, "ensure_token_fresh", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         dhan_credential_service,
         "snapshot",
