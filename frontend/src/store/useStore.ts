@@ -1,5 +1,4 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
 
 import type { Drawing, DrawingType, DrawingPoint, IndicatorConfig } from '../lib/chart/types'
 import { loadDrawings, saveDrawings, saveDrawingsDebounced, loadIndicatorConfigs, saveIndicatorConfigsDebounced } from '../lib/chart/storage'
@@ -417,7 +416,7 @@ function syncSelectedQuote(
   return resolveIndexedQuote(chain, chainIndex, selectedQuote.symbol) ?? selectedQuote
 }
 
-export const useStore = create<AppState>()(persist((set, get) => ({
+export const useStore = create<AppState>()((set, get) => ({
   ...initialUserScopedState(),
   chartTimeframe: 'D',
   chainView: 'collapsed',
@@ -440,15 +439,17 @@ export const useStore = create<AppState>()(persist((set, get) => ({
   setOptionChartSymbol: (optionChartSymbol) => set({ optionChartSymbol }),
   openOrderModal: (quote, side) => set({ orderModal: { isOpen: true, quote, side } }),
   closeOrderModal: () => set({ orderModal: null }),
-  setSession: (token, user) => set((state) => {
-    if (!token || !user) {
-      return initialUserScopedState()
-    }
-    if (state.user?.id && state.user.id !== user.id) {
-      return { ...initialUserScopedState(), accessToken: token, user }
-    }
-    return { accessToken: token, user }
-  }),
+  setSession: (token, user) => {
+    set((state) => {
+      if (!token || !user) {
+        return initialUserScopedState()
+      }
+      if (state.user?.id && state.user.id !== user.id) {
+        return { ...initialUserScopedState(), accessToken: token, user }
+      }
+      return { accessToken: token, user }
+    })
+  },
   setSharedLoading: (sharedLoading) => set({ sharedLoading }),
   setPortfolioLoading: (portfolioLoading) => set({ portfolioLoading }),
   setChainLoading: (chainLoading) => set({ chainLoading }),
@@ -683,7 +684,4 @@ export const useStore = create<AppState>()(persist((set, get) => ({
     set({ oscillatorPaneState: { ...get().oscillatorPaneState, [id]: expanded } })
   },
   toggleOverlayVisible: () => set({ overlayVisible: !get().overlayVisible }),
-}), {
-  name: 'lite-auth',
-  partialize: (state) => ({ accessToken: state.accessToken, user: state.user }),
 }))

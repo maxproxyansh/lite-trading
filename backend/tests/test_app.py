@@ -2874,7 +2874,13 @@ def test_current_bucket_time_supports_intraday_intervals(monkeypatch: pytest.Mon
     assert bucket == expected
 
 
-def test_overlay_live_price_adds_first_intraday_candle_for_new_trading_day(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_overlay_live_price_does_not_fabricate_intraday_candle(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Intraday candles should never be fabricated from day_high/day_low.
+
+    When the last candle's time doesn't match the current bucket, the overlay
+    should return the original candles unchanged rather than creating a phantom
+    candle whose high/low equals the full-session range.
+    """
     monkeypatch.setattr(
         market_hours,
         "now_ist",
@@ -2899,10 +2905,81 @@ def test_overlay_live_price_adds_first_intraday_candle_for_new_trading_day(monke
         day_low=103.0,
     )
 
-    assert len(result) == 2
-    assert result[-1]["time"] == int(datetime(2026, 3, 13, 9, 15, tzinfo=market_hours.IST).timestamp())
-    assert result[-1]["open"] == 101.0
-    assert result[-1]["close"] == 103.5
+    # No phantom candle — intraday data returned as-is
+    assert len(result) == 1
+    assert result[0] == candles[0]
+
+
+def test_overlay_live_price_ignores_day_extremes_for_intraday_matching_candle(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When updating a matching intraday candle, day_high/day_low must be ignored.
+
+    The full-session range doesn't belong in a single 5m/15m/1h bar.
+    """
+    monkeypatch.setattr(
+        market_hours,
+        "now_ist",
+        lambda: datetime(2026, 3, 13, 10, 17, tzinfo=market_hours.IST),
+    )
+    bucket_time = int(datetime(2026, 3, 13, 10, 15, tzinfo=market_hours.IST).timestamp())
+    candles = [
+        {
+            "time": bucket_time,
+            "open": 22300.0,
+            "high": 22310.0,
+            "low": 22290.0,
+            "close": 22305.0,
+            "volume": 5000.0,
+        }
+    ]
+
+    result = market_data_service._overlay_live_price(
+        candles,
+        timeframe="15m",
+        live_price=22308.0,
+        day_high=22500.0,
+        day_low=21800.0,
+    )
+
+    assert len(result) == 1
+    updated = result[0]
+    assert updated["close"] == 22308.0
+    # high/low should reflect only the live price, NOT the day's extremes
+    assert updated["high"] == 22310.0  # unchanged — live price didn't exceed interval high
+    assert updated["low"] == 22290.0   # unchanged — live price didn't go below interval low
+
+
+def test_overlay_live_price_applies_day_extremes_for_daily_candle(monkeypatch: pytest.MonkeyPatch) -> None:
+    """For daily candles, day_high/day_low SHOULD be applied."""
+    monkeypatch.setattr(
+        market_hours,
+        "now_ist",
+        lambda: datetime(2026, 3, 13, 10, 30, tzinfo=market_hours.IST),
+    )
+    bucket_time = int(datetime(2026, 3, 13, 0, 0, tzinfo=market_hours.IST).timestamp())
+    candles = [
+        {
+            "time": bucket_time,
+            "open": 22300.0,
+            "high": 22310.0,
+            "low": 22290.0,
+            "close": 22305.0,
+            "volume": 5000.0,
+        }
+    ]
+
+    result = market_data_service._overlay_live_price(
+        candles,
+        timeframe="D",
+        live_price=22308.0,
+        day_high=22500.0,
+        day_low=21800.0,
+    )
+
+    assert len(result) == 1
+    updated = result[0]
+    assert updated["close"] == 22308.0
+    assert updated["high"] == 22500.0  # day_high applied
+    assert updated["low"] == 21800.0   # day_low applied
 
 
 def test_get_candles_maps_rate_limit_and_invalid_request_to_specific_status_codes(monkeypatch: pytest.MonkeyPatch) -> None:

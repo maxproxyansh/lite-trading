@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { pulseSetup } from '../lib/api'
 
-function launchApp(path: string) {
-  window.location.href = path
+function launchApp(token: string) {
+  // Android Chrome requires intent:// URLs for custom schemes
+  const encoded = encodeURIComponent(token)
+  window.location.href = `intent://start?token=${encoded}#Intent;scheme=litewidget;package=com.lite.widget;end`
 }
 
 function getSavedToken(): string | null {
@@ -43,7 +45,7 @@ export default function WidgetPrompt({ onClose }: { onClose: () => void }) {
 
   const handleOpen = () => {
     if (claimToken) {
-      launchApp(`litewidget://start?token=${claimToken}`)
+      launchApp(claimToken)
     }
     localStorage.removeItem('pulse-claim')
     localStorage.setItem('pulse-connected', 'true')
