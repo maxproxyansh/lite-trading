@@ -5,9 +5,20 @@ function launchApp(path: string) {
   window.location.href = path
 }
 
+function getSavedToken(): string | null {
+  try {
+    const raw = localStorage.getItem('pulse-claim')
+    if (!raw) return null
+    const { token, expires } = JSON.parse(raw)
+    if (Date.now() > expires) { localStorage.removeItem('pulse-claim'); return null }
+    return token
+  } catch { return null }
+}
+
 export default function WidgetPrompt({ onClose }: { onClose: () => void }) {
-  const [step, setStep] = useState<1 | 2>(1)
-  const [claimToken, setClaimToken] = useState<string | null>(null)
+  const saved = getSavedToken()
+  const [step, setStep] = useState<1 | 2>(saved ? 2 : 1)
+  const [claimToken, setClaimToken] = useState<string | null>(saved)
   const [loading, setLoading] = useState(false)
 
   const handleDownload = async () => {
@@ -15,6 +26,8 @@ export default function WidgetPrompt({ onClose }: { onClose: () => void }) {
     try {
       const { claim_token } = await pulseSetup()
       setClaimToken(claim_token)
+      // Persist token so it survives PWA backgrounding during APK install
+      localStorage.setItem('pulse-claim', JSON.stringify({ token: claim_token, expires: Date.now() + 10 * 60 * 1000 }))
       // Download APK directly from Vercel static file
       const link = document.createElement('a')
       link.href = '/lite-pulse.apk'
@@ -32,6 +45,7 @@ export default function WidgetPrompt({ onClose }: { onClose: () => void }) {
     if (claimToken) {
       launchApp(`litewidget://start?token=${claimToken}`)
     }
+    localStorage.removeItem('pulse-claim')
     localStorage.setItem('pulse-connected', 'true')
     onClose()
   }
