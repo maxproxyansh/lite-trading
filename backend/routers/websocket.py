@@ -77,6 +77,17 @@ async def broadcast_agent_message(agent_key_id: str, event_type: str, payload: d
     await _broadcast_to_clients(clients, message)
 
 
+async def broadcast_user_all_clients(user_id: str, event_type: str, payload: dict[str, Any]) -> None:
+    """Broadcast to ALL clients (session + agent key) belonging to a user."""
+    message = json.dumps({"type": event_type, "payload": payload}, default=str, separators=(",", ":"))
+    clients = [
+        socket
+        for socket, client in connected_clients.items()
+        if client.user_id == user_id
+    ]
+    await _broadcast_to_clients(clients, message)
+
+
 def _bearer_token(value: str | None) -> str | None:
     if not value:
         return None

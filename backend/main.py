@@ -19,7 +19,7 @@ from services.dhan_credential_service import dhan_credential_service
 from services.signal_adapter import signal_adapter
 from services.trading_service import process_open_orders_sync
 from services.webhook_service import run_webhook_dispatcher
-from routers.websocket import broadcast_agent_message, broadcast_message, broadcast_portfolio_message, broadcast_user_message
+from routers.websocket import broadcast_agent_message, broadcast_message, broadcast_portfolio_message, broadcast_user_all_clients, broadcast_user_message
 
 
 settings = get_settings()
@@ -52,7 +52,7 @@ async def _process_market_side_effects(symbols: set[str]) -> None:
     finally:
         db.close()
     for alert in triggered_alerts:
-        await broadcast_user_message(
+        await broadcast_user_all_clients(
             alert.user_id,
             "alert.triggered",
             alert.payload.model_dump(mode="json"),
