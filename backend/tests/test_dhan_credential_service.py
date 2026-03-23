@@ -196,3 +196,131 @@ def test_ensure_token_fresh_can_spend_reserved_budget_on_profile_regen_profile(m
         "generate_access_token:generateAccessToken",
         "profile:profile",
     ]
+
+
+def test_planned_renewal_prefers_active_token_renewal(monkeypatch: pytest.MonkeyPatch) -> None:
+    service = DhanCredentialService()
+    now = datetime(2026, 3, 21, 4, 0, tzinfo=timezone.utc)
+    old_token = "active-token"
+    new_token = "renewed-token"
+
+    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_client_id", "1103337749")
+    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_access_token", old_token)
+    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_pin", "4321")
+    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_totp_secret", "JBSWY3DPEHPK3PXP")
+    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_profile_check_seconds", 60)
+    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_token_renewal_lead_seconds", 3600)
+
+    service.reset_runtime_state()
+    service.initialize(force_reload=True)
+    service._client_id = "1103337749"
+    service._access_token = old_token
+    service._expires_at = now + timedelta(minutes=20)
+    service._last_profile_checked_at = now - timedelta(hours=1)
+
+    calls: list[str] = []
+
+    def fake_request_json(method: str, url: str, *, budget_operation: str | None = None, **kwargs):
+        calls.append(f"{budget_operation}:{url.rsplit('/', 1)[-1]}")
+        if url.endswith("/profile"):
+            headers = kwargs.get("headers") or {}
+            token = headers.get("access-token")
+            validity = "21/03/2026 10:00" if token == old_token else "22/03/2026 10:00"
+            return {
+                "dhanClientId": "1103337749",
+                "tokenValidity": validity,
+                "dataPlan": "Active",
+                "dataValidity": "2026-04-03 21:50:36.0",
+            }
+        if url.endswith("/RenewToken"):
+            return {
+                "accessToken": new_token,
+                "expiryTime": "2026-03-22T10:00:00.000",
+            }
+        raise AssertionError(f"Unexpected URL: {url}")
+
+    monkeypatch.setattr(service, "_request_json", fake_request_json)
+
+    assert service.ensure_token_fresh(force_profile=True, allow_planned_renewal=True) is True
+    assert calls == [
+        "profile:profile",
+        "renew_token:RenewToken",
+        "profile:profile",
+    ]
+    assert service.snapshot().access_token == new_token
+    assert service.snapshot().token_source == "renew"
+
+
+def test_failed_totp_waits_for_next_window_not_two_minute_cooldown(monkeypatch: pytest.MonkeyPatch) -> None:
+    service = DhanCredentialService()
+    clock = {"time": 1_000.0, "mono": 2_000.0}
+
+    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_client_id", "1103337749")
+    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_pin", "4321")
+    monkeypatch.setattr(dhan_credentials_module.settings, "dhan_totp_secret", "JBSWY3DPEHPK3PXP")
+    monkeypatch.setattr(dhan_credentials_module.time, "time", lambda: clock["time"])
+    monkeypatch.setattr(dhan_credentials_module.time, "monotonic", lambda: clock["mono"])
+
+    def fake_sleep(seconds: float) -> None:
+        clock["time"] += seconds
+        clock["mono"] += seconds
+
+    monkeypatch.setattr(dhan_credentials_module.time, "sleep", fake_sleep)
+    monkeypatch.setattr(dhan_credentials_module, "_seconds_until_next_totp_window", lambda **kwargs: 0.5)
+
+    service.reset_runtime_state()
+    service._client_id = "1103337749"
+
+    generate_calls = {"count": 0}
+
+    def fake_request_json(method: str, url: str, *, budget_operation: str | None = None, **kwargs):
+        if url.endswith("/generateAccessToken"):
+            generate_calls["count"] += 1
+            if generate_calls["count"] <= 5:
+                return {"status": "error", "message": "Invalid TOTP"}
+            return {
+                "accessToken": "fresh-token",
+                "expiryTime": "2026-03-22T10:00:00.000",
+            }
+        if url.endswith("/profile"):
+            return {
+                "dhanClientId": "1103337749",
+                "tokenValidity": "22/03/2026 10:00",
+                "dataPlan": "Active",
+                "dataValidity": "2026-04-03 21:50:36.0",
+            }
+        raise AssertionError(f"Unexpected URL: {url}")
+
+    monkeypatch.setattr(service, "_request_json", fake_request_json)
+
+    with service._renewal_lock:
+        assert service._regenerate_via_totp_inner(reason="profile-check-failed") is True
+
+    assert generate_calls["count"] == 6
+    assert 2_000.5 <= clock["mono"] < 2_010.0
+    assert service.snapshot().access_token == "fresh-token"
+
+
+def test_request_json_redacts_auth_query_params_in_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    service = DhanCredentialService()
+
+    class Response:
+        status_code = 400
+        text = '{"message":"Invalid TOTP"}'
+
+        @staticmethod
+        def json() -> dict[str, str]:
+            return {"message": "Invalid TOTP"}
+
+    monkeypatch.setattr(dhan_credentials_module.httpx, "request", lambda *args, **kwargs: Response())
+
+    with pytest.raises(DhanApiError) as exc_info:
+        service._request_json(
+            "POST",
+            "https://auth.dhan.co/app/generateAccessToken?dhanClientId=1103337749&pin=123456&totp=000000",
+        )
+
+    message = exc_info.value.message
+    assert "generateAccessToken" in message
+    assert "pin=123456" not in message
+    assert "totp=000000" not in message

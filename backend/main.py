@@ -24,6 +24,8 @@ from routers.websocket import broadcast_agent_message, broadcast_message, broadc
 
 settings = get_settings()
 logging.basicConfig(level=logging.INFO)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 logger = logging.getLogger("lite.backend")
 APP_VERSION = settings.app_version
 OPENAPI_URL = f"{settings.api_prefix}/openapi.json"
@@ -86,8 +88,9 @@ async def lifespan(app: FastAPI):
     snap = dhan_credential_service.snapshot()
     if snap.configured:
         try:
-            dhan_credential_service.ensure_token_fresh(force_profile=True)
-            logger.info("Startup token verified (gen=%d, source=%s)", snap.generation, snap.token_source)
+            dhan_credential_service.ensure_token_fresh(force_profile=True, allow_planned_renewal=True)
+            fresh = dhan_credential_service.snapshot()
+            logger.info("Startup token verified (gen=%d, source=%s)", fresh.generation, fresh.token_source)
         except Exception:
             logger.warning("Startup token verification failed — will retry on first API call")
     market_data_service.set_broadcast(broadcast_message)

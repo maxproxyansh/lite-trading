@@ -12,6 +12,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, TypeVar
+from urllib.parse import urlsplit
 
 import httpx
 from dhanhq import dhanhq as Dhanhq
@@ -29,6 +30,8 @@ AUTH_ERROR_MARKERS = ("authentication failed", "token invalid", "invalid token",
 RATE_LIMIT_MARKERS = ("too many request", "too many requests", "429", "805")
 STATIC_IP_MARKERS = ("static ip", "whitelisted ip", "ip mismatch")
 ACCESS_DENIED_MARKERS = ("not subscribed", "does not have access", "access denied", "subscription")
+TOTP_INVALID_MARKERS = ("invalid totp", "totp invalid", "otp invalid", "invalid otp")
+TOTP_REGEN_RATE_LIMIT_MARKERS = ("once every 2 minutes", "once in 2 minutes", "wait for 2 minutes")
 INVALID_REQUEST_MARKERS = (
     "invalid request",
     "invalid expiry",
@@ -191,12 +194,40 @@ def _totp_code(secret: str, *, for_time: float | None = None) -> str:
     return f"{(struct.unpack('>I', d[o:o+4])[0] & 0x7FFFFFFF) % 1_000_000:06d}"
 
 def _totp_candidates(secret: str) -> list[str]:
-    now, seen = time.time(), []
-    for off in (0, -30, 30):
-        c = _totp_code(secret, for_time=now + off)
+    return _totp_candidates_for_time(secret, for_time=time.time())
+
+
+def _totp_candidates_for_time(secret: str, *, for_time: float) -> list[str]:
+    seen: list[str] = []
+    for off in (0, -30, 30, -60, 60):
+        c = _totp_code(secret, for_time=for_time + off)
         if c not in seen:
             seen.append(c)
     return seen
+
+
+def _seconds_until_next_totp_window(*, now: float | None = None, safety_seconds: float = 1.5) -> float:
+    current = time.time() if now is None else now
+    return max((30 - (current % 30)) + safety_seconds, safety_seconds)
+
+
+def _endpoint_label(url: str) -> str:
+    path = urlsplit(url).path or url
+    return path.rsplit("/", 1)[-1] or path
+
+
+def _totp_error_from_payload(payload: dict[str, Any]) -> DhanApiError:
+    error_code, error_message = _extract_error_details(payload)
+    message = str(error_message or payload.get("message") or payload)[:500]
+    reason, auth_failed = _classify_dhan_error(error_code, message)
+    lower = message.lower()
+    if not reason and any(marker in lower for marker in TOTP_INVALID_MARKERS):
+        reason, auth_failed = "DHAN_TOTP_INVALID", True
+    elif any(marker in lower for marker in TOTP_REGEN_RATE_LIMIT_MARKERS):
+        reason, auth_failed = "DHAN_RATE_LIMITED", False
+    if not reason:
+        reason, auth_failed = "DHAN_TOKEN_REGENERATION_FAILED", True
+    return DhanApiError(reason, f"TOTP response missing token: {message}", auth_failed=auth_failed, payload=payload)
 
 def _classify(msg: str, status: int = 0) -> tuple[str, bool]:
     return _classify_dhan_error(None, msg, status=status)
@@ -281,7 +312,9 @@ class DhanCredentialService:
         self._data_plan_status: str | None = None
         self._data_valid_until: datetime | None = None
         self._generation = 0
-        self._last_totp_generation_at: float = 0.0
+        self._dead_generation: int | None = None
+        self._last_totp_success_at: float = 0.0
+        self._next_totp_attempt_at: float = 0.0
         self._global_backoff_until: float | None = None
         self._backoff_count: int = 0
 
@@ -299,6 +332,11 @@ class DhanCredentialService:
             self._client_id = self._access_token = self._expires_at = self._token_source = None
             self._last_refreshed_at = self._last_profile_checked_at = self._last_lease_issued_at = None
             self._last_rest_success_at = self._data_plan_status = self._data_valid_until = None
+            self._dead_generation = None
+            self._last_totp_success_at = 0.0
+            self._next_totp_attempt_at = 0.0
+            self._global_backoff_until = None
+            self._backoff_count = 0
 
     def snapshot(self) -> DhanCredentialSnapshot:
         self.initialize()
@@ -321,44 +359,73 @@ class DhanCredentialService:
             raise DhanApiError("DHAN_NOT_CONFIGURED", "Dhan credentials are not configured")
         return Dhanhq(s.client_id, s.access_token)
 
-    def ensure_token_fresh(self, force_profile: bool = False) -> bool:
+    def _generation_is_dead(self, generation: int) -> bool:
+        with self._lock:
+            return self._dead_generation == generation
+
+    def _mark_generation_dead(self, generation: int) -> None:
+        with self._lock:
+            if generation == self._generation:
+                self._dead_generation = generation
+
+    @staticmethod
+    def _planned_renewal_due(snapshot: DhanCredentialSnapshot, now: datetime) -> bool:
+        return bool(
+            snapshot.expires_at
+            and (snapshot.expires_at - now).total_seconds()
+            <= max(settings.dhan_token_renewal_lead_seconds, 60)
+        )
+
+    @staticmethod
+    def _assert_data_plan_active(snapshot: DhanCredentialSnapshot, now: datetime) -> None:
+        if snapshot.data_plan_status and snapshot.data_plan_status.lower() != "active":
+            raise DhanApiError("DATA_PLAN_INACTIVE", f"Dhan data plan is {snapshot.data_plan_status}")
+        if snapshot.data_valid_until and snapshot.data_valid_until < now:
+            raise DhanApiError("DATA_PLAN_INACTIVE", "Dhan market-data entitlement has expired")
+
+    def ensure_token_fresh(self, force_profile: bool = False, *, allow_planned_renewal: bool = False) -> bool:
         self.initialize()
         snap, now = self.snapshot(), datetime.now(timezone.utc)
         if not snap.client_id:
             raise DhanApiError("DHAN_NOT_CONFIGURED", "Dhan client id is not configured")
         if not snap.access_token:
             return self._regenerate_via_totp(reason="missing-access-token")
-        needs_profile = (force_profile or not snap.last_profile_checked_at
-                         or (now - snap.last_profile_checked_at).total_seconds() >= max(settings.dhan_profile_check_seconds, 60))
-        needs_renewal = bool(snap.expires_at and (snap.expires_at - now).total_seconds() <= max(settings.dhan_token_renewal_lead_seconds, 60))
-        if needs_profile:
-            # Serialize profile checks under the renewal lock. Without this,
-            # concurrent threads can each trigger a profile check with the same
-            # token, then one thread's TOTP regen invalidates the token the
-            # other threads are using, causing a cascade of regenerations.
-            with self._renewal_lock:
-                # Re-check under lock — another thread may have already done the profile check
+        needs_profile = (
+            self._generation_is_dead(snap.generation)
+            or force_profile
+            or not snap.last_profile_checked_at
+            or (now - snap.last_profile_checked_at).total_seconds() >= max(settings.dhan_profile_check_seconds, 60)
+        )
+        needs_renewal = allow_planned_renewal and self._planned_renewal_due(snap, now)
+        if not needs_profile and not needs_renewal:
+            return False
+        with self._renewal_lock:
+            snap = self.snapshot()
+            now = datetime.now(timezone.utc)
+            needs_profile = (
+                self._generation_is_dead(snap.generation)
+                or force_profile
+                or not snap.last_profile_checked_at
+                or (now - snap.last_profile_checked_at).total_seconds() >= max(settings.dhan_profile_check_seconds, 60)
+            )
+            needs_renewal = allow_planned_renewal and self._planned_renewal_due(snap, now)
+            if not snap.access_token:
+                return self._regenerate_via_totp_inner(reason="missing-access-token")
+            if needs_profile:
+                try:
+                    profile = self._fetch_profile(snap.client_id, snap.access_token)
+                except DhanApiError as exc:
+                    if exc.auth_failed:
+                        self._mark_generation_dead(snap.generation)
+                        return self._regenerate_via_totp_inner(reason="profile-check-failed")
+                    raise
+                self._record_profile(profile)
                 snap = self.snapshot()
                 now = datetime.now(timezone.utc)
-                still_needs = (force_profile or not snap.last_profile_checked_at
-                               or (now - snap.last_profile_checked_at).total_seconds() >= max(settings.dhan_profile_check_seconds, 60))
-                if still_needs and snap.access_token:
-                    try:
-                        profile = self._fetch_profile(snap.client_id, snap.access_token)
-                    except DhanApiError as exc:
-                        needs_renewal = bool(snap.expires_at and (snap.expires_at - now).total_seconds() <= max(settings.dhan_token_renewal_lead_seconds, 60))
-                        if exc.auth_failed or needs_renewal:
-                            # Already hold _renewal_lock — call inner regen directly
-                            return self._regenerate_via_totp_inner(reason="profile-check-failed")
-                        raise
-                    self._record_profile(profile)
-                snap = self.snapshot()
-            if snap.data_plan_status and snap.data_plan_status.lower() != "active":
-                raise DhanApiError("DATA_PLAN_INACTIVE", f"Dhan data plan is {snap.data_plan_status}")
-            if snap.data_valid_until and snap.data_valid_until < now:
-                raise DhanApiError("DATA_PLAN_INACTIVE", "Dhan market-data entitlement has expired")
-            needs_renewal = bool(snap.expires_at and (snap.expires_at - now).total_seconds() <= max(settings.dhan_token_renewal_lead_seconds, 60))
-        return self._regenerate_via_totp(reason="scheduled-renewal") if needs_renewal else False
+            self._assert_data_plan_active(snap, now)
+            if allow_planned_renewal and self._planned_renewal_due(snap, now):
+                return self._renew_active_token_inner(reason="planned-renewal")
+            return False
 
     # Dhan enforces per-endpoint cooldowns; option_chain is 1 req per 3 seconds
     _OP_COOLDOWNS: dict[str, float] = {"option_chain": 3.0}
@@ -396,6 +463,7 @@ class DhanCredentialService:
                 if exc.reason == "DHAN_RATE_LIMITED":
                     self._apply_global_backoff()
                 if exc.auth_failed and allow_auth_retry and attempt == 1:
+                    self._mark_generation_dead(self.snapshot().generation)
                     self._regenerate_via_totp(reason=f"{operation_name}-auth-retry")
                     continue
                 raise
@@ -432,7 +500,7 @@ class DhanCredentialService:
 
     def scheduled_preopen_rotation(self) -> bool:
         self.initialize()
-        return self._regenerate_via_totp(reason="scheduled-rotation", force=True)
+        return self.ensure_token_fresh(force_profile=True, allow_planned_renewal=True)
 
     async def start_background_tasks(self) -> None:
         if self._scheduler_task:
@@ -511,6 +579,8 @@ class DhanCredentialService:
             self._expires_at, self._token_source, self._last_refreshed_at = expires_at, token_source, refreshed_at
             if changed:
                 self._generation += 1
+            self._dead_generation = None
+            self._next_totp_attempt_at = 0.0
         self._persist_runtime_state()
 
     def _record_profile(self, payload: dict[str, Any]) -> None:
@@ -533,6 +603,47 @@ class DhanCredentialService:
             budget_operation="profile",
         )
 
+    def _renew_active_token_inner(self, *, reason: str) -> bool:
+        """Refresh an active token. Caller MUST already hold _renewal_lock."""
+        snap = self.snapshot()
+        if not snap.client_id or not snap.access_token:
+            return self._regenerate_via_totp_inner(reason=f"{reason}-missing-token")
+        try:
+            resp = self._request_json(
+                "GET",
+                f"{DHAN_API_BASE}/RenewToken",
+                headers={
+                    "Accept": "application/json",
+                    "access-token": snap.access_token,
+                    "dhanClientId": snap.client_id,
+                    "client-id": snap.client_id,
+                },
+                budget_operation="renew_token",
+            )
+        except DhanApiError as exc:
+            logger.warning("Active token renewal failed via %s: %s", reason, exc.reason or exc.message)
+            if exc.auth_failed:
+                self._mark_generation_dead(snap.generation)
+            return self._regenerate_via_totp_inner(reason=f"{reason}-totp-fallback")
+        next_tok = str(resp.get("accessToken") or resp.get("token") or "").strip()
+        if not next_tok:
+            logger.warning("Active token renewal missing token via %s; falling back to TOTP", reason)
+            return self._regenerate_via_totp_inner(reason=f"{reason}-totp-fallback")
+        exp = _parse_ist_datetime(str(resp.get("expiryTime") or "")) or _decode_token_expiry(next_tok)
+        self._apply_new_token(
+            client_id=snap.client_id,
+            access_token=next_tok,
+            expires_at=exp,
+            token_source="renew",
+            refreshed_at=datetime.now(timezone.utc),
+        )
+        logger.info("Renewed active Dhan token for %s via %s", snap.client_id, reason)
+        try:
+            self._record_profile(self._fetch_profile(snap.client_id, next_tok))
+        except DhanApiError:
+            logger.warning("Profile fetch failed after active token renewal — token saved, profile updates on next check")
+        return True
+
     def _regenerate_via_totp(self, *, reason: str, force: bool = False) -> bool:
         """Acquire renewal lock and regenerate. Use _regenerate_via_totp_inner if lock is already held."""
         cid = (self.snapshot().client_id or settings.dhan_client_id or "").strip()
@@ -545,40 +656,69 @@ class DhanCredentialService:
                 return True
             return self._regenerate_via_totp_inner(reason=reason)
 
+    def _attempt_totp_regeneration(self, *, client_id: str, pin: str, secret: str, at_time: float) -> tuple[str, dict[str, Any] | None, DhanApiError | None]:
+        next_tok = ""
+        payload: dict[str, Any] | None = None
+        last_error: DhanApiError | None = None
+        for totp in _totp_candidates_for_time(secret, for_time=at_time):
+            try:
+                resp = self._request_json(
+                    "POST",
+                    f"{DHAN_AUTH_BASE}/generateAccessToken",
+                    params={"dhanClientId": client_id, "pin": pin, "totp": totp},
+                    budget_operation="generate_access_token",
+                )
+            except DhanApiError as exc:
+                last_error = exc
+                if exc.reason == "DHAN_RATE_LIMITED":
+                    return "", None, exc
+                continue
+            token = str(resp.get("accessToken") or resp.get("token") or "").strip()
+            if token:
+                return token, resp, None
+            last_error = _totp_error_from_payload(resp)
+            if last_error.reason == "DHAN_RATE_LIMITED":
+                return "", None, last_error
+        return next_tok, payload, last_error
+
     def _regenerate_via_totp_inner(self, *, reason: str) -> bool:
         """Do the actual TOTP regeneration. Caller MUST already hold _renewal_lock."""
         cid = (self.snapshot().client_id or settings.dhan_client_id or "").strip()
         pin, secret = (settings.dhan_pin or "").strip(), (settings.dhan_totp_secret or "").strip()
         if not cid or not pin or not secret:
             raise DhanApiError("DHAN_TOKEN_RENEWAL_FAILED", "TOTP regeneration not configured", auth_failed=True)
-        # Dhan rate-limits generateAccessToken to once per 2 minutes
-        elapsed = time.time() - self._last_totp_generation_at
-        if elapsed < 130:
-            s = self.snapshot()
-            if s.access_token and s.expires_at and s.expires_at > datetime.now(timezone.utc):
-                logger.info("Skipping TOTP regen (%.0fs cooldown, token valid)", 130 - elapsed)
-                return False
-            logger.warning("TOTP rate-limited, token expired; waiting %.0fs", 130 - elapsed)
-            time.sleep(130 - elapsed)
-        self._last_totp_generation_at = time.time()
-        next_tok, pay, last_err = "", None, None
-        for totp in _totp_candidates(secret):
-            try:
-                resp = self._request_json("POST", f"{DHAN_AUTH_BASE}/generateAccessToken",
-                                          params={"dhanClientId": cid, "pin": pin, "totp": totp},
-                                          budget_operation="generate_access_token")
-            except DhanApiError as e:
-                last_err = e
-                continue
-            t = str(resp.get("accessToken") or resp.get("token") or "").strip()
-            if t:
-                next_tok, pay = t, resp
+        attempts_remaining = 2
+        last_err: DhanApiError | None = None
+        next_tok = ""
+        pay: dict[str, Any] | None = None
+        while attempts_remaining > 0:
+            now_monotonic = time.monotonic()
+            if self._next_totp_attempt_at > now_monotonic:
+                wait_seconds = self._next_totp_attempt_at - now_monotonic
+                logger.warning("Waiting %.1fs before retrying Dhan TOTP regeneration", wait_seconds)
+                time.sleep(wait_seconds)
+            next_tok, pay, last_err = self._attempt_totp_regeneration(
+                client_id=cid,
+                pin=pin,
+                secret=secret,
+                at_time=time.time(),
+            )
+            if next_tok:
                 break
-            last_err = DhanApiError("DHAN_TOKEN_REGENERATION_FAILED",
-                                    f"TOTP response missing token: {str(resp)[:500]}", auth_failed=True, payload=resp)
-        if not next_tok:
+            attempts_remaining -= 1
+            if not last_err:
+                break
+            if last_err.reason == "DHAN_RATE_LIMITED":
+                next_allowed_at = self._last_totp_success_at + 130.0 if self._last_totp_success_at else time.monotonic() + 130.0
+                self._next_totp_attempt_at = max(self._next_totp_attempt_at, next_allowed_at)
+                continue
+            if last_err.reason == "DHAN_TOTP_INVALID" and attempts_remaining > 0:
+                self._next_totp_attempt_at = time.monotonic() + _seconds_until_next_totp_window()
+                continue
+            break
+        if not next_tok or not pay:
             raise last_err or DhanApiError("DHAN_TOKEN_REGENERATION_FAILED", "TOTP regeneration failed", auth_failed=True)
-        self._last_totp_generation_at = time.time()
+        self._last_totp_success_at = time.monotonic()
         # Apply token first — if profile fetch fails, the token is still saved
         exp = _parse_ist_datetime(str(pay.get("expiryTime") or "")) or _decode_token_expiry(next_tok)
         self._apply_new_token(client_id=cid, access_token=next_tok, expires_at=exp,
@@ -594,20 +734,21 @@ class DhanCredentialService:
         if budget_operation:
             self._acquire_budget(budget_operation)
         kwargs.setdefault("timeout", settings.dhan_http_timeout_seconds)
+        endpoint = _endpoint_label(url)
         try:
             response = httpx.request(method, url, **kwargs)
         except Exception as exc:
-            raise DhanApiError("DHAN_TRANSPORT_FAILED", f"Dhan request to {url} failed: {type(exc).__name__}: {exc}") from exc
+            raise DhanApiError("DHAN_TRANSPORT_FAILED", f"Dhan request to {endpoint} failed: {type(exc).__name__}: {exc}") from exc
         try:
             payload = response.json()
         except ValueError as exc:
-            raise DhanApiError("DHAN_REQUEST_FAILED", f"Dhan {url} invalid JSON: {response.text[:300]}",
+            raise DhanApiError("DHAN_REQUEST_FAILED", f"Dhan {endpoint} invalid JSON: {response.text[:300]}",
                                auth_failed=response.status_code in {401, 403}) from exc
         if response.status_code >= 400:
             error_code, error_message = _extract_error_details(payload)
             msg = error_message or str(payload)[:500]
             reason, is_auth = _classify_dhan_error(error_code, msg, status=response.status_code)
-            raise DhanApiError(reason or "DHAN_REQUEST_FAILED", f"{url} failed: {msg}", auth_failed=is_auth, payload=payload)
+            raise DhanApiError(reason or "DHAN_REQUEST_FAILED", f"{endpoint} failed: {msg}", auth_failed=is_auth, payload=payload)
         return payload if isinstance(payload, dict) else {}
 
     def _unwrap_sdk_result(self, op: str, result: Any) -> Any:
