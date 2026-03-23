@@ -2874,21 +2874,21 @@ def test_current_bucket_time_supports_intraday_intervals(monkeypatch: pytest.Mon
     assert bucket == expected
 
 
-def test_overlay_live_price_does_not_fabricate_intraday_candle(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Intraday candles should never be fabricated from day_high/day_low.
+def test_overlay_live_price_creates_intraday_candle_without_day_extremes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Intraday new-bucket candle must use live_price, NOT day_high/day_low.
 
-    When the last candle's time doesn't match the current bucket, the overlay
-    should return the original candles unchanged rather than creating a phantom
-    candle whose high/low equals the full-session range.
+    A new 15m candle should be created from the live price (so the chart
+    shows current data), but day_high/day_low must not inflate its wicks.
     """
     monkeypatch.setattr(
         market_hours,
         "now_ist",
         lambda: datetime(2026, 3, 13, 9, 16, tzinfo=market_hours.IST),
     )
+    monkeypatch.setattr(market_hours, "is_trading_day", lambda: True)
     candles = [
         {
-            "time": int(datetime(2026, 3, 12, 15, 15, tzinfo=market_hours.IST).timestamp()),
+            "time": int(datetime(2026, 3, 13, 9, 0, tzinfo=market_hours.IST).timestamp()),
             "open": 100.0,
             "high": 102.0,
             "low": 99.0,
@@ -2901,13 +2901,17 @@ def test_overlay_live_price_does_not_fabricate_intraday_candle(monkeypatch: pyte
         candles,
         timeframe="15m",
         live_price=103.5,
-        day_high=104.0,
-        day_low=103.0,
+        day_high=110.0,
+        day_low=95.0,
     )
 
-    # No phantom candle — intraday data returned as-is
-    assert len(result) == 1
-    assert result[0] == candles[0]
+    # New candle created for current bucket with live price
+    assert len(result) == 2
+    new_candle = result[-1]
+    assert new_candle["close"] == 103.5
+    # day_high/day_low must NOT be applied — wicks stay within live price range
+    assert new_candle["high"] == 103.5
+    assert new_candle["low"] == 101.0  # open_price from prev candle close
 
 
 def test_overlay_live_price_ignores_day_extremes_for_intraday_matching_candle(monkeypatch: pytest.MonkeyPatch) -> None:

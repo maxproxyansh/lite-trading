@@ -1299,13 +1299,6 @@ class MarketDataService:
             }
             return [*candles[:-1], next_candle]
 
-        # For intraday timeframes when we already have candles, don't fabricate
-        # a phantom bar — the API simply hasn't returned the current bucket yet.
-        # When candles is empty (e.g. new option strike with no history) we still
-        # create a single bar from the live price so the chart isn't blank.
-        if not is_daily and candles:
-            return candles
-
         # Don't create a phantom candle on weekends / holidays
         if not is_trading_day():
             return candles
