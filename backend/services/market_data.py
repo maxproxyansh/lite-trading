@@ -1086,8 +1086,6 @@ class MarketDataService:
         self.snapshot["degraded_reason"] = None
         self.snapshot["updated_at"] = now
         self._desired_feed_instruments = self._build_feed_instruments()
-        self._dirty_quote_symbols.clear()
-        self._pcr_dirty = False
 
     def get_quote(self, symbol: str) -> dict[str, Any] | None:
         return self.quotes.get(symbol)

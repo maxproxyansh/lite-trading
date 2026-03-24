@@ -80,3 +80,31 @@ class TestCloseIncidentNoOpWhenHealthy:
         await svc._open_incident("REALTIME_FEED_STALE", "test")
 
         assert svc._health_synced_to_db is False
+
+
+class TestDirtySymbolsPreservedAcrossRefresh:
+    """_apply_chain_payload must NOT clear _dirty_quote_symbols."""
+
+    def test_dirty_symbols_survive_chain_apply(self, service):
+        """Live WebSocket updates marked dirty before REST refresh must not be lost."""
+        svc, _ = service
+        # Simulate live ticks dirtying symbols
+        svc._dirty_quote_symbols.add("NIFTY_2026-03-27_23500_CE")
+        svc._dirty_quote_symbols.add("NIFTY_2026-03-27_23500_PE")
+        svc._pcr_dirty = True
+
+        # Simulate REST refresh applying chain
+        chain = {
+            "quotes": {},
+            "security_id_to_symbol": {},
+            "rows": [],
+            "spot": 23500.0,
+            "total_call_oi": 100.0,
+            "total_put_oi": 200.0,
+        }
+        svc._apply_chain_payload(chain, expiry="2026-03-27", now=datetime.now(timezone.utc))
+
+        # Dirty symbols must still be present for next flush cycle
+        assert "NIFTY_2026-03-27_23500_CE" in svc._dirty_quote_symbols
+        assert "NIFTY_2026-03-27_23500_PE" in svc._dirty_quote_symbols
+        assert svc._pcr_dirty is True
