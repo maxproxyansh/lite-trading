@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     option_chain_refresh_seconds: int = 300
     signal_poll_seconds: int = 15
     quote_refresh_seconds: int = 5
-    market_feed_flush_ms: int = 150
+    market_feed_flush_ms: int = 50
     market_feed_reconnect_seconds: int = 3
     dhan_client_id: str | None = Field(default=None, alias="DHAN_CLIENT_ID")
     dhan_access_token: str | None = Field(default=None, alias="DHAN_ACCESS_TOKEN")

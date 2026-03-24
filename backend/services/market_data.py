@@ -182,6 +182,7 @@ class MarketDataService:
         self._snapshot_dirty = False
         self._chain_dirty = False
         self._pcr_dirty = False
+        self._health_synced_to_db = False
         self._candle_cache: dict[tuple, tuple[float, dict[str, Any]]] = {}  # (sec_id, tf, from, to) -> (ts, data)
         self._live_session_candle_cache: dict[tuple[str, str, str], tuple[float, dict[str, Any] | None]] = {}
         self._chain_cache: dict[str, tuple[float, dict[str, Any]]] = {}  # expiry -> (monotonic_ts, chain_result)
@@ -496,6 +497,7 @@ class MarketDataService:
         self._snapshot_dirty = False
         self._chain_dirty = False
         self._pcr_dirty = False
+        self._health_synced_to_db = False
         self._candle_cache.clear()
         self._live_session_candle_cache.clear()
         self._chain_cache.clear()
@@ -627,6 +629,7 @@ class MarketDataService:
             return False
 
     async def _open_incident(self, reason: str, message: str) -> None:
+        self._health_synced_to_db = False
         now = datetime.now(timezone.utc)
         self._health.incident_open = True
         if not self._health.incident_since:
@@ -666,6 +669,8 @@ class MarketDataService:
 
     async def _close_incident(self, message: str = "Dhan market data recovered") -> None:
         if not self._health.incident_open:
+            if self._health_synced_to_db:
+                return
             await asyncio.to_thread(
                 dhan_incident_service.set_provider_health,
                 unhealthy=False,
@@ -673,6 +678,7 @@ class MarketDataService:
                 message=None,
                 alert_sender=self._send_incident_alert_sync,
             )
+            self._health_synced_to_db = True
             return
         now = datetime.now(timezone.utc)
 
@@ -692,6 +698,7 @@ class MarketDataService:
             message=None,
             alert_sender=self._send_incident_alert_sync,
         )
+        self._health_synced_to_db = True
 
     async def _evaluate_provider_health(self) -> None:
         now = datetime.now(timezone.utc)
@@ -1079,8 +1086,6 @@ class MarketDataService:
         self.snapshot["degraded_reason"] = None
         self.snapshot["updated_at"] = now
         self._desired_feed_instruments = self._build_feed_instruments()
-        self._dirty_quote_symbols.clear()
-        self._pcr_dirty = False
 
     def get_quote(self, symbol: str) -> dict[str, Any] | None:
         return self.quotes.get(symbol)
