@@ -108,3 +108,10 @@ class TestDirtySymbolsPreservedAcrossRefresh:
         assert "NIFTY_2026-03-27_23500_CE" in svc._dirty_quote_symbols
         assert "NIFTY_2026-03-27_23500_PE" in svc._dirty_quote_symbols
         assert svc._pcr_dirty is True
+
+
+class TestFlushInterval:
+    def test_default_flush_interval_is_50ms(self):
+        from config import Settings
+        s = Settings()
+        assert s.market_feed_flush_ms == 50
