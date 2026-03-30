@@ -444,10 +444,14 @@ export default function App() {
                     addToast('success', 'Fingerprint login was already enabled on this device')
                     return
                   }
-                  console.warn('[WebAuthn] Registration failed:', code, message, err)
-                  if (!isWebAuthnDismissed(err)) {
-                    addToast('error', `Passkey: ${message}`)
+                  if (isWebAuthnDismissed(err)) {
+                    setShowPasskeyPrompt(false)
+                    setPasskeyRegisterOptions(null)
+                    void webauthnClientError({ stage: 'register', email: user.email, code, message }).catch(() => undefined)
+                    return
                   }
+                  console.warn('[WebAuthn] Registration failed:', code, message, err)
+                  addToast('error', `Passkey: ${message}`)
                   void webauthnClientError({ stage: 'register', email: user.email, code, message }).catch(() => undefined)
                   void preparePasskeyRegistration(user.email)
                 } finally {
