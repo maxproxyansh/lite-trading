@@ -437,6 +437,13 @@ export default function App() {
                   addToast('success', 'Fingerprint login enabled')
                 } catch (err) {
                   const { code, message } = getWebAuthnErrorInfo(err, 'Unable to enable fingerprint login.')
+                  if (code === 'InvalidStateError') {
+                    localStorage.setItem('lite_passkey_email', user.email)
+                    setShowPasskeyPrompt(false)
+                    setPasskeyRegisterOptions(null)
+                    addToast('success', 'Fingerprint login was already enabled on this device')
+                    return
+                  }
                   console.warn('[WebAuthn] Registration failed:', code, message, err)
                   if (!isWebAuthnDismissed(err)) {
                     addToast('error', `Passkey: ${message}`)

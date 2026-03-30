@@ -1274,6 +1274,8 @@ class MarketDataService:
     ) -> list[dict[str, Any]]:
         if live_price is None or live_price <= 0:
             return candles
+        if timeframe in DAILY_HISTORY_TIMEFRAMES and market_status() != "OPEN":
+            return candles
 
         bucket_time = MarketDataService._current_bucket_time(timeframe)
         if candles and bucket_time < int(candles[-1]["time"]):
@@ -1378,7 +1380,7 @@ class MarketDataService:
         high = float(base_candle["high"])
         low = float(base_candle["low"])
         close = float(base_candle["close"])
-        if live_price and live_price > 0:
+        if market_status() == "OPEN" and live_price and live_price > 0:
             close = live_price
             high = max(high, live_price)
             low = min(low, live_price)
