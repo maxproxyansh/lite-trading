@@ -870,6 +870,13 @@ class WebAuthnRegisterRequest(BaseModel):
     credential: dict
 
 
+class WebAuthnClientErrorRequest(BaseModel):
+    stage: Literal["register", "authenticate"]
+    message: str = Field(min_length=1, max_length=500)
+    code: str | None = Field(default=None, max_length=100)
+    email: str | None = Field(default=None, max_length=255)
+
+
 class WebAuthnAuthenticateOptionsRequest(BaseModel):
     email: str
 

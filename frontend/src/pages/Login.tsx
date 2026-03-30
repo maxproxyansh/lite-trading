@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Eye, EyeOff, Fingerprint } from 'lucide-react'
-import { login, signup, webauthnAuthenticateOptions, webauthnAuthenticate } from '../lib/api'
-import { supportsWebAuthn, getPasskey } from '../lib/webauthn'
+import { ApiError, login, signup, webauthnAuthenticate, webauthnAuthenticateOptions, webauthnClientError } from '../lib/api'
+import { getPasskey, getWebAuthnErrorInfo, isWebAuthnDismissed, supportsWebAuthn } from '../lib/webauthn'
 import { useStore } from '../store/useStore'
 import Logo from '../components/Logo'
 
@@ -31,12 +31,26 @@ export default function Login() {
       localStorage.setItem('login-count', String(pCount + 1))
       navigate('/')
     } catch (error) {
-      localStorage.removeItem('lite_passkey_email')
-      setHasPasskey(false)
-      setSavedEmail('')
       setPasskeyActive(false)
-      if (error instanceof Error && !error.message.includes('aborted')) {
-        addToast('error', 'Passkey not found — please login and re-enable')
+      const { code, message } = getWebAuthnErrorInfo(error, 'Unable to sign in with fingerprint.')
+      const shouldForgetPasskey =
+        error instanceof ApiError &&
+        (
+          error.status === 404 ||
+          (error.status === 401 && message.toLowerCase().includes('authentication failed'))
+        )
+
+      if (shouldForgetPasskey) {
+        localStorage.removeItem('lite_passkey_email')
+        setHasPasskey(false)
+        setSavedEmail('')
+        addToast('error', 'Fingerprint login is no longer available. Please sign in with password and enable it again.')
+      } else if (!isWebAuthnDismissed(error)) {
+        addToast('error', `Passkey: ${message}`)
+      }
+
+      if (!isWebAuthnDismissed(error)) {
+        void webauthnClientError({ stage: 'authenticate', email: emailToUse, code, message }).catch(() => undefined)
       }
     } finally {
       setLoading(false)
@@ -49,9 +63,8 @@ export default function Login() {
       setHasPasskey(true)
       setSavedEmail(passkeyEmail)
       setEmail(passkeyEmail)
-      handlePasskeyLogin(passkeyEmail)
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

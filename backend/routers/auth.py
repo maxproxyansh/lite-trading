@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-import json
 import base64
+import json
+import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from config import get_settings
@@ -21,6 +23,7 @@ from schemas import (
     UserSummary,
     WebAuthnAuthenticateOptionsRequest,
     WebAuthnAuthenticateRequest,
+    WebAuthnClientErrorRequest,
     WebAuthnRegisterRequest,
 )
 from services.agent_service import serialize_agent_key
@@ -54,6 +57,7 @@ router = APIRouter(prefix=f"{settings.api_prefix}/auth", tags=["auth"])
 admin_router = APIRouter(prefix=f"{settings.api_prefix}/admin", tags=["admin"])
 
 _webauthn_challenges: dict[str, bytes] = {}
+logger = logging.getLogger("lite.auth")
 
 
 def _cookie_secure() -> bool:
@@ -102,6 +106,31 @@ def _set_csrf_cookie(response: Response, csrf_token: str, expires_in: int) -> No
         samesite=_cookie_samesite(),
         max_age=expires_in,
     )
+
+
+def _parse_transports(raw: list | None) -> list[AuthenticatorTransport]:
+    if not raw:
+        return []
+    mapping = {transport.value: transport for transport in AuthenticatorTransport}
+    return [mapping[value] for value in raw if value in mapping]
+
+
+def _descriptor_for_credential(credential: WebAuthnCredential) -> PublicKeyCredentialDescriptor:
+    return PublicKeyCredentialDescriptor(
+        id=base64.urlsafe_b64decode(credential.credential_id + "=="),
+        transports=_parse_transports(credential.transports),
+    )
+
+
+def _encode_credential_id(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+
+
+def _webauthn_error_detail(exc: Exception) -> str:
+    detail = str(exc).strip()
+    if detail:
+        return detail
+    return exc.__class__.__name__
 
 
 @router.post("/signup", response_model=TokenEnvelope)
@@ -234,12 +263,14 @@ def webauthn_register_options(
     user=Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    credentials = db.query(WebAuthnCredential).filter(WebAuthnCredential.user_id == user.id).all()
     options = generate_registration_options(
         rp_id=settings.webauthn_rp_id,
         rp_name=settings.webauthn_rp_name,
         user_id=user.id.encode(),
         user_name=user.email,
         user_display_name=user.display_name,
+        exclude_credentials=[_descriptor_for_credential(credential) for credential in credentials] or None,
     )
     _webauthn_challenges[user.id] = options.challenge
     return {"options": json.loads(options_to_json(options))}
@@ -253,24 +284,66 @@ def webauthn_register(
 ):
     challenge = _webauthn_challenges.pop(user.id, None)
     if not challenge:
+        logger.warning("WebAuthn registration missing challenge for user_id=%s email=%s", user.id, user.email)
         raise HTTPException(status_code=400, detail="No pending registration challenge")
 
-    verification = verify_registration_response(
-        credential=json.dumps(payload.credential),
-        expected_challenge=challenge,
-        expected_rp_id=settings.webauthn_rp_id,
-        expected_origin=settings.webauthn_origin,
-    )
+    try:
+        verification = verify_registration_response(
+            credential=json.dumps(payload.credential),
+            expected_challenge=challenge,
+            expected_rp_id=settings.webauthn_rp_id,
+            expected_origin=settings.webauthn_origin,
+        )
+    except Exception as exc:
+        logger.warning(
+            "WebAuthn registration verification failed for user_id=%s email=%s: %s",
+            user.id,
+            user.email,
+            _webauthn_error_detail(exc),
+        )
+        raise HTTPException(status_code=400, detail="Passkey verification failed") from exc
 
-    credential = WebAuthnCredential(
-        user_id=user.id,
-        credential_id=base64.urlsafe_b64encode(verification.credential_id).rstrip(b"=").decode(),
-        public_key=base64.urlsafe_b64encode(verification.credential_public_key).rstrip(b"=").decode(),
-        sign_count=verification.sign_count,
-        transports=payload.credential.get("response", {}).get("transports"),
-    )
-    db.add(credential)
-    db.commit()
+    credential_id = _encode_credential_id(verification.credential_id)
+    public_key = _encode_credential_id(verification.credential_public_key)
+    transports = payload.credential.get("response", {}).get("transports")
+    existing = db.query(WebAuthnCredential).filter(WebAuthnCredential.credential_id == credential_id).first()
+
+    if existing and existing.user_id != user.id:
+        logger.warning(
+            "WebAuthn registration collision for email=%s credential_id=%s owner=%s",
+            user.email,
+            credential_id,
+            existing.user_id,
+        )
+        raise HTTPException(status_code=409, detail="Passkey already registered to another account")
+
+    if existing:
+        existing.public_key = public_key
+        existing.sign_count = verification.sign_count
+        existing.transports = transports
+    else:
+        db.add(
+            WebAuthnCredential(
+                user_id=user.id,
+                credential_id=credential_id,
+                public_key=public_key,
+                sign_count=verification.sign_count,
+                transports=transports,
+            )
+        )
+
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        logger.warning(
+            "WebAuthn registration commit failed for user_id=%s email=%s credential_id=%s: %s",
+            user.id,
+            user.email,
+            credential_id,
+            _webauthn_error_detail(exc),
+        )
+        raise HTTPException(status_code=409, detail="Passkey already registered") from exc
     return {"status": "ok"}
 
 
@@ -288,19 +361,7 @@ def webauthn_authenticate_options(
     if not credentials:
         raise HTTPException(status_code=404, detail="No passkey found")
 
-    def _parse_transports(raw: list | None) -> list[AuthenticatorTransport]:
-        if not raw:
-            return []
-        mapping = {t.value: t for t in AuthenticatorTransport}
-        return [mapping[v] for v in raw if v in mapping]
-
-    allow_credentials = [
-        PublicKeyCredentialDescriptor(
-            id=base64.urlsafe_b64decode(c.credential_id + "=="),
-            transports=_parse_transports(c.transports),
-        )
-        for c in credentials
-    ]
+    allow_credentials = [_descriptor_for_credential(credential) for credential in credentials]
     options = generate_authentication_options(
         rp_id=settings.webauthn_rp_id,
         allow_credentials=allow_credentials,
@@ -319,10 +380,12 @@ def webauthn_authenticate(
 ):
     user = db.query(User).filter(User.email == payload.email, User.is_active == True).first()
     if not user:
+        logger.warning("WebAuthn authentication requested for unknown email=%s", payload.email)
         raise HTTPException(status_code=401, detail="Authentication failed")
 
     challenge = _webauthn_challenges.pop(user.id, None)
     if not challenge:
+        logger.warning("WebAuthn authentication missing challenge for user_id=%s email=%s", user.id, user.email)
         raise HTTPException(status_code=400, detail="No pending authentication challenge")
 
     raw_id = payload.credential.get("rawId", "")
@@ -331,16 +394,26 @@ def webauthn_authenticate(
         WebAuthnCredential.credential_id == raw_id,
     ).first()
     if not credential:
+        logger.warning("WebAuthn authentication credential missing for user_id=%s email=%s", user.id, user.email)
         raise HTTPException(status_code=401, detail="Authentication failed")
 
-    verification = verify_authentication_response(
-        credential=json.dumps(payload.credential),
-        expected_challenge=challenge,
-        expected_rp_id=settings.webauthn_rp_id,
-        expected_origin=settings.webauthn_origin,
-        credential_public_key=base64.urlsafe_b64decode(credential.public_key + "=="),
-        credential_current_sign_count=credential.sign_count,
-    )
+    try:
+        verification = verify_authentication_response(
+            credential=json.dumps(payload.credential),
+            expected_challenge=challenge,
+            expected_rp_id=settings.webauthn_rp_id,
+            expected_origin=settings.webauthn_origin,
+            credential_public_key=base64.urlsafe_b64decode(credential.public_key + "=="),
+            credential_current_sign_count=credential.sign_count,
+        )
+    except Exception as exc:
+        logger.warning(
+            "WebAuthn authentication verification failed for user_id=%s email=%s: %s",
+            user.id,
+            user.email,
+            _webauthn_error_detail(exc),
+        )
+        raise HTTPException(status_code=401, detail="Authentication failed") from exc
 
     credential.sign_count = verification.new_sign_count
     db.commit()
@@ -351,3 +424,21 @@ def webauthn_authenticate(
     _set_refresh_cookie(response, refresh_token)
     _set_csrf_cookie(response, csrf_token, expires_in)
     return TokenEnvelope(access_token=access_token, expires_in=expires_in, user=UserSummary.model_validate(user))
+
+
+@router.post("/webauthn/client-error", status_code=204)
+def webauthn_client_error(
+    payload: WebAuthnClientErrorRequest,
+    request: Request,
+    _: None = Depends(rate_limit("auth:webauthn-client-error", 20, 60)),
+):
+    user_agent = request.headers.get("user-agent", "-")[:200]
+    logger.warning(
+        "WebAuthn client error stage=%s code=%s email=%s message=%s user_agent=%s",
+        payload.stage,
+        payload.code or "-",
+        payload.email or "-",
+        payload.message,
+        user_agent,
+    )
+    return Response(status_code=204)

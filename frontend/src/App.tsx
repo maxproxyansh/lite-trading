@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { Fingerprint } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
@@ -28,10 +28,12 @@ import {
   fetchPositions,
   fetchSnapshot,
   refreshSession,
+  webauthnClientError,
   webauthnRegisterOptions,
   webauthnRegister,
 } from './lib/api'
-import { supportsWebAuthn, createPasskey } from './lib/webauthn'
+import { createPasskey, getWebAuthnErrorInfo, isWebAuthnDismissed, supportsWebAuthn } from './lib/webauthn'
+import type { EncodedRegistrationOptions } from './lib/webauthn'
 import Analytics from './pages/Analytics'
 import Dashboard from './pages/Dashboard'
 import Desk from './pages/Desk'
@@ -160,13 +162,54 @@ export default function App() {
 
   // Offer passkey registration after login
   const [showPasskeyPrompt, setShowPasskeyPrompt] = useState(false)
+  const [passkeyRegisterOptions, setPasskeyRegisterOptions] = useState<EncodedRegistrationOptions | null>(null)
+  const [passkeyPreparing, setPasskeyPreparing] = useState(false)
+  const [passkeyEnabling, setPasskeyEnabling] = useState(false)
+
+  const preparePasskeyRegistration = useCallback(async (email: string): Promise<boolean> => {
+    setPasskeyPreparing(true)
+    try {
+      const { options } = await webauthnRegisterOptions()
+      setPasskeyRegisterOptions(options)
+      return true
+    } catch (error) {
+      const { code, message } = getWebAuthnErrorInfo(error, 'Unable to prepare fingerprint login.')
+      console.warn('[WebAuthn] Failed to prepare registration:', code, message, error)
+      void webauthnClientError({ stage: 'register', email, code, message }).catch(() => undefined)
+      addToast('error', `Passkey: ${message}`)
+      return false
+    } finally {
+      setPasskeyPreparing(false)
+    }
+  }, [addToast])
+
   useEffect(() => {
-    if (!user || !supportsWebAuthn()) return
+    if (!user || !supportsWebAuthn()) {
+      setShowPasskeyPrompt(false)
+      setPasskeyRegisterOptions(null)
+      return
+    }
     const passkeyEmail = localStorage.getItem('lite_passkey_email')
-    if (passkeyEmail === user.email) return
-    const timer = setTimeout(() => setShowPasskeyPrompt(true), 1500)
-    return () => clearTimeout(timer)
-  }, [user])
+    if (passkeyEmail === user.email) {
+      setShowPasskeyPrompt(false)
+      setPasskeyRegisterOptions(null)
+      return
+    }
+
+    let active = true
+    const timer = setTimeout(() => {
+      void preparePasskeyRegistration(user.email).then((ready) => {
+        if (active && ready) {
+          setShowPasskeyPrompt(true)
+        }
+      })
+    }, 1500)
+
+    return () => {
+      active = false
+      clearTimeout(timer)
+    }
+  }, [user, preparePasskeyRegistration])
 
   useEffect(() => {
     let active = true
@@ -379,22 +422,35 @@ export default function App() {
             <div className="w-px bg-border-primary" />
             <button
               onClick={async () => {
-                setShowPasskeyPrompt(false)
+                if (!user) return
+                if (!passkeyRegisterOptions) {
+                  addToast('error', 'Fingerprint setup is still preparing. Please tap Enable again in a moment.')
+                  return
+                }
+                setPasskeyEnabling(true)
                 try {
-                  const { options } = await webauthnRegisterOptions()
-                  const credential = await createPasskey(options)
+                  const credential = await createPasskey(passkeyRegisterOptions)
                   await webauthnRegister(credential)
                   localStorage.setItem('lite_passkey_email', user!.email)
+                  setShowPasskeyPrompt(false)
+                  setPasskeyRegisterOptions(null)
                   addToast('success', 'Fingerprint login enabled')
                 } catch (err) {
-                  const msg = err instanceof Error ? err.message : String(err)
-                  console.warn('[WebAuthn] Registration failed:', msg, err)
-                  addToast('error', `Passkey: ${msg}`)
+                  const { code, message } = getWebAuthnErrorInfo(err, 'Unable to enable fingerprint login.')
+                  console.warn('[WebAuthn] Registration failed:', code, message, err)
+                  if (!isWebAuthnDismissed(err)) {
+                    addToast('error', `Passkey: ${message}`)
+                  }
+                  void webauthnClientError({ stage: 'register', email: user.email, code, message }).catch(() => undefined)
+                  void preparePasskeyRegistration(user.email)
+                } finally {
+                  setPasskeyEnabling(false)
                 }
               }}
-              className="flex-1 py-2.5 text-[12px] font-medium text-brand hover:bg-bg-hover transition-colors"
+              disabled={passkeyPreparing || passkeyEnabling || !passkeyRegisterOptions}
+              className="flex-1 py-2.5 text-[12px] font-medium text-brand hover:bg-bg-hover transition-colors disabled:opacity-40"
             >
-              Enable
+              {passkeyEnabling ? 'Enabling...' : passkeyPreparing ? 'Preparing...' : 'Enable'}
             </button>
           </div>
         </div>
