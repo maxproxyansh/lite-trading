@@ -44,7 +44,7 @@ os.environ.setdefault("BOOTSTRAP_AGENT_NAME", "bootstrap-agent")
 from database import Base, SessionLocal, engine  # noqa: E402
 import main as main_module  # noqa: E402
 from main import _process_market_side_effects, app  # noqa: E402
-from models import DhanConsumerState, DhanInstrumentRegistry, ServiceCredential  # noqa: E402
+from models import DhanConsumerState, DhanInstrumentRegistry, ServiceCredential, User, WebAuthnCredential  # noqa: E402
 from rate_limit import _rate_buckets, _rate_windows, rate_limit  # noqa: E402
 from routers.websocket import broadcast_message  # noqa: E402
 from services.alert_service import sync_alerts  # noqa: E402
@@ -63,6 +63,7 @@ import market_hours  # noqa: E402
 
 
 meta_router_module = importlib.import_module("routers.meta")
+auth_router_module = importlib.import_module("routers.auth")
 
 
 def _seed_market() -> None:
@@ -4125,3 +4126,166 @@ def test_pulse_claimed_api_key_matches_stored_hash(client: TestClient) -> None:
         assert key.key_hash == hs(api_key_raw)
     finally:
         db.close()
+
+
+def test_webauthn_register_options_excludes_existing_credentials(client: TestClient) -> None:
+    headers = _login(client, "admin@lite.trade", "lite-admin-123")
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.email == "admin@lite.trade").first()
+        assert user is not None
+        credential_id = base64.urlsafe_b64encode(b"cred-1").decode().rstrip("=")
+        db.add(
+            WebAuthnCredential(
+                user_id=user.id,
+                credential_id=credential_id,
+                public_key=base64.urlsafe_b64encode(b"pub-1").decode().rstrip("="),
+                sign_count=1,
+                transports=["internal"],
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    response = client.post("/api/v1/auth/webauthn/register-options", headers=headers)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert len(body["options"]["excludeCredentials"]) == 1
+    assert body["options"]["excludeCredentials"][0]["id"] == credential_id
+
+
+def test_webauthn_register_updates_existing_credential(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    headers = _login(client, "admin@lite.trade", "lite-admin-123")
+    register_options = client.post("/api/v1/auth/webauthn/register-options", headers=headers)
+    assert register_options.status_code == 200, register_options.text
+
+    credential_id_bytes = b"cred-2"
+    public_key_bytes = b"pub-2"
+    monkeypatch.setattr(
+        auth_router_module,
+        "verify_registration_response",
+        lambda **_: SimpleNamespace(
+            credential_id=credential_id_bytes,
+            credential_public_key=public_key_bytes,
+            sign_count=7,
+        ),
+    )
+
+    response = client.post(
+        "/api/v1/auth/webauthn/register",
+        headers=headers,
+        json={"credential": {"response": {"transports": ["internal"]}}},
+    )
+    assert response.status_code == 200, response.text
+
+    response = client.post("/api/v1/auth/webauthn/register-options", headers=headers)
+    assert response.status_code == 200, response.text
+    response = client.post(
+        "/api/v1/auth/webauthn/register",
+        headers=headers,
+        json={"credential": {"response": {"transports": ["hybrid"]}}},
+    )
+    assert response.status_code == 200, response.text
+
+    db = SessionLocal()
+    try:
+        credential_id = base64.urlsafe_b64encode(credential_id_bytes).decode().rstrip("=")
+        credentials = db.query(WebAuthnCredential).filter(WebAuthnCredential.credential_id == credential_id).all()
+        assert len(credentials) == 1
+        assert credentials[0].sign_count == 7
+        assert credentials[0].transports == ["hybrid"]
+    finally:
+        db.close()
+
+
+def test_webauthn_register_verification_failure_returns_400_and_logs(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    headers = _login(client, "admin@lite.trade", "lite-admin-123")
+    response = client.post("/api/v1/auth/webauthn/register-options", headers=headers)
+    assert response.status_code == 200, response.text
+
+    def _fail_verify(**_: object) -> None:
+        raise ValueError("bad attestation")
+
+    monkeypatch.setattr(auth_router_module, "verify_registration_response", _fail_verify)
+
+    with caplog.at_level("WARNING", logger="lite.auth"):
+        response = client.post(
+            "/api/v1/auth/webauthn/register",
+            headers=headers,
+            json={"credential": {"response": {"transports": ["internal"]}}},
+        )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Passkey verification failed"
+    assert "WebAuthn registration verification failed" in caplog.text
+
+
+def test_webauthn_authentication_verification_failure_returns_401_and_logs(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.email == "admin@lite.trade").first()
+        assert user is not None
+        db.add(
+            WebAuthnCredential(
+                user_id=user.id,
+                credential_id=base64.urlsafe_b64encode(b"cred-3").decode().rstrip("="),
+                public_key=base64.urlsafe_b64encode(b"pub-3").decode().rstrip("="),
+                sign_count=1,
+                transports=["internal"],
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    response = client.post("/api/v1/auth/webauthn/authenticate-options", json={"email": "admin@lite.trade"})
+    assert response.status_code == 200, response.text
+
+    def _fail_verify(**_: object) -> None:
+        raise ValueError("bad signature")
+
+    monkeypatch.setattr(auth_router_module, "verify_authentication_response", _fail_verify)
+
+    with caplog.at_level("WARNING", logger="lite.auth"):
+        response = client.post(
+            "/api/v1/auth/webauthn/authenticate",
+            json={
+                "email": "admin@lite.trade",
+                "credential": {
+                    "rawId": base64.urlsafe_b64encode(b"cred-3").decode().rstrip("="),
+                    "response": {},
+                },
+            },
+        )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Authentication failed"
+    assert "WebAuthn authentication verification failed" in caplog.text
+
+
+def test_webauthn_client_error_logs_to_server(
+    client: TestClient,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level("WARNING", logger="lite.auth"):
+        response = client.post(
+            "/api/v1/auth/webauthn/client-error",
+            json={
+                "stage": "register",
+                "email": "admin@lite.trade",
+                "code": "NotAllowedError",
+                "message": "Fingerprint prompt was dismissed.",
+            },
+        )
+
+    assert response.status_code == 204
+    assert "WebAuthn client error stage=register" in caplog.text

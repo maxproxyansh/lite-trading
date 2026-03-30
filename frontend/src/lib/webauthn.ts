@@ -18,7 +18,77 @@ export function supportsWebAuthn(): boolean {
   return typeof window !== 'undefined' && !!window.PublicKeyCredential
 }
 
-export async function createPasskey(options: any): Promise<object> {
+export type EncodedCredentialDescriptor = {
+  type: PublicKeyCredentialType
+  id: string
+  transports?: AuthenticatorTransport[]
+}
+
+export type EncodedRegistrationOptions = {
+  rp: PublicKeyCredentialRpEntity
+  user: {
+    id: string
+    name: string
+    displayName: string
+  }
+  challenge: string
+  pubKeyCredParams: PublicKeyCredentialParameters[]
+  timeout?: number
+  attestation?: AttestationConveyancePreference
+  authenticatorSelection?: AuthenticatorSelectionCriteria
+  excludeCredentials?: EncodedCredentialDescriptor[]
+}
+
+export type EncodedAuthenticationOptions = {
+  challenge: string
+  rpId?: string
+  timeout?: number
+  userVerification?: UserVerificationRequirement
+  allowCredentials?: EncodedCredentialDescriptor[]
+}
+
+const DEFAULT_MESSAGES: Record<string, string> = {
+  AbortError: 'Fingerprint request was cancelled.',
+  InvalidStateError: 'This device already has a saved fingerprint login for Lite.',
+  NotAllowedError: 'Fingerprint prompt was dismissed or timed out.',
+  NotSupportedError: 'This device does not support fingerprint login.',
+  SecurityError: 'Browser blocked the fingerprint prompt. Please try again from the button.',
+}
+
+export function getWebAuthnErrorInfo(error: unknown, fallback: string): { code: string; message: string } {
+  if (error instanceof DOMException) {
+    return {
+      code: error.name,
+      message: DEFAULT_MESSAGES[error.name] ?? error.message ?? fallback,
+    }
+  }
+  if (error instanceof Error) {
+    return {
+      code: error.name || 'Error',
+      message: error.message || fallback,
+    }
+  }
+  return {
+    code: 'UnknownError',
+    message: fallback,
+  }
+}
+
+export function isWebAuthnDismissed(error: unknown): boolean {
+  const { code, message } = getWebAuthnErrorInfo(error, '')
+  const normalized = message.toLowerCase()
+  return (
+    code === 'AbortError' ||
+    (code === 'NotAllowedError' && (
+      normalized.includes('cancel') ||
+      normalized.includes('dismiss') ||
+      normalized.includes('timed out') ||
+      normalized.includes('timeout')
+    ))
+  )
+}
+
+export async function createPasskey(options: EncodedRegistrationOptions): Promise<Record<string, unknown>> {
   const publicKey: PublicKeyCredentialCreationOptions = {
     rp: options.rp,
     user: {
@@ -31,7 +101,7 @@ export async function createPasskey(options: any): Promise<object> {
     timeout: options.timeout ?? 60000,
     attestation: options.attestation ?? 'none',
     authenticatorSelection: options.authenticatorSelection,
-    excludeCredentials: (options.excludeCredentials ?? []).map((c: any) => ({
+    excludeCredentials: (options.excludeCredentials ?? []).map((c) => ({
       type: c.type,
       id: base64urlToBuffer(c.id),
       transports: c.transports,
@@ -53,13 +123,13 @@ export async function createPasskey(options: any): Promise<object> {
   }
 }
 
-export async function getPasskey(options: any): Promise<object> {
+export async function getPasskey(options: EncodedAuthenticationOptions): Promise<Record<string, unknown>> {
   const publicKey: PublicKeyCredentialRequestOptions = {
     challenge: base64urlToBuffer(options.challenge),
     rpId: options.rpId,
     timeout: options.timeout ?? 60000,
     userVerification: options.userVerification ?? 'preferred',
-    allowCredentials: (options.allowCredentials ?? []).map((c: any) => ({
+    allowCredentials: (options.allowCredentials ?? []).map((c) => ({
       type: c.type,
       id: base64urlToBuffer(c.id),
       transports: c.transports,

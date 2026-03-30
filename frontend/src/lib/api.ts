@@ -1,6 +1,7 @@
 import type { components } from './api-schema'
 import { getRuntimeConfig } from './runtime-config'
 import { useStore } from '../store/useStore'
+import type { EncodedAuthenticationOptions, EncodedRegistrationOptions } from './webauthn'
 
 export type UserSummary = components['schemas']['UserSummary']
 export type TokenEnvelope = components['schemas']['TokenEnvelope']
@@ -397,7 +398,7 @@ export async function fetchGlobalMarkets() {
 }
 
 export async function webauthnRegisterOptions() {
-  return rawFetch<{ options: any }>('/api/v1/auth/webauthn/register-options', { method: 'POST' })
+  return rawFetch<{ options: EncodedRegistrationOptions }>('/api/v1/auth/webauthn/register-options', { method: 'POST' })
 }
 
 export async function webauthnRegister(credential: object) {
@@ -408,7 +409,7 @@ export async function webauthnRegister(credential: object) {
 }
 
 export async function webauthnAuthenticateOptions(email: string) {
-  return rawFetch<{ options: any }>('/api/v1/auth/webauthn/authenticate-options', {
+  return rawFetch<{ options: EncodedAuthenticationOptions }>('/api/v1/auth/webauthn/authenticate-options', {
     method: 'POST',
     body: JSON.stringify({ email }),
   })
@@ -421,6 +422,18 @@ export async function webauthnAuthenticate(credential: object, email: string) {
   }, false)
   setSession(envelope.access_token, envelope.user)
   return envelope
+}
+
+export async function webauthnClientError(payload: {
+  stage: 'register' | 'authenticate'
+  message: string
+  code?: string | null
+  email?: string | null
+}) {
+  await rawFetch<void>('/api/v1/auth/webauthn/client-error', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, false)
 }
 
 export async function pulseSetup(): Promise<{ claim_token: string; apk_url: string; key_prefix: string }> {
