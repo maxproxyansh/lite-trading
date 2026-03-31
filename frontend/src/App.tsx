@@ -170,6 +170,13 @@ export default function App() {
     setPasskeyPreparing(true)
     try {
       const { options } = await webauthnRegisterOptions()
+      const existingPasskeys = Array.isArray(options.excludeCredentials) ? options.excludeCredentials.length : 0
+      if (existingPasskeys > 0) {
+        localStorage.setItem('lite_passkey_email', email)
+        setShowPasskeyPrompt(false)
+        setPasskeyRegisterOptions(null)
+        return false
+      }
       setPasskeyRegisterOptions(options)
       return true
     } catch (error) {
@@ -451,9 +458,10 @@ export default function App() {
                     return
                   }
                   console.warn('[WebAuthn] Registration failed:', code, message, err)
+                  setShowPasskeyPrompt(false)
+                  setPasskeyRegisterOptions(null)
                   addToast('error', `Passkey: ${message}`)
                   void webauthnClientError({ stage: 'register', email: user.email, code, message }).catch(() => undefined)
-                  void preparePasskeyRegistration(user.email)
                 } finally {
                   setPasskeyEnabling(false)
                 }
