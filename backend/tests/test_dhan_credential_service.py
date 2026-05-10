@@ -35,6 +35,10 @@ from services.dhan_credential_service import (
 )
 
 
+def _future_data_validity() -> str:
+    return (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S.0")
+
+
 @pytest.fixture(autouse=True)
 def _reset_db() -> None:
     Base.metadata.drop_all(bind=engine)
@@ -230,7 +234,7 @@ def test_planned_renewal_prefers_active_token_renewal(monkeypatch: pytest.Monkey
                 "dhanClientId": "1103337749",
                 "tokenValidity": validity,
                 "dataPlan": "Active",
-                "dataValidity": "2026-04-03 21:50:36.0",
+                "dataValidity": _future_data_validity(),
             }
         if url.endswith("/RenewToken"):
             return {
@@ -283,7 +287,7 @@ def test_issue_lease_allows_planned_renewal_when_token_is_near_expiry(monkeypatc
                 "dhanClientId": "1103337749",
                 "tokenValidity": validity,
                 "dataPlan": "Active",
-                "dataValidity": "2026-04-03 21:50:36.0",
+                "dataValidity": _future_data_validity(),
             }
         if url.endswith("/RenewToken"):
             return {

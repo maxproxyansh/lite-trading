@@ -15,18 +15,6 @@ const META_FETCH_TIMEOUT_MS = 5000
 
 let runtimeConfigPromise: Promise<RuntimeConfig> | null = null
 
-function trimTrailingSlash(value: string) {
-  return value.replace(/\/+$/, '')
-}
-
-function normalizeHttpUrl(value: string | undefined | null) {
-  if (!value) {
-    return null
-  }
-  const trimmed = value.trim()
-  return trimmed ? trimTrailingSlash(trimmed) : null
-}
-
 function normalizeWsUrl(value: string | undefined | null) {
   if (!value) {
     return null
@@ -89,11 +77,10 @@ async function fetchMetaConfig() {
 export async function getRuntimeConfig() {
   if (!runtimeConfigPromise) {
     runtimeConfigPromise = (async () => {
-      const explicitApiBaseUrl = normalizeHttpUrl(import.meta.env.VITE_API_BASE_URL as string | undefined)
       const explicitWsUrl = normalizeWsUrl(import.meta.env.VITE_WS_BASE_URL as string | undefined)
 
-      if (explicitApiBaseUrl || explicitWsUrl) {
-        return buildConfig(explicitApiBaseUrl, explicitWsUrl)
+      if (explicitWsUrl) {
+        return buildConfig(null, explicitWsUrl)
       }
 
       const metaConfig = await fetchMetaConfig()

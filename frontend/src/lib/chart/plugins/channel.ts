@@ -2,7 +2,7 @@ import { BaseDrawingPlugin } from './base-drawing'
 
 // 3 points: p1 & p2 define the baseline, p3 defines the parallel offset
 export class ChannelPlugin extends BaseDrawingPlugin {
-  drawOnCanvas(ctx: CanvasRenderingContext2D, _width: number, _height: number): void {
+  drawOnCanvas(ctx: CanvasRenderingContext2D): void {
     const [p1, p2, p3] = this.drawing.points
     if (!p1 || !p2 || !p3) return
 

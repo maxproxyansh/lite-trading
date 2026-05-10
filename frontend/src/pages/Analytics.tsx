@@ -92,8 +92,11 @@ export default function Analytics() {
   useEffect(() => {
     if (!selectedPortfolioId) return
     let active = true
-    setLoading(true)
-    fetchEnrichedAnalytics(selectedPortfolioId)
+    Promise.resolve()
+      .then(() => {
+        if (active) setLoading(true)
+        return fetchEnrichedAnalytics(selectedPortfolioId)
+      })
       .then((d) => { if (active) setEnriched(d) })
       .catch(() => {})
       .finally(() => { if (active) setLoading(false) })

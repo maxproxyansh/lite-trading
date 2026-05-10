@@ -19,12 +19,13 @@ npm run sync:api
 npm run dev
 ```
 
-The frontend expects the backend at `http://127.0.0.1:8000` unless `VITE_API_BASE_URL` is set.
+The frontend sends browser API requests to same-origin `/api/...` paths.
+During local development, the Vite dev server proxies those requests to `http://127.0.0.1:8000` by default.
 
 ## Environment
 
-- `VITE_API_BASE_URL`: Optional HTTP base URL for the FastAPI backend.
-- `VITE_WS_BASE_URL`: Optional explicit WebSocket URL. When unset, the app derives it from `VITE_API_BASE_URL` or the current browser origin.
+- `VITE_DEV_BACKEND_ORIGIN`: Optional Vite dev proxy target. Defaults to `http://127.0.0.1:8000`.
+- `VITE_WS_BASE_URL`: Optional explicit WebSocket URL override for unusual hosted setups.
 
 ## Scripts
 

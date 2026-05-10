@@ -6,7 +6,7 @@ export class HorizontalLinePlugin extends BaseDrawingPlugin {
     super(drawing)
   }
 
-  drawOnCanvas(ctx: CanvasRenderingContext2D, width: number, _height: number): void {
+  drawOnCanvas(ctx: CanvasRenderingContext2D, width: number): void {
     const point = this.drawing.points[0]
     if (!point) return
 

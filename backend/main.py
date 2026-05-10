@@ -52,17 +52,17 @@ async def _process_market_side_effects(symbols: set[str]) -> None:
     finally:
         db.close()
     for alert in triggered_alerts:
-        await broadcast_user_all_clients(
-            alert.user_id,
-            "alert.triggered",
-            alert.payload.model_dump(mode="json"),
-        )
         if alert.agent_key_id and alert.agent_event_payload:
             await broadcast_agent_message(
                 alert.agent_key_id,
                 "agent.event",
                 alert.agent_event_payload,
             )
+        await broadcast_user_all_clients(
+            alert.user_id,
+            "alert.triggered",
+            alert.payload.model_dump(mode="json"),
+        )
     for portfolio_id in changed_portfolios:
         await broadcast_portfolio_message(
             portfolio_id,

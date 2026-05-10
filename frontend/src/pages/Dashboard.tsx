@@ -20,7 +20,7 @@ export default function Dashboard() {
   // When an option chart is selected (from chain's chart button), switch to chart view
   useEffect(() => {
     if (optionChartSymbol) {
-      setMobileView('chart')
+      queueMicrotask(() => setMobileView('chart'))
     }
   }, [optionChartSymbol])
 

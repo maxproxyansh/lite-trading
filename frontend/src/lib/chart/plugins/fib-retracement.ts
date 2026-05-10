@@ -9,7 +9,7 @@ export class FibRetracementPlugin extends BaseDrawingPlugin {
     super(drawing)
   }
 
-  drawOnCanvas(ctx: CanvasRenderingContext2D, width: number, _height: number): void {
+  drawOnCanvas(ctx: CanvasRenderingContext2D, width: number): void {
     const [p1, p2] = this.drawing.points
     if (!p1 || !p2) return
 

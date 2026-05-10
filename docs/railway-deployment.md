@@ -96,12 +96,10 @@ Set these on the Railway backend service:
 
 ## Vercel environment variables
 
-Set these on the frontend project in Vercel:
+Do not set `VITE_API_BASE_URL` on the frontend project.
+The browser should use same-origin `/api/...` requests and let Vercel rewrites proxy them to Railway.
 
-- `VITE_API_BASE_URL=https://lite-options-api-production.up.railway.app`
-- `VITE_WS_BASE_URL=wss://lite-options-api-production.up.railway.app/api/v1/ws`
-
-Then redeploy the frontend.
+If older frontend deployments already have runtime overrides configured, remove any stale `VITE_API_BASE_URL` and `VITE_WS_BASE_URL` values, then redeploy the frontend.
 
 ## Deploying a new backend revision
 

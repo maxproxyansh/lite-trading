@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from urllib.parse import urlsplit, urlunsplit
+
 from fastapi import APIRouter, Request
 
 from config import get_settings
@@ -32,8 +34,10 @@ def _absolute_http_url(request: Request, path: str) -> str:
 
 
 def _absolute_ws_url(request: Request, path: str) -> str:
-    scheme = "wss" if request.headers.get("x-forwarded-proto", request.url.scheme) == "https" else "ws"
-    return f"{scheme}://{request.url.netloc}{path}"
+    origin = _request_origin(request)
+    parsed = urlsplit(origin)
+    scheme = "wss" if parsed.scheme == "https" else "ws"
+    return urlunsplit((scheme, parsed.netloc, path, "", ""))
 
 
 @router.get("/meta", response_model=ApiMetaResponse)

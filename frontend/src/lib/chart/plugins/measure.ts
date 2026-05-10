@@ -7,7 +7,7 @@ export class MeasurePlugin extends BaseDrawingPlugin {
     super(drawing)
   }
 
-  drawOnCanvas(ctx: CanvasRenderingContext2D, _width: number, _height: number): void {
+  drawOnCanvas(ctx: CanvasRenderingContext2D): void {
     const [p1, p2] = this.drawing.points
     if (!p1 || !p2) return
 
