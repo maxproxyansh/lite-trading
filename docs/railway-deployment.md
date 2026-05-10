@@ -7,7 +7,7 @@ This document is the deployment runbook for the Lite backend on Railway.
 - Railway project: `lite-options-api`
 - Railway web service: `lite-options-api`
 - Railway Postgres: managed PostgreSQL inside the same project
-- Public backend URL: `https://lite-options-api-production.up.railway.app`
+- Public backend URL: `https://lite-options-api-production-6c61.up.railway.app`
 - Public frontend URLs:
   - `https://litetrade.vercel.app`
   - `https://lite-options-terminal.vercel.app`
@@ -118,9 +118,9 @@ After `railway login` or exporting `RAILWAY_API_TOKEN`:
 ```bash
 cd backend
 railway project link \
-  -p fed5f197-2182-44f5-b742-335c243e15ee \
-  -e d09e621f-fb95-4096-8468-b9fa15a195bb \
-  -s 5689451f-4d26-40a3-9a05-5e23db670113
+  -p 44b64830-f246-40d9-826d-89373dffcb04 \
+  -e 90935be3-f44f-4096-a1d6-1baa7d98eadf \
+  -s 620ffa86-0629-41be-8048-89a0b5989d3a
 railway up
 ```
 
@@ -136,9 +136,9 @@ To update CORS from the CLI:
 railway variable set \
   FRONTEND_ORIGIN=https://litetrade.vercel.app \
   FRONTEND_ORIGIN_REGEX='^https://(litetrade|lite-options-terminal)(-[a-z0-9-]+)?\.vercel\.app$' \
-  --service 5689451f-4d26-40a3-9a05-5e23db670113 \
-  --environment d09e621f-fb95-4096-8468-b9fa15a195bb
-railway redeploy -s 5689451f-4d26-40a3-9a05-5e23db670113 -y
+  --service 620ffa86-0629-41be-8048-89a0b5989d3a \
+  --environment 90935be3-f44f-4096-a1d6-1baa7d98eadf
+railway redeploy -s 620ffa86-0629-41be-8048-89a0b5989d3a -y
 ```
 
 ### What to verify after deploy
@@ -146,7 +146,7 @@ railway redeploy -s 5689451f-4d26-40a3-9a05-5e23db670113 -y
 Run these smoke checks:
 
 ```bash
-curl https://lite-options-api-production.up.railway.app/
+curl https://lite-options-api-production-6c61.up.railway.app/
 ```
 
 Expected:

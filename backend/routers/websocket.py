@@ -97,16 +97,29 @@ def _bearer_token(value: str | None) -> str | None:
     return token.strip()
 
 
+def _protocol_token(value: str | None) -> str | None:
+    if not value:
+        return None
+    for part in value.split(","):
+        protocol = part.strip()
+        if protocol.startswith("lite.token."):
+            token = protocol.removeprefix("lite.token.").strip()
+            if token:
+                return token
+    return None
+
+
 @router.websocket(f"{settings.api_prefix}/ws")
 async def websocket_endpoint(websocket: WebSocket):
     origin = websocket.headers.get("origin")
     cookie_token = websocket.cookies.get(settings.access_cookie_name)
     bearer_token = _bearer_token(websocket.headers.get("authorization"))
+    protocol_token = _protocol_token(websocket.headers.get("sec-websocket-protocol"))
     api_key = websocket.headers.get("x-api-key")
     if origin and not is_allowed_browser_origin(origin):
         await websocket.close(code=4403)
         return
-    if cookie_token and not origin and not bearer_token and not api_key:
+    if cookie_token and not origin and not bearer_token and not protocol_token and not api_key:
         await websocket.close(code=4403)
         return
 
@@ -116,9 +129,9 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         authorized = False
         portfolio_ids: set[str] = set()
-        if cookie_token or bearer_token:
+        if cookie_token or bearer_token or protocol_token:
             try:
-                payload = decode_access_token(cookie_token or bearer_token or "")
+                payload = decode_access_token(cookie_token or bearer_token or protocol_token or "")
                 user = db.query(User).filter(User.id == payload.get("sub"), User.is_active.is_(True)).first()
                 authorized = user is not None
                 if user:
@@ -149,7 +162,7 @@ async def websocket_endpoint(websocket: WebSocket):
     finally:
         db.close()
 
-    await websocket.accept()
+    await websocket.accept(subprotocol="lite.auth" if protocol_token else None)
     connected_clients[websocket] = WebSocketClient(
         user_id=user_id,
         portfolio_ids=frozenset(portfolio_ids),

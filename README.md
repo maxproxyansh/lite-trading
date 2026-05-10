@@ -81,7 +81,7 @@ python3 backend/scripts/lite_agent.py \
 
 - Frontend: [litetrade.vercel.app](https://litetrade.vercel.app)
 - Frontend fallback: [lite-options-terminal.vercel.app](https://lite-options-terminal.vercel.app)
-- Backend: [lite-options-api-production.up.railway.app](https://lite-options-api-production.up.railway.app)
+- Backend: [lite-options-api-production-6c61.up.railway.app](https://lite-options-api-production-6c61.up.railway.app)
 
 ### Required deploy-time environment
 

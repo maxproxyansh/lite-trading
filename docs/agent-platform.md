@@ -5,7 +5,7 @@ Lite exposes an agent-first trading surface for autonomous paper-trading workflo
 Base URL used in all examples:
 
 ```text
-https://lite-options-api-production.up.railway.app
+https://lite-options-api-production-6c61.up.railway.app
 ```
 
 ## Discovery
@@ -28,7 +28,7 @@ Friendly public aliases on the frontend domain:
 Start here:
 
 ```bash
-curl https://lite-options-api-production.up.railway.app/api/v1/meta
+curl https://lite-options-api-production-6c61.up.railway.app/api/v1/meta
 ```
 
 The response includes:
@@ -56,7 +56,7 @@ The response includes:
 If public signup is enabled:
 
 ```bash
-curl -X POST https://lite-options-api-production.up.railway.app/api/v1/agent/signup \
+curl -X POST https://lite-options-api-production-6c61.up.railway.app/api/v1/agent/signup \
   -H 'Content-Type: application/json' \
   -d '{
     "email": "your-email@example.com",
@@ -70,7 +70,7 @@ curl -X POST https://lite-options-api-production.up.railway.app/api/v1/agent/sig
 If you already have a Lite account, use bootstrap instead:
 
 ```bash
-curl -X POST https://lite-options-api-production.up.railway.app/api/v1/agent/bootstrap \
+curl -X POST https://lite-options-api-production-6c61.up.railway.app/api/v1/agent/bootstrap \
   -H 'Content-Type: application/json' \
   -d '{
     "email": "your-email@example.com",
@@ -92,7 +92,7 @@ Use the returned `api_key` for autonomous agent workflows. The human JWT login t
 ### 2. Check the market snapshot
 
 ```bash
-curl https://lite-options-api-production.up.railway.app/api/v1/market/snapshot \
+curl https://lite-options-api-production-6c61.up.railway.app/api/v1/market/snapshot \
   -H "X-API-Key: $LITE_AGENT_API_KEY"
 ```
 
@@ -101,14 +101,14 @@ You will receive the current NIFTY spot price, day change, market status, and av
 ### 3. Read the option chain
 
 ```bash
-curl "https://lite-options-api-production.up.railway.app/api/v1/market/chain" \
+curl "https://lite-options-api-production-6c61.up.railway.app/api/v1/market/chain" \
   -H "X-API-Key: $LITE_AGENT_API_KEY"
 ```
 
 To target a specific expiry:
 
 ```bash
-curl "https://lite-options-api-production.up.railway.app/api/v1/market/chain?expiry=2026-03-12" \
+curl "https://lite-options-api-production-6c61.up.railway.app/api/v1/market/chain?expiry=2026-03-12" \
   -H "X-API-Key: $LITE_AGENT_API_KEY"
 ```
 
@@ -117,7 +117,7 @@ curl "https://lite-options-api-production.up.railway.app/api/v1/market/chain?exp
 Native Lite order:
 
 ```bash
-curl -X POST https://lite-options-api-production.up.railway.app/api/v1/agent/orders \
+curl -X POST https://lite-options-api-production-6c61.up.railway.app/api/v1/agent/orders \
   -H 'Content-Type: application/json' \
   -H "X-API-Key: $LITE_AGENT_API_KEY" \
   -d '{
@@ -138,7 +138,7 @@ curl -X POST https://lite-options-api-production.up.railway.app/api/v1/agent/ord
 Dhan-compatible order:
 
 ```bash
-curl -X POST https://lite-options-api-production.up.railway.app/api/v1/agent/dhan/orders \
+curl -X POST https://lite-options-api-production-6c61.up.railway.app/api/v1/agent/dhan/orders \
   -H 'Content-Type: application/json' \
   -H "X-API-Key: $LITE_AGENT_API_KEY" \
   -d '{
@@ -154,12 +154,12 @@ curl -X POST https://lite-options-api-production.up.railway.app/api/v1/agent/dha
 ### 5. Verify positions and funds
 
 ```bash
-curl https://lite-options-api-production.up.railway.app/api/v1/agent/positions \
+curl https://lite-options-api-production-6c61.up.railway.app/api/v1/agent/positions \
   -H "X-API-Key: $LITE_AGENT_API_KEY"
 ```
 
 ```bash
-curl https://lite-options-api-production.up.railway.app/api/v1/agent/funds \
+curl https://lite-options-api-production-6c61.up.railway.app/api/v1/agent/funds \
   -H "X-API-Key: $LITE_AGENT_API_KEY"
 ```
 
@@ -181,7 +181,7 @@ Agents can read market data directly with their API key.
 Returns the top-level NIFTY market snapshot.
 
 ```bash
-curl https://lite-options-api-production.up.railway.app/api/v1/market/snapshot \
+curl https://lite-options-api-production-6c61.up.railway.app/api/v1/market/snapshot \
   -H "X-API-Key: $LITE_AGENT_API_KEY"
 ```
 
@@ -212,7 +212,7 @@ Sample response:
 Returns the option chain for the active expiry or a specific expiry.
 
 ```bash
-curl "https://lite-options-api-production.up.railway.app/api/v1/market/chain?expiry=2026-03-12" \
+curl "https://lite-options-api-production-6c61.up.railway.app/api/v1/market/chain?expiry=2026-03-12" \
   -H "X-API-Key: $LITE_AGENT_API_KEY"
 ```
 
@@ -229,7 +229,7 @@ PCR note:
 Returns available expiries and the currently active expiry.
 
 ```bash
-curl https://lite-options-api-production.up.railway.app/api/v1/market/expiries \
+curl https://lite-options-api-production-6c61.up.railway.app/api/v1/market/expiries \
   -H "X-API-Key: $LITE_AGENT_API_KEY"
 ```
 
@@ -239,12 +239,12 @@ Returns OHLC candle data. Supported timeframes are broker-data dependent; common
 By default this returns the NIFTY spot chart. Pass `symbol` or `security_id` to fetch a specific option contract instead.
 
 ```bash
-curl "https://lite-options-api-production.up.railway.app/api/v1/market/candles?timeframe=15m" \
+curl "https://lite-options-api-production-6c61.up.railway.app/api/v1/market/candles?timeframe=15m" \
   -H "X-API-Key: $LITE_AGENT_API_KEY"
 ```
 
 ```bash
-curl "https://lite-options-api-production.up.railway.app/api/v1/market/candles?timeframe=5m&symbol=NIFTY_2026-03-12_22500_CE" \
+curl "https://lite-options-api-production-6c61.up.railway.app/api/v1/market/candles?timeframe=5m&symbol=NIFTY_2026-03-12_22500_CE" \
   -H "X-API-Key: $LITE_AGENT_API_KEY"
 ```
 
@@ -253,7 +253,7 @@ curl "https://lite-options-api-production.up.railway.app/api/v1/market/candles?t
 Returns the current bid/ask depth for a symbol.
 
 ```bash
-curl https://lite-options-api-production.up.railway.app/api/v1/market/depth/NIFTY_2026-03-12_22500_CE \
+curl https://lite-options-api-production-6c61.up.railway.app/api/v1/market/depth/NIFTY_2026-03-12_22500_CE \
   -H "X-API-Key: $LITE_AGENT_API_KEY"
 ```
 
@@ -262,7 +262,7 @@ curl https://lite-options-api-production.up.railway.app/api/v1/market/depth/NIFT
 Returns global market quotes — indices (S&P 500, Dow, Nasdaq, GIFT Nifty), commodities (Brent, Gold), bonds (US 10Y, Japan 10Y), and forex (DXY, USD/INR). Includes daily OHLC, change, and multi-period performance. Cached for 60 seconds.
 
 ```bash
-curl https://lite-options-api-production.up.railway.app/api/v1/market/global \
+curl https://lite-options-api-production-6c61.up.railway.app/api/v1/market/global \
   -H "X-API-Key: $LITE_AGENT_API_KEY"
 ```
 
@@ -352,7 +352,7 @@ Rules:
 Endpoint:
 
 ```text
-wss://lite-options-api-production.up.railway.app/api/v1/ws
+wss://lite-options-api-production-6c61.up.railway.app/api/v1/ws
 ```
 
 Authenticate with `X-API-Key`.
@@ -368,7 +368,7 @@ import websockets
 
 async def main() -> None:
     async with websockets.connect(
-        "wss://lite-options-api-production.up.railway.app/api/v1/ws",
+        "wss://lite-options-api-production-6c61.up.railway.app/api/v1/ws",
         extra_headers={"X-API-Key": "your-agent-api-key"},
     ) as ws:
         while True:
@@ -434,7 +434,7 @@ Example:
 from agent_sdk import LiteAgentClient
 
 client = LiteAgentClient(
-    base_url="https://lite-options-api-production.up.railway.app",
+    base_url="https://lite-options-api-production-6c61.up.railway.app",
     api_key="your-agent-api-key",
 )
 
@@ -455,11 +455,11 @@ backend/scripts/lite_agent.py
 Examples:
 
 ```bash
-python3 backend/scripts/lite_agent.py --base-url https://lite-options-api-production.up.railway.app market snapshot --pretty
-python3 backend/scripts/lite_agent.py --base-url https://lite-options-api-production.up.railway.app market chain --pretty
-python3 backend/scripts/lite_agent.py --base-url https://lite-options-api-production.up.railway.app market candles --timeframe 1h --pretty
-python3 backend/scripts/lite_agent.py --base-url https://lite-options-api-production.up.railway.app positions --pretty
-python3 backend/scripts/lite_agent.py --base-url https://lite-options-api-production.up.railway.app square-off --all --pretty
+python3 backend/scripts/lite_agent.py --base-url https://lite-options-api-production-6c61.up.railway.app market snapshot --pretty
+python3 backend/scripts/lite_agent.py --base-url https://lite-options-api-production-6c61.up.railway.app market chain --pretty
+python3 backend/scripts/lite_agent.py --base-url https://lite-options-api-production-6c61.up.railway.app market candles --timeframe 1h --pretty
+python3 backend/scripts/lite_agent.py --base-url https://lite-options-api-production-6c61.up.railway.app positions --pretty
+python3 backend/scripts/lite_agent.py --base-url https://lite-options-api-production-6c61.up.railway.app square-off --all --pretty
 ```
 
 The CLI stores credentials at `~/.config/lite-agent/config.json` by default and attempts to apply `0600` permissions.

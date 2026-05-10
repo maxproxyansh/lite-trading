@@ -1897,6 +1897,18 @@ def test_websocket_requires_auth_and_streams_events(client: TestClient) -> None:
         assert message["type"] == "market.snapshot"
         assert message["payload"]["spot"] == 22510
 
+    token = admin_headers["Authorization"].split(" ", 1)[1]
+    client.cookies.clear()
+    with client.websocket_connect(
+        "/api/v1/ws",
+        headers={"origin": "https://litetrade.vercel.app"},
+        subprotocols=["lite.auth", f"lite.token.{token}"],
+    ) as websocket:
+        asyncio.run(broadcast_message("market.snapshot", {"spot": 22515}))
+        message = websocket.receive_json()
+        assert message["type"] == "market.snapshot"
+        assert message["payload"]["spot"] == 22515
+
     portfolios = _portfolio_map(client, admin_headers)
     key_response = client.post(
         "/api/v1/auth/api-keys",

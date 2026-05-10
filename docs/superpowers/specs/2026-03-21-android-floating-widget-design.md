@@ -60,7 +60,7 @@ The Lite product is a PWA at `litetrade.vercel.app`. PWAs cannot draw over other
 
 The app connects to the existing Lite backend WebSocket for real-time market data.
 
-**WebSocket URL:** `wss://lite-options-api-production.up.railway.app/api/v1/ws`
+**WebSocket URL:** `wss://lite-options-api-production-6c61.up.railway.app/api/v1/ws`
 
 **Authentication:** `X-API-Key` header. The app stores an API key entered once on first launch. This is a personal-use sideloaded app — the key is stored in plain `SharedPreferences` (no EncryptedSharedPreferences to avoid extra dependencies).
 

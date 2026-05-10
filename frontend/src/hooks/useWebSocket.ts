@@ -120,7 +120,7 @@ export function useWebSocket() {
             return
           }
 
-          const socket = new WebSocket(wsUrl)
+          const socket = new WebSocket(wsUrl, ['lite.auth', `lite.token.${accessToken}`])
           wsRef.current = socket
 
           const armStaleTimer = () => {
