@@ -170,6 +170,13 @@ export default function App() {
     setPasskeyPreparing(true)
     try {
       const { options } = await webauthnRegisterOptions()
+      const existingPasskeys = Array.isArray(options.excludeCredentials) ? options.excludeCredentials.length : 0
+      if (existingPasskeys > 0) {
+        localStorage.setItem('lite_passkey_email', email)
+        setShowPasskeyPrompt(false)
+        setPasskeyRegisterOptions(null)
+        return false
+      }
       setPasskeyRegisterOptions(options)
       return true
     } catch (error) {
@@ -437,12 +444,24 @@ export default function App() {
                   addToast('success', 'Fingerprint login enabled')
                 } catch (err) {
                   const { code, message } = getWebAuthnErrorInfo(err, 'Unable to enable fingerprint login.')
-                  console.warn('[WebAuthn] Registration failed:', code, message, err)
-                  if (!isWebAuthnDismissed(err)) {
-                    addToast('error', `Passkey: ${message}`)
+                  if (code === 'InvalidStateError') {
+                    localStorage.setItem('lite_passkey_email', user.email)
+                    setShowPasskeyPrompt(false)
+                    setPasskeyRegisterOptions(null)
+                    addToast('success', 'Fingerprint login was already enabled on this device')
+                    return
                   }
+                  if (isWebAuthnDismissed(err)) {
+                    setShowPasskeyPrompt(false)
+                    setPasskeyRegisterOptions(null)
+                    void webauthnClientError({ stage: 'register', email: user.email, code, message }).catch(() => undefined)
+                    return
+                  }
+                  console.warn('[WebAuthn] Registration failed:', code, message, err)
+                  setShowPasskeyPrompt(false)
+                  setPasskeyRegisterOptions(null)
+                  addToast('error', `Passkey: ${message}`)
                   void webauthnClientError({ stage: 'register', email: user.email, code, message }).catch(() => undefined)
-                  void preparePasskeyRegistration(user.email)
                 } finally {
                   setPasskeyEnabling(false)
                 }

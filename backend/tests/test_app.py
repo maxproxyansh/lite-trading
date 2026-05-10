@@ -326,7 +326,7 @@ def test_meta_uses_forwarded_host_headers_for_public_urls(client: TestClient) ->
     assert payload["base_url"] == "https://litetrade.vercel.app"
     assert payload["docs_url"] == "https://litetrade.vercel.app/api/v1/docs"
     assert payload["openapi_url"] == "https://litetrade.vercel.app/api/v1/openapi.json"
-    assert payload["websocket"]["url"] == "wss://lite-options-api-production.up.railway.app/api/v1/ws"
+    assert payload["websocket"]["url"] == "wss://litetrade.vercel.app/api/v1/ws"
 
 
 def test_agent_keys_are_portfolio_scoped_and_agent_orders_are_idempotent(client: TestClient) -> None:
@@ -2985,6 +2985,73 @@ def test_overlay_live_price_applies_day_extremes_for_daily_candle(monkeypatch: p
     assert updated["close"] == 22308.0
     assert updated["high"] == 22500.0  # day_high applied
     assert updated["low"] == 21800.0   # day_low applied
+
+
+def test_overlay_live_price_does_not_override_closed_daily_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        market_hours,
+        "now_ist",
+        lambda: datetime(2026, 3, 13, 16, 10, tzinfo=market_hours.IST),
+    )
+    bucket_time = int(datetime(2026, 3, 13, 0, 0, tzinfo=market_hours.IST).timestamp())
+    candles = [
+        {
+            "time": bucket_time,
+            "open": 22300.0,
+            "high": 22500.0,
+            "low": 22290.0,
+            "close": 22305.0,
+            "volume": 5000.0,
+        }
+    ]
+
+    result = market_data_service._overlay_live_price(
+        candles,
+        timeframe="D",
+        live_price=22380.0,
+        day_high=22600.0,
+        day_low=22100.0,
+    )
+
+    assert result == candles
+
+
+def test_build_live_session_candle_keeps_session_close_after_market_close(monkeypatch: pytest.MonkeyPatch) -> None:
+    _reset_test_runtime()
+    monkeypatch.setattr(
+        market_hours,
+        "now_ist",
+        lambda: datetime(2026, 3, 13, 16, 5, tzinfo=market_hours.IST),
+    )
+
+    payload = {
+        "timestamp": [
+            "2026-03-13T09:15:00+05:30",
+            "2026-03-13T15:29:00+05:30",
+        ],
+        "open": [22300.0, 22308.0],
+        "high": [22320.0, 22340.0],
+        "low": [22290.0, 22300.0],
+        "close": [22310.0, 22325.0],
+        "volume": [1000.0, 2000.0],
+    }
+
+    monkeypatch.setattr("services.market_data.dhan_credential_service.call", lambda *args, **kwargs: payload)
+    market_data_service._live_session_candle_cache.clear()
+
+    target = market_data_service._resolve_candle_target(symbol="NIFTY 50", security_id=None)
+    candle = market_data_service._build_live_session_candle(
+        target,
+        timeframe="D",
+        live_price=22380.0,
+        day_high=22420.0,
+        day_low=22280.0,
+    )
+
+    assert candle is not None
+    assert candle["close"] == 22325.0
+    assert candle["high"] == 22420.0
+    assert candle["low"] == 22280.0
 
 
 def test_get_candles_maps_rate_limit_and_invalid_request_to_specific_status_codes(monkeypatch: pytest.MonkeyPatch) -> None:
